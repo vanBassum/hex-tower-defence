@@ -20,7 +20,7 @@ export class TowerPlacer extends Component {
     this._ground = ground;
     this.towerType = towerType;
     this.hover = null;         // {q, r} or null
-    this.hoverStatus = null;   // 'ok' | 'on-path' | 'occupied' | 'too-poor' | 'off-board'
+    this.hoverStatus = null;   // 'ok' | 'on-path' | 'blocked' | 'occupied' | 'too-poor' | 'off-board'
     this._ndc = new THREE.Vector2();
     this._ray = new THREE.Raycaster();
     this._plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -98,16 +98,19 @@ export class TowerPlacer extends Component {
   }
 
   // Tiles are no longer all at y=0: the cursor has to sit on the hovered
-  // surface or it disappears inside the raised path.
+  // surface or it disappears inside a hillside.
   _surfaceY(hex) {
     return (this._ground ? this._ground.topY(hex.q, hex.r) : 0) + 0.03;
   }
 
   _evaluate({ q, r }) {
-    const { grid, pathKeys } = this._level;
-    if (!grid.inBounds(q, r))       return 'off-board';
-    if (pathKeys.has(`${q},${r}`))  return 'on-path';
-    if (grid.isOccupied(q, r))      return 'occupied';
+    const { grid, pathKeys, blockedKeys } = this._level;
+    if (!grid.inBounds(q, r))          return 'off-board';
+    if (pathKeys.has(`${q},${r}`))     return 'on-path';
+    // Before the occupancy check, which crags also fail: "solid rock" is a
+    // property of the map and "already taken" is a thing the player did.
+    if (blockedKeys?.has(`${q},${r}`)) return 'blocked';
+    if (grid.isOccupied(q, r))         return 'occupied';
     if (!this._state.canAfford(this.type.cost)) return 'too-poor';
     return 'ok';
   }

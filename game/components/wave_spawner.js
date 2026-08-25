@@ -1,10 +1,15 @@
 import { Component } from '../../engine/gameobject.js';
 import { spawnEnemy } from '../enemies.js';
 
-// Runs a level's wave table: a lead-in delay, then `count` enemies at
-// `interval`. The next wave's delay starts as soon as the previous wave has
-// finished spawning, not when the map is clear, so falling behind means facing
-// two waves at once.
+// Runs a level's wave table, one wave per request: `count` enemies at
+// `interval`, then it waits.
+//
+// Nothing starts a wave except the player asking for one. A wave clock would be
+// deciding the two things this game is supposed to be about - how long you get
+// to look at the board before committing, and whether you take on two waves at
+// once - and neither is a decision a timer should be making. Sending the next
+// wave while the last one is still walking is allowed, and it is the player's
+// call rather than a punishment for falling behind.
 export class WaveSpawner extends Component {
   constructor({ waves, worldPath, onLeak = null, onKill = null, onBonus = null, onComplete = null } = {}) {
     super();
@@ -16,7 +21,7 @@ export class WaveSpawner extends Component {
     this._onKill    = onKill;
     this._onBonus   = onBonus;
     this._onComplete = onComplete;
-    this._phase     = 'delay';   // 'delay' | 'spawning' | 'done'
+    this._phase     = 'ready';   // 'ready' | 'spawning' | 'done'
     this._timer     = 0;
     this._spawned   = 0;
   }
@@ -31,12 +36,22 @@ export class WaveSpawner extends Component {
   // 1-based, and clamped so it still reads as the final wave once spawning ends.
   get waveNumber()   { return Math.min(this.waveIndex + 1, this.totalWaves); }
   get spawning()     { return this._phase === 'spawning'; }
+  get canSend()      { return this._phase === 'ready'; }
+  get allSent()      { return this._phase === 'done'; }
   get enemiesAlive() { return this.gameObject.game.enemies?.length ?? 0; }
-  get timeToNextWave() { return this._phase === 'delay' ? Math.max(0, this._timer) : 0; }
 
   start() {
-    if (!this.waves.length) { this._phase = 'done'; return; }
-    this._timer = this.waves[0].delay ?? 0;
+    if (!this.waves.length) this._phase = 'done';
+  }
+
+  // Returns false when there is nothing to send, so the caller does not have to
+  // reproduce the rule.
+  sendNextWave() {
+    if (this._phase !== 'ready') return false;
+    this._phase = 'spawning';
+    this._spawned = 0;
+    this._timer = 0;      // first enemy leaves on the next frame
+    return true;
   }
 
   update(dt) {
@@ -47,16 +62,12 @@ export class WaveSpawner extends Component {
       }
       return;
     }
+    if (this._phase !== 'spawning') return;
 
     this._timer -= dt;
     if (this._timer > 0) return;
 
     const wave = this.waves[this.waveIndex];
-    if (this._phase === 'delay') {
-      this._phase = 'spawning';
-      this._spawned = 0;
-    }
-
     spawnEnemy(this.gameObject.game, this._enemyAt(wave, this._spawned), this._worldPath, {
       onLeak: this._onLeak,
       onDeath: this._onKill,
@@ -69,18 +80,14 @@ export class WaveSpawner extends Component {
       return;
     }
 
-    // Paid on finishing spawning rather than on the wave being cleared: waves
-    // overlap, so "cleared" has no single moment. It exists so a player who is
-    // losing can still afford to build - kill-only income turns a bad wave into
-    // an unrecoverable spiral, which makes difficulty a cliff instead of a slope.
+    // Paid on finishing spawning rather than on the wave being cleared: the
+    // player may already have sent the next one, so "cleared" has no single
+    // moment. It exists so a player who is losing can still afford to build -
+    // kill-only income turns a bad wave into an unrecoverable spiral, which makes
+    // difficulty a cliff instead of a slope.
     if (wave.bonus) this._onBonus?.(wave.bonus, this.waveIndex);
 
     this.waveIndex++;
-    if (this.waveIndex >= this.waves.length) {
-      this._phase = 'done';
-    } else {
-      this._phase = 'delay';
-      this._timer = this.waves[this.waveIndex].delay ?? 0;
-    }
+    this._phase = this.waveIndex >= this.waves.length ? 'done' : 'ready';
   }
 }

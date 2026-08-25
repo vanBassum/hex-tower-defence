@@ -9,9 +9,15 @@ const NEIGHBORS = [
 ];
 
 export class HexGrid {
-  constructor({ size = 1, radius = 16 } = {}) {
+  // `radius` is the envelope the grid iterates. `hexes`, when given, is the
+  // board inside that envelope - the set of hexes that actually exist - which is
+  // how a level gets a shape instead of a disc. Everything that asks whether a
+  // hex is real goes through inBounds, so a shaped board gets coastline cliffs,
+  // grid lines and placement rejection without any of them knowing about it.
+  constructor({ size = 1, radius = 16, hexes = null } = {}) {
     this.size      = size;
     this.radius    = radius;
+    this._shape    = hexes ? new Set(hexes.map(h => (typeof h === 'string' ? h : `${h.q},${h.r}`))) : null;
     this._occupied = new Set();    // "q,r" keys
     this._occupancyListeners = new Set();
     // Cached A* results, keyed "sq,sr|gq,gr". Flushed on any occupancy change —
@@ -64,7 +70,8 @@ export class HexGrid {
 
   inBounds(q, r) {
     const s = -q - r;
-    return Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= this.radius;
+    if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) > this.radius) return false;
+    return this._shape ? this._shape.has(`${q},${r}`) : true;
   }
 
   *neighbors(q, r) {
@@ -74,11 +81,16 @@ export class HexGrid {
     }
   }
 
+  // Every hex on the board, which on a shaped board is not every hex in the
+  // envelope.
   *allHexes() {
     for (let q = -this.radius; q <= this.radius; q++) {
       const r1 = Math.max(-this.radius, -q - this.radius);
       const r2 = Math.min( this.radius, -q + this.radius);
-      for (let r = r1; r <= r2; r++) yield { q, r };
+      for (let r = r1; r <= r2; r++) {
+        if (this._shape && !this._shape.has(`${q},${r}`)) continue;
+        yield { q, r };
+      }
     }
   }
 

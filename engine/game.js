@@ -24,6 +24,12 @@ export class Game {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Filmic response rather than a straight clamp. It matters most in a dim
+    // scene: bright things - a lantern flame, a wave crest - roll off into
+    // colour instead of flattening to white, which is what lets a dark palette
+    // still have highlights in it.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
 
     const w = this._container.clientWidth  || window.innerWidth;
     const h = this._container.clientHeight || window.innerHeight;
@@ -45,14 +51,18 @@ export class Game {
 
   _initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb);
-    this.scene.fog = new THREE.Fog(0x87ceeb, 60, 110);
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-    // Environment map so PBR materials (especially metallic ones) aren't pitch-black
+    // Environment map so PBR materials (especially metallic ones) aren't
+    // pitch-black. Its strength is scene.environmentIntensity, which the
+    // Atmosphere component owns - a neutral studio map at full strength drags
+    // any deliberate lighting back towards daylight.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
+
+    // Sky, fog and ambient light are deliberately not set here. What hour the
+    // game is set at is the game's decision, not the engine's: add an
+    // Atmosphere component and it says so in one place.
   }
 
   add(gameObject) {

@@ -7,6 +7,14 @@ const PANEL_CSS = [
   'pointer-events:none', 'white-space:pre',
 ].join(';');
 
+// Sits over the canvas, so unlike the readout it has to take clicks.
+const BUTTON_CSS = [
+  'position:fixed', 'bottom:22px', 'left:50%', 'transform:translateX(-50%)',
+  'padding:11px 22px', 'font:600 14px/1 system-ui,sans-serif', 'color:#fff',
+  'background:#2f6f3f', 'border:1px solid rgba(255,255,255,.25)', 'border-radius:7px',
+  'cursor:pointer', 'pointer-events:auto', 'box-shadow:0 4px 14px rgba(0,0,0,.45)',
+].join(';');
+
 const BANNER_CSS = [
   'position:fixed', 'inset:0', 'display:flex', 'align-items:center',
   'justify-content:center', 'flex-direction:column', 'gap:6px',
@@ -16,14 +24,16 @@ const BANNER_CSS = [
 
 const HOVER_HINT = {
   'ok':        'click to build',
-  'on-path':   'cannot build on the path',
+  'on-path':   'the enemy walks here',   // the route is no longer drawn, so say what it is
+  'blocked':   'solid rock',
   'occupied':  'hex already taken',
   'too-poor':  'not enough currency',
   'off-board': '',
 };
 
-// Corner readout plus an end-of-level banner. Scaffolding, not UI design — it
-// exists so the economy and the end conditions are legible while playing.
+// Corner readout, the send-wave button and an end-of-level banner. Scaffolding,
+// not UI design — it exists so the economy, the end conditions and the one thing
+// the player has to press are legible while playing.
 export class Hud extends Component {
   constructor({ state, spawner, placer }) {
     super();
@@ -37,6 +47,11 @@ export class Hud extends Component {
     this._panel.style.cssText = PANEL_CSS;
     document.body.appendChild(this._panel);
 
+    this._button = document.createElement('button');
+    this._button.style.cssText = BUTTON_CSS;
+    this._button.addEventListener('click', () => this._spawner.sendNextWave());
+    document.body.appendChild(this._button);
+
     this._banner = document.createElement('div');
     this._banner.style.cssText = BANNER_CSS;
     this._banner.style.display = 'none';
@@ -49,10 +64,12 @@ export class Hud extends Component {
     const type = this._placer.type;
 
     let wave;
-    if (w.complete)                wave = 'all waves cleared';
-    else if (w.spawning)           wave = `${w.waveNumber} / ${w.totalWaves}  spawning`;
-    else if (w.timeToNextWave > 0) wave = `${w.waveNumber} / ${w.totalWaves}  in ${w.timeToNextWave.toFixed(1)}s`;
-    else                           wave = `${w.waveNumber} / ${w.totalWaves}  incoming`;
+    if (w.complete)      wave = 'all waves cleared';
+    else if (w.allSent)  wave = `${w.totalWaves} / ${w.totalWaves}  all sent`;
+    else if (w.spawning) wave = `${w.waveNumber} / ${w.totalWaves}  spawning`;
+    else                 wave = `${w.waveNumber} / ${w.totalWaves}  waiting for you`;
+
+    this._updateButton();
 
     const hint = this._placer.hoverStatus ? HOVER_HINT[this._placer.hoverStatus] ?? '' : '';
 
@@ -72,8 +89,29 @@ export class Hud extends Component {
       : `Base destroyed<div style="font:400 16px system-ui">wave ${w.waveNumber} of ${w.totalWaves} &middot; ${s.leaked} leaked</div>`;
   }
 
+  // The button is the level's clock, so it says what it will do rather than what
+  // it is called: sending a wave while the last one is still walking is a
+  // decision, and the label has to make that visible.
+  _updateButton() {
+    const w = this._spawner;
+    const b = this._button;
+    if (!this._state.playing || w.allSent) { b.style.display = 'none'; return; }
+
+    b.style.display = 'block';
+    b.disabled = !w.canSend;
+    b.style.opacity = w.canSend ? '1' : '0.45';
+    b.style.cursor = w.canSend ? 'pointer' : 'default';
+    b.style.background = w.enemiesAlive > 0 ? '#8a5a22' : '#2f6f3f';
+    b.textContent = w.canSend
+      ? (w.enemiesAlive > 0
+          ? `Send wave ${w.waveNumber} of ${w.totalWaves}  (${w.enemiesAlive} still alive)`
+          : `Send wave ${w.waveNumber} of ${w.totalWaves}`)
+      : `Wave ${w.waveNumber} spawning`;
+  }
+
   destroy() {
     this._panel?.remove();
+    this._button?.remove();
     this._banner?.remove();
   }
 }

@@ -20,6 +20,7 @@ import { hashHex, patchNoise } from '../hex/hex_noise.js';
 export class HexGround extends Component {
   constructor(grid, {
     pathKeys    = null,   // Set of "q,r" painted as path
+    rockKeys    = null,   // Set of "q,r" painted as bare rock (crags)
     levels      = null,   // Map of "q,r" -> integer elevation level
     step        = 0.22,   // world height of one level
     baseDepth   = 0.95,   // how far the board rim drops below its lowest tile
@@ -34,6 +35,9 @@ export class HexGround extends Component {
     dirtColor   = 0x8d7d4c,
     dirtChance  = 0.07,
     pathColor   = 0xc4aa72,
+    // Bare stone, close enough in hue to the cliff faces that a crag reads as
+    // the same rock pushed up through the grass rather than a different object.
+    rockColor   = 0x9c968c,
     cliffColor  = 0x8a6a45,
     cliffShade  = 0.5,    // how much the foot of a cliff darkens
     patchScale  = 3.2,    // world units per noise cell - larger means broader patches
@@ -44,6 +48,7 @@ export class HexGround extends Component {
     super();
     this._grid       = grid;
     this._pathKeys   = pathKeys;
+    this._rockKeys   = rockKeys;
     this._levels     = levels;
     this.step        = step;
     this._baseDepth  = baseDepth;
@@ -52,6 +57,7 @@ export class HexGround extends Component {
     this._dirtColor = dirtColor;
     this._dirtChance = dirtChance;
     this._pathColor  = pathColor;
+    this._rockColor  = rockColor;
     this._cliffColor = cliffColor;
     this._cliffShade = cliffShade;
     this._patchScale  = patchScale;
@@ -61,6 +67,7 @@ export class HexGround extends Component {
   }
 
   _isPath(q, r) { return !!this._pathKeys?.has(`${q},${r}`); }
+  _isRock(q, r) { return !!this._rockKeys?.has(`${q},${r}`); }
 
   levelAt(q, r) { return this._levels?.get(`${q},${r}`) ?? 0; }
 
@@ -86,8 +93,12 @@ export class HexGround extends Component {
       const y = this.topY(q, r);
       const corners = this._grid.hexCorners(q, r);
 
-      // The path carries less variation so the route stays readable at a glance.
-      this._shade(top, q, r, x, z, path ? this._pathColor : this._groundAt(q, r, x, z), path ? 0.55 : 1);
+      // The path carries less variation so the route stays readable at a glance,
+      // and so does rock - variation on stone reads as dirt on it.
+      const surface = path ? this._pathColor
+                   : this._isRock(q, r) ? this._rockColor
+                   : this._groundAt(q, r, x, z);
+      this._shade(top, q, r, x, z, surface, path ? 0.55 : this._isRock(q, r) ? 0.7 : 1);
       for (let i = 0; i < 6; i++) {
         const a = corners[i], b = corners[(i + 1) % 6];
         // Wound (centre, b, a) so the normal points +Y. The other order faces
