@@ -27,11 +27,11 @@ range ring of the tower you would be placing.
     engine/gameobject.js               GameObject / Component base classes
     engine/hex/hex_grid.js             axial hex grid, lines, occupancy, A*
     engine/hex/hex_noise.js            deterministic per-hex noise
+    engine/assets.js                   glTF loading + clone cache (unused for now)
     engine/components/camera_rig.js    pan / orbit / zoom camera
     engine/components/directional_light.js
     engine/components/ground_plane.js  flat shadow-receiving ground
     engine/components/hex_ground.js    tile tops + cliff faces, grass tones
-    engine/components/hex_ground_detail.js  dirt patches + flower clusters
     engine/components/hex_region_outline.js  border around a hex region
     engine/components/hex_grid_renderer.js  hex outlines
     engine/components/hex_overlay.js   filled hex tiles (path, build cursor)
@@ -84,9 +84,15 @@ linear space three stores by default is far subtler than it looks. Getting that
 wrong, plus a triangle winding that pointed every face normal downward, is why
 the first attempt at ground colour was invisible.
 
-Dirt patches and flower clusters land on ~12% and ~11% of grass tiles, in one
-merged mesh - irregular blobs rather than scaled hexagons, and small crossed
-blades rather than flat dots, since a flat dot disappears at gameplay zoom.
+About 7% of grass tiles take a worn-earth tone instead. That is a whole-tile
+colour rather than a decal drawn on top: a blob on grass reads as a sticker,
+while a tile that simply *is* dirtier reads as ground.
+
+Props are procedural on purpose. Modelled kits were tried and the baked-in
+colours clashed with the terrain palette, so trees and rocks are built in code
+where their colours stay under our control. `engine/assets.js` keeps the glTF
+loader and clone cache ready - it loads a model once and hands out clones that
+share geometry and materials - for when better-matching assets turn up.
 
 Enemies: `grunt` (190 hp, speed 2.0), `runner` (105 hp, 4.2), `brute` (780 hp, 1.3).
 Eight waves, 136 enemies, 36,770 total hp. A wave's lead-in starts when the

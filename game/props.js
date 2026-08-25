@@ -1,93 +1,94 @@
+import * as THREE from 'three';
 import { hashHex } from '../engine/hex/hex_noise.js';
 
-// Decoration built from Kenney's CC0 Nature Kit (see assets/nature/LICENSE.txt).
-// Every model has its origin at its base and carries plain material colours with
-// no textures, which is why they sit on the ground without adjustment and match
-// the flat-shaded terrain rather than looking imported from another game.
+// Decoration meshes, built procedurally to match the flat-shaded look: low
+// segment counts plus flatShading gives crisp facets without any textures, and
+// the colours stay under our control rather than baked into an asset.
+//
+// Sizes are chosen against the board rather than picked by eye. A hex is 2 wide
+// (1.73 flat to flat), enemies stand 0.65 to 1.10 tall and a tower is about 0.6,
+// so a tree at ~1.4 reads as scenery you look past and a rock at ~0.4 reads as
+// something you could step over.
+const HEX_WIDTH = 2;
 
-// name -> file, relative to the cache's basePath.
-export const MODEL_FILES = {
-  tree_pineRoundC: 'tree_pineRoundC.glb',
-  tree_pineTallB:  'tree_pineTallB.glb',
-  tree_pineSmallB: 'tree_pineSmallB.glb',
-  tree_default:    'tree_default.glb',
-  tree_oak:        'tree_oak.glb',
-  rock_smallA:     'rock_smallA.glb',
-  rock_smallC:     'rock_smallC.glb',
-  rock_tallD:      'rock_tallD.glb',
-  rock_largeB:     'rock_largeB.glb',
-  plant_bush:      'plant_bush.glb',
-  plant_bushSmall: 'plant_bushSmall.glb',
-  grass:           'grass.glb',
-  grass_large:     'grass_large.glb',
-  flower_purpleA:  'flower_purpleA.glb',
-  flower_redB:     'flower_redB.glb',
-  flower_yellowC:  'flower_yellowC.glb',
-  stump_round:     'stump_round.glb',
-  log:             'log.glb',
-};
+// Materials are shared across every prop instead of per instance - there is no
+// reason for two trees to own separate copies of the same green.
+export function createPropMaterials() {
+  const lambert = (color) => new THREE.MeshLambertMaterial({ color, flatShading: true });
+  return {
+    trunk:    lambert(0x5b4632),
+    foliage:  lambert(0x3f6b32),
+    foliage2: lambert(0x4a7a39),
+    rock:     lambert(0x7d838b),
+  };
+}
 
-// The kit is authored against a 1-unit tile while our hexes are 1.73 flat to
-// flat, so everything wants scaling up. Small ground detail gets an extra push:
-// at the sizes it ships in, a flower is a quarter of a unit tall and simply
-// disappears at gameplay zoom.
-const KIT_SCALE = 1.4;
+function buildTree(mats, height) {
+  const group = new THREE.Group();
 
-// `models` are interchangeable variants - one is picked per hex by hash, so a
-// scattered type never repeats the same silhouette across neighbours.
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(height * 0.045, height * 0.065, height * 0.32, 5),
+    mats.trunk,
+  );
+  trunk.position.y = height * 0.16;
+  group.add(trunk);
+
+  // Two stacked cones read as a conifer and give the silhouette a break, which
+  // one cone does not.
+  const lower = new THREE.Mesh(
+    new THREE.ConeGeometry(height * 0.27, height * 0.5, 7),
+    mats.foliage,
+  );
+  lower.position.y = height * 0.46;
+  group.add(lower);
+
+  const upper = new THREE.Mesh(
+    new THREE.ConeGeometry(height * 0.19, height * 0.42, 7),
+    mats.foliage2,
+  );
+  upper.position.y = height * 0.76;
+  group.add(upper);
+
+  return group;
+}
+
+function buildRock(mats, size) {
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), mats.rock);
+  // Squashed and slightly sunk, so it sits like a boulder rather than floating
+  // like a ball.
+  rock.scale.y = 0.62;
+  rock.position.y = size * 0.34;
+  return rock;
+}
+
 export const PROP_TYPES = {
-  tree_pine:  { models: ['tree_pineRoundC', 'tree_pineTallB', 'tree_pineSmallB'], scale: 1.0,  spread: 0.30 },
-  tree_broad: { models: ['tree_default', 'tree_oak'],                             scale: 1.0,  spread: 0.30 },
-  rock:       { models: ['rock_smallA', 'rock_smallC', 'rock_tallD'],             scale: 1.2,  spread: 0.40 },
-  rock_large: { models: ['rock_largeB'],                                          scale: 1.15, spread: 0.25 },
-  bush:       { models: ['plant_bush', 'plant_bushSmall'],                        scale: 1.25, spread: 0.40 },
-  grass:      { models: ['grass', 'grass_large'],                                 scale: 1.30, spread: 0.45 },
-  flower:     { models: ['flower_purpleA', 'flower_redB', 'flower_yellowC'],       scale: 1.35, spread: 0.45 },
-  stump:      { models: ['stump_round', 'log'],                                   scale: 1.15, spread: 0.30 },
+  tree: {
+    key: 'tree',
+    build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.62 + n * 0.16)),   // ~1.24 to ~1.56 tall
+  },
+  rock: {
+    key: 'rock',
+    build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.13 + n * 0.06)),   // ~0.26 to ~0.38 radius
+  },
 };
 
-// The models needed to build the given prop types - what the cache must preload.
-// Scoped to the types a level actually uses, so unused kit does not get fetched.
-export function requiredModels(typeKeys = Object.keys(PROP_TYPES)) {
-  const out = {};
-  for (const key of typeKeys) {
-    const type = PROP_TYPES[key];
-    if (!type) throw new Error(`Unknown prop type "${key}"`);
-    for (const m of type.models) {
-      if (!MODEL_FILES[m]) throw new Error(`Prop type "${key}" wants unknown model "${m}"`);
-      out[m] = MODEL_FILES[m];
-    }
-  }
-  return out;
-}
+// Builds one placement into an Object3D positioned on the tile surface. Jitter is
+// keyed to the hex, so props never look pinned to the exact centre of a cell and
+// never move between loads.
+export function buildProp(placement, mats, { x, z, y }) {
+  const type = PROP_TYPES[placement.type];
+  if (!type) throw new Error(`Unknown prop type "${placement.type}"`);
 
-// Every prop type a level places, hand-authored or scattered.
-export function propTypesUsedBy(level) {
-  return [...new Set([
-    ...(level.props ?? []).map(p => p.type),
-    ...(level.scatter ?? []).map(s => s.type),
-  ])];
-}
+  const { q, r } = placement;
+  const size = hashHex(q, r, 21);
+  const obj = type.build(mats, size);
 
-// Builds one placement. All variation is keyed to the hex (plus an index, so
-// several props on one tile differ), so the board never reshuffles between loads.
-export function buildProp(assets, typeKey, q, r, { x, z, y, index = 0 }) {
-  const type = PROP_TYPES[typeKey];
-  if (!type) throw new Error(`Unknown prop type "${typeKey}"`);
+  const spread = placement.spread ?? 0.35;
+  obj.position.x = x + (hashHex(q, r, 23) - 0.5) * spread;
+  obj.position.z = z + (hashHex(q, r, 27) - 0.5) * spread;
+  obj.position.y += y;
+  obj.rotation.y = hashHex(q, r, 31) * Math.PI * 2;
 
-  const salt = index * 1000;
-  const pick = type.models[Math.floor(hashHex(q, r, 211 + salt) * type.models.length)];
-  const obj = assets.create(pick);
-  if (!obj) return null;
-
-  const jitter = 0.85 + hashHex(q, r, 223 + salt) * 0.3;
-  const s = KIT_SCALE * type.scale * jitter;
-  obj.scale.setScalar(s);
-
-  const angle = hashHex(q, r, 227 + salt) * Math.PI * 2;
-  const dist = (type.spread ?? 0.3) * hashHex(q, r, 229 + salt);
-  obj.position.set(x + Math.cos(angle) * dist, y, z + Math.sin(angle) * dist);
-  obj.rotation.y = hashHex(q, r, 233 + salt) * Math.PI * 2;
-
+  obj.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return obj;
 }

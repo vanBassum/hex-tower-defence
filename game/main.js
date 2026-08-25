@@ -13,20 +13,12 @@ import { WaveSpawner } from './components/wave_spawner.js';
 import { LevelDirector } from './components/level_director.js';
 import { TowerPlacer } from './components/tower_placer.js';
 import { PropLayer } from './components/prop_layer.js';
-import { AssetCache } from '../engine/assets.js';
-import { requiredModels, propTypesUsedBy } from './props.js';
 import { Hud } from './components/hud.js';
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level
 
-// Models load before the scene is assembled - top-level await, so nothing gets
-// built half-populated. A model that fails to load is reported by the cache and
-// simply goes missing, rather than taking the whole scene down with it.
-const level = buildLevel(LEVEL_1);
-const assets = new AssetCache({ basePath: 'assets/nature/' });
-await assets.load(requiredModels(propTypesUsedBy(level)));
-
 const game  = new Game();
+const level = buildLevel(LEVEL_1);
 game.level   = level;
 game.hexGrid = level.grid;
 game.enemies = [];
@@ -62,16 +54,10 @@ const hexGround = groundGO.addComponent(new HexGround(level.grid, {
 game.add(groundGO);
 ground.position.y = hexGround.baseY - 0.02;
 
-// Decoration: hand-placed props plus sparse scattered ground cover, all sitting
-// on whatever tile surface they are on. The path is excluded from scatter.
+// A few props, sitting on whatever tile surface they are on.
 const propsGO = new GameObject('Props');
 const propLayer = propsGO.addComponent(new PropLayer({
-  grid: level.grid,
-  assets,
-  ground: hexGround,
-  props: level.props,
-  scatter: level.scatter,
-  includes: (q, r) => !level.pathKeys.has(`${q},${r}`),
+  grid: level.grid, ground: hexGround, props: level.props,
 }));
 game.add(propsGO);
 

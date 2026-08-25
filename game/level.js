@@ -25,24 +25,17 @@ export const LEVEL_1 = {
     { level: 1, center: { q: -1, r:  5 }, radius: 1 },
   ],
 
-  // Hand-placed props. Every one of these hexes covers zero path hexes, so none
-  // of them takes a build position worth having. Three sit on the hills to read
-  // the elevation, three sit on flat ground near the route so tree and rock have
-  // something known to be measured against.
+  // Hand-placed props to establish scale. Every one of these hexes covers zero
+  // path hexes, so none of them takes a build position worth having. Three sit on
+  // the hills to read the elevation, three sit on flat ground near the route so
+  // tree and rock have something known to be measured against.
   props: [
-    { type: 'tree_pine',  q: -3, r: -1 },   // hill summit, level 2
-    { type: 'tree_pine',  q: -4, r:  0 },   // hill, level 2
-    { type: 'rock',       q: -3, r: -3 },   // hill edge, level 1
-    { type: 'tree_broad', q: -1, r:  5 },   // small hill, level 1
-    { type: 'rock_large', q:  0, r:  3 },   // flat, beside the descending run
-    { type: 'rock',       q: -5, r:  2 },   // flat, beside the long diagonal
-  ],
-
-  // Sparse scattered ground cover. Deliberately thin - the heavy prop pass is a
-  // later step, and this only needs to stop the grass reading as empty.
-  scatter: [
-    { type: 'grass',  chance: 0.16 },
-    { type: 'flower', chance: 0.09, perTile: 2 },
+    { type: 'tree', q: -3, r: -1 },   // hill summit, level 2
+    { type: 'tree', q: -4, r:  0 },   // hill, level 2
+    { type: 'rock', q: -3, r: -3 },   // hill edge, level 1
+    { type: 'tree', q: -1, r:  5 },   // small hill, level 1
+    { type: 'rock', q:  0, r:  3 },   // flat, beside the descending run
+    { type: 'rock', q: -5, r:  2 },   // flat, beside the long diagonal
   ],
 
   // delay = lead-in before the wave's first enemy, counted from the moment the
@@ -96,7 +89,6 @@ export function buildLevel(def) {
     pathKeys,
     levels: buildElevation(def, grid, path),
     props: def.props ?? [],
-    scatter: def.scatter ?? [],
     worldPath: path.map(h => grid.hexToWorld(h.q, h.r)),
     spawn: path[0],
     goal:  path[path.length - 1],
