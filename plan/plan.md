@@ -162,3 +162,12 @@
 - [ ] Only then decide which mechanics deserve expansion.
 
 
+
+
+---
+
+We can have a grashopper, that can jump between roads that are close to eachother.
+
+Perhaps we can drop a stone, to block of some route, but only once not reversable.
+
+
