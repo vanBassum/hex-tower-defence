@@ -1,0 +1,8 @@
+node_modules/
+.env
+*.local
+.DS_Store
+Thumbs.db
+
+# Local Claude worktrees (per-session scratch repos)
+.claude/worktrees/
