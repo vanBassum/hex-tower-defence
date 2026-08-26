@@ -6,6 +6,23 @@ and is worth reading *before changing something it explains*; this file is the
 short version - the map, the rules that must not be broken, and where to add
 things.
 
+## How to work here
+
+This is a prototype under rapid development. Iteration speed beats robustness.
+
+- **Edit files directly.** Never generate a temporary patch script for an edit
+  the editing tools can do.
+- **Smallest change that works.** Do not generalise for features nobody asked
+  for. A simple request should produce a simple diff.
+- **One cheap check, then stop.** `python tools/check.py` and nothing else.
+  Screenshots and scripted play sequences only when the request is *about* how
+  something looks or behaves at runtime, and one is usually enough.
+- **Do not fix what you were not asked to fix.** If something unrelated surfaces,
+  say so in one line and leave it.
+- **Stop when the task is done.** No follow-on polish, refactors, or extra tests.
+- **Report briefly**: what changed, whether the check passed, anything the user
+  needs to know.
+
 ## Run and verify
 
     python -m http.server 8000        # then open localhost:8000
@@ -13,11 +30,10 @@ things.
     python tools/check.py --help      # drive the game, click hexes, screenshot
     node tools/map.mjs                # print the board as text (--shape to paste back)
 
-`tools/check.py` is the fast way to know a change works: it serves the folder,
-loads the page in headless Chromium, and exits non-zero on any page or console
-error. Everything in `window.hex` (see `game/debug.js`) is reachable from it, so
-a whole play sequence is one command. Prefer it to reasoning about whether the
-scene still builds.
+`tools/check.py` is the whole verification budget for a normal change: it loads
+the page and exits non-zero on any page or console error. Its `--eval`/`--click`
+/`--shot` options exist for the rarer case where behaviour or appearance is the
+thing being changed - reach for them then, not by default.
 
 ## Layout
 
@@ -108,12 +124,14 @@ Break one of these and something three files away goes subtly wrong.
 
 ## Conventions
 
-- Comments explain **why**, not what: the trade considered, the version that was
-  tried and failed, the reason a number is that number. That prose is the
-  project's memory and is expected in new code.
-- Prose uses ` - ` rather than em dashes, and stays in the readme's register.
-- After a feature lands, `readme.md` gets the design note and the commit message
-  carries the reasoning. Commit and push without being asked.
+- Comments explain **why**, and only where why is not obvious: a surprising
+  constraint, a number that was tuned, an approach that failed. One or two lines.
+  Straightforward code gets no comment. The long-form design prose in `readme.md`
+  is the existing style there - do not extend that style into source files, and
+  do not rewrite readme chapters unless the change actually invalidates them.
+- Prose uses ` - ` rather than em dashes.
+- Commit and push without being asked. Commit messages: a subject line and a
+  couple of sentences, not an essay.
 - No build step and no dependencies. If something needs a library, it probably
   needs a different design.
 
