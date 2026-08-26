@@ -25,18 +25,23 @@ import { hashHex } from '../../engine/hex/hex_noise.js';
 // impassable to everything else for free: crags already work that way, and A*
 // and `isWalkable` already ask.
 //
-// ── Strength is the count, and there is no bar over its head ────────────────
+// ── Strength is the count, and there is no bar over its head ────────────
 // A unit is fifteen people and it loses them. `people` is both the number the
 // formation draws and the number damage comes out of, so the health display is
 // the unit itself thinning out - already on the board, in the place the player
 // is already looking. `Health` and `HealthBar` are still sitting unused in the
 // engine and this deliberately does not use them: a pool of hit points behind a
-// bar is a second account of the same fact, and the two would drift.
+// bar over the unit is a second account of the same fact, and the two would
+// drift.
 //
-// The float behind it matters. Damage arrives as a rate against real time, so
-// `_strength` is fractional and `people` is what that rounds up to - otherwise
-// the smallest tick of damage either kills somebody or is thrown away, and at
-// fifteen people a thrown-away tick is most of the fight.
+// The hit points that do exist are a man's, not the unit's, and that is a
+// different thing: `hp` on each entry in `spots`, a small spread either side of
+// one, so a unit of fifteen is still worth fifteen. It buys two things a single
+// float could not. Damage lands on the men on the line rather than on the unit,
+// so the man who falls is one who was fighting; and because each of them has his
+// own constitution and takes his own share of a blow, four men holding the same
+// edge against the same enemy do not run out at the same instant, and it is not
+// the same place in the line that empties every time.
 //
 // ── How a fight is drawn ─────────────────────────────────────
 // A front line on the shared hex edge, and ranks behind it. Both numbers are
@@ -103,7 +108,6 @@ export class Unit extends Component {
     this.hostile = !!this.type.hostile;
     this.attack = this.type.attack ?? 0;
     this.people = this.type.people ?? 1;
-    this._strength = this.people;
     this.dead = false;
     this._deathListeners = new Set();
     this.id = ++UNIT_ID;
@@ -129,23 +133,90 @@ export class Unit extends Component {
   }
 
   // Takes casualties. `amount` is in people and may be fractional - it arrives
-  // as a rate times a frame - and the mesh is only touched when the whole number
-  // actually changes, so a fight costs one `count` write per person lost rather
-  // than one per frame.
+  // as a rate times a frame - and it is spent on the men standing on the line,
+  // not on the unit. Each of them takes a share of it weighted by his own
+  // `bite`, so the same blow is not the same blow to all four of them.
   //
-  // *Which* person that is, is decided in `_writeMelee`: a count always drops
-  // the highest instance, so the melee hands that index the front line and the
-  // one behind it steps up. Nothing here has to know that.
+  // The loop is for the lump case (`hex.enemies.units[0].damage(5)` from the
+  // console, one day a volley): a pass spends only as much as it takes to drop
+  // the next man, then the line is recounted and the rest is spent on whoever is
+  // standing there now. In a frame of a fight the first pass ends it.
   damage(amount) {
     if (this.dead || amount <= 0) return;
-    this._strength -= amount;
+    const spots = this._mesh?.userData.spots;
+    if (!spots) return;
 
-    const left = Math.max(0, Math.ceil(this._strength));
-    if (left !== this.people) {
-      this.people = left;
-      for (const m of this._ranks) m.count = left;
+    let pending = amount;
+    let guard = this.people + 1;          // a lump must not spin here
+    while (pending > 1e-6 && this.people > 0 && guard-- > 0) {
+      const line = this._line(spots);
+      let weight = 0;
+      for (const i of line) weight += spots[i].bite;
+
+      // How much of `pending` this pass can spend before somebody falls.
+      let step = pending, victim = -1;
+      for (const i of line) {
+        const takes = spots[i].hp * weight / spots[i].bite;
+        if (takes < step) { step = takes; victim = i; }
+      }
+      for (const i of line) spots[i].hp -= step * spots[i].bite / weight;
+      pending -= step;
+      if (victim >= 0) this._fall(victim, spots);
     }
-    if (this._strength <= 0) this._die();
+  }
+
+  // The men who are being hit: the front rank of every fight the unit is in. A
+  // unit taking damage while somehow not in one is hit across the whole body,
+  // which is only reachable from the console.
+  _line(spots) {
+    const m = this._fights?.length || 1;
+    const line = [];
+    for (let i = 0; i < this.people; i++) {
+      if (((spots[i].slot / m) | 0) < FRONT_WIDTH) line.push(i);
+    }
+    if (!line.length) for (let i = 0; i < this.people; i++) line.push(i);
+    return line;
+  }
+
+  // One man down. His entry is swapped with the last live one so that instances
+  // 0..people-1 are always the living: `count` culls the tail and there is no
+  // telling it to skip a hole in the middle. The swap moves data, not people -
+  // the man who takes the vacated instance keeps his own slot and his own eased
+  // position, so nothing of his moves on screen.
+  _fall(i, spots) {
+    const gap = spots[i].slot;
+    this.people--;
+    const last = this.people;
+    if (i !== last) { const t = spots[i]; spots[i] = spots[last]; spots[last] = t; }
+    for (const m of this._ranks) m.count = this.people;
+    this._closeUp(gap, spots);
+    if (this.people <= 0) this._die();
+  }
+
+  // The men behind step into the hole, one rank at a time: the man directly
+  // behind the gap takes it, the man behind him closes the rank he just left,
+  // and so on to the back. Whoever is left standing on the place the formation
+  // no longer has - slot `people`, now one past the end - slides across to close
+  // whatever the cascade did not.
+  //
+  // That last move is what keeps the slots a permutation of 0..people-1, and
+  // that is the property the whole layout rests on: nothing else stops holes
+  // opening in the middle of the block as the unit is worn down.
+  _closeUp(gap, spots) {
+    const stride = FRONT_WIDTH * (this._fights?.length || 1);
+    const holder = (slot) => {
+      for (let i = 0; i < this.people; i++) if (spots[i].slot === slot) return i;
+      return -1;
+    };
+    let s = gap;
+    for (let behind = holder(s + stride); behind >= 0; behind = holder(s + stride)) {
+      spots[behind].slot = s;
+      s += stride;
+    }
+    if (s !== this.people) {
+      const tail = holder(this.people);
+      if (tail >= 0) spots[tail].slot = s;
+    }
   }
 
   // Nobody left. The unit takes itself off the board rather than waiting to be
@@ -315,12 +386,11 @@ export class Unit extends Component {
   // there is nothing to undo: `setMelee(null)` and the same easing walks them
   // home.
   //
-  // ── Who dies, and who steps up ─────────────────────────────────────────
-  // Casualties are a `count` on an InstancedMesh, and a count draws instances
-  // 0..count-1 - so the person a casualty takes off the board is always the
-  // *highest* live index, and there is no choosing otherwise short of a second
-  // index buffer nobody needs. `meleeSlot` below is what turns that into the
-  // right man dying and the right man replacing him.
+  // ── A man owns his place ───────────────────────────────────────────────
+  // Each man owns his place - `slot` on his entry in `spots` - rather than
+  // having it derived from the instance he is drawn at, because the instance he
+  // is drawn at changes when somebody else falls. `damage` picks who goes and
+  // `_closeUp` decides who steps into the hole; this only reads the answer.
   _writeMelee(dt) {
     const g = this._mesh.userData;
     if (!g.write) return;
@@ -344,11 +414,11 @@ export class Unit extends Component {
       if (f && f.length && i < live) {
         // Flanked units split their people between the fights they are in, so
         // each front gets a thinner line rather than one front getting all of
-        // it. Which fight is `i % m` and never changes, so a casualty on one
-        // front leaves the other front standing exactly as it was.
+        // it. Which fight a man is in comes off his slot like everything else,
+        // so a casualty on one front leaves the other front standing as it was.
         const m = f.length;
-        const e = f[i % m];
-        const slot = meleeSlot((i / m) | 0, Math.ceil((live - (i % m)) / m));
+        const e = f[sp.slot % m];
+        const slot = (sp.slot / m) | 0;
         const file = FILE_ORDER[slot % FRONT_WIDTH];
         const rank = (slot / FRONT_WIDTH) | 0;
 
@@ -470,31 +540,4 @@ export class Unit extends Component {
       if (o.userData.ownMaterial) o.material.dispose();
     });
   }
-}
-
-// Which place in the line the k-th of `n` people takes.
-//
-// The trick is one column. Slots 0, W, 2W ... are the same file at every rank -
-// a file running back from the front of the line - and the top indices are
-// stacked down it, front-most first. A casualty always takes the highest index,
-// so the highest index is the man on the line; the next index is the man
-// directly behind him, and the one after that is behind *him*.
-//
-// So when the front man falls, `n` drops by one and every member of that column
-// steps into the place ahead of it: the man behind the line takes the line, the
-// man behind him closes up the second rank, and so on to the back. It is the
-// nearest man each time and it is one step, because the column is what the
-// indices were laid out along.
-//
-// Everybody else fills the slots the column does not use, in order, and their
-// place does not depend on `n` at all - so the rest of the body, the three men
-// still fighting on the line included, does not move. The one exception is the
-// tail: as the column shortens the rearmost rank loses a place, and the last man
-// in it slides across to close the hole. That keeps the slots a permutation of
-// 0..n-1, which is what stops holes opening in the middle of the block.
-function meleeSlot(k, n) {
-  const W = FRONT_WIDTH;
-  const col = Math.ceil(n / W);                 // how deep the column reaches
-  if (k >= n - col) return (n - 1 - k) * W;
-  return ((k / (W - 1)) | 0) * W + (k % (W - 1)) + 1;
 }

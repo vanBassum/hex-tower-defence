@@ -265,9 +265,14 @@ function buildSquad(type, colors = {}, tuning = {}) {
   const up = new THREE.Vector3(0, 1, 0);
   const tilt = new THREE.Euler();
 
-  // Each person's own yaw, size and spear tilt, kept so the melee can move them
-  // without rebuilding any of it. `x/z` is where they stand in formation and
-  // `cx/cz` is where they actually are.
+  // Each person's own yaw, size, spear tilt, constitution and place in the line,
+  // kept so the melee can move them without rebuilding any of it. `x/z` is where
+  // they stand in formation and `cx/cz` is where they actually are.
+  //
+  // The entries are swapped between instances as men fall - a `count` culls the
+  // tail and cannot be told to skip a hole in the middle - so everything that
+  // makes one man himself has to live in here rather than being derived from the
+  // index he happens to be drawn at.
   const spots = [];
   // `yaw` is passed rather than read off the spot because a fight turns people:
   // in formation everyone points the way the unit does, and in a fight they
@@ -316,6 +321,14 @@ function buildSquad(type, colors = {}, tuning = {}) {
     spots.push({
       x: x + jx, z: z + jz, cx: x + jx, cz: z + jz, yaw, cyaw: yaw, s,
       tilt: new THREE.Euler((hashHex(i, 0, 31) - 0.5) * t, yaw, (hashHex(i, 0, 37) - 0.5) * t),
+      // Where he stands when the unit is fighting. It starts as the index and
+      // stops being it the first time somebody falls - see Unit._closeUp.
+      slot: i,
+      // What he can take, and how much of a blow lands on him. Both are small
+      // spreads either side of one, so a unit of fifteen is still worth fifteen
+      // and the four men on the line do not run out at the same instant.
+      hp: 0.62 + hashHex(i, 0, 41) * 0.76,
+      bite: 0.70 + hashHex(i, 0, 43) * 0.60,
     });
     write(i, x + jx, z + jz);
   }

@@ -98,6 +98,13 @@ Break one of these and something three files away goes subtly wrong.
   from the fact. There is no health bar over anything; `Health`/`HealthBar` in
   the engine stay unused on purpose. A unit with nobody left removes its own
   GameObject and every roster drops it via `onDied`.
+- **Hit points belong to a man, not to a unit.** Each entry in `spots` carries
+  `hp` and `bite`, spread either side of one so fifteen men are still worth
+  fifteen; damage lands on the front rank only. That is what makes the casualty
+  somebody who was fighting, and what stops the line emptying in the same place
+  every time. `count` culls the tail, so `Unit._fall` swaps the dead man's entry
+  to the end - everything that makes a man himself lives in his `spots` entry,
+  never in the instance index he is drawn at.
 - **Enemies are a unit type with `hostile` and a `stance`**, driven by
   `EnemyForce` and fought by `Battle` (adjacency → casualties, both directions,
   no turn). `'hold'` never moves and costs EnemyForce nothing - Battle fights
