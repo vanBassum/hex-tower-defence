@@ -3,14 +3,26 @@ import { CARD_TYPES } from '../cards.js';
 
 const key = (q, r) => `${q},${r}`;
 
-// The camp, and the hand of cards that can be played into it.
+// The hand, and the ground it can be played onto - which is wherever the Scout
+// is standing.
 //
-// Two things that look separate and are not: a card is *where* as much as it is
-// *what*. A reinforcement that could appear anywhere is a reinforcement with no
-// cost to being far from home, and the moment a card can only be played at camp,
-// walking away from camp is a decision - the cache you found on the far shore is
-// a card you have to come back to spend. So the zone and the hand are one
-// component, because neither of them means anything without the other.
+// A card is *where* as much as it is *what*. A reinforcement that can appear
+// anywhere is a reinforcement with no cost, and the first version of this fixed
+// that with a camp: four hexes on the shore, and everything played there. That
+// was a rule about a *place*, and it made the far end of the island tedious
+// rather than dangerous - the cost of finding something over there was a walk
+// home.
+//
+// It is a rule about a *unit* instead. A card is played on a tile next to a
+// Scout, so the deployment zone is wherever you have walked one, and the Scout
+// stops being the thing that sees furthest and becomes the thing the army
+// arrives behind. Everything follows from that in the direction you want: pushing
+// the Scout forward extends where you can reinforce and puts the one unit that
+// can do it in front; keeping it back is safe and slow. Nothing enforces any of
+// that - it falls out of one field on the unit type.
+//
+// The zone is therefore never stored. It is computed from the roster every time
+// it is asked, because it changes on every step anything takes.
 //
 // ── Playing a card is a mode, and selection is the other one ────────────────
 // Arming a card and having a unit selected are mutually exclusive, and they are
@@ -28,9 +40,8 @@ export class Deployment extends Component {
   constructor({
     grid,
     visibility,
-    control,               // the force a played card joins
+    control,               // the force a played card joins, and anchors the zone
     deploy,                // (unitType, q, r) => Unit
-    zone = [],             // the hexes a card may be played onto
     overlay = null,        // lights the playable hexes up while a card is armed
     onChange = null,       // () => void, whenever the hand or the arming changes
   } = {}) {
@@ -42,8 +53,6 @@ export class Deployment extends Component {
     this._overlay = overlay;
     this._onChange = onChange;
 
-    this.zone = zone.map(h => ({ q: h.q, r: h.r }));
-    this._zoneKeys = new Set(this.zone.map(h => key(h.q, h.r)));
     this.hand = [];        // [{ card, spent }]
     this.armed = null;     // the entry being placed, or null
   }
@@ -84,18 +93,17 @@ export class Deployment extends Component {
   // this component owns. It exists only while it is true - a hint that is always
   // up is furniture, and furniture is not read.
   get hint() {
-    if (this.armed) {
-      return this.openHexes().length
-        ? `Place the ${this.armed.card.name ?? this.armed.card.key} in the camp - Esc to cancel`
-        : 'No room in the camp - move something out of it first';
-    }
-    // An empty board is the opening, and the opening has to say what to do once.
-    // After that there is something standing on the island and the player has
-    // already done it.
-    if (this.playable && !(this._control?.units.length)) {
-      return 'Play a card into the camp to begin';
-    }
-    return '';
+    if (!this.armed) return '';
+    const name = this.armed.card.name ?? this.armed.card.key;
+    const anchors = this.anchors();
+    // Losing every anchor is a real end state rather than a guard: nothing can
+    // be brought in, and the cards in hand are worth nothing until something
+    // that can bring them is back on the board.
+    if (!anchors.length) return `Nothing on the board can bring the ${name} in`;
+    const beside = `beside the ${anchors[0].type.name}`;
+    return this.openHexes().length
+      ? `Place the ${name} ${beside} - Esc to cancel`
+      : `No room ${beside} - move it somewhere clearer`;
   }
 
   // ── Arming ───────────────────────────────────────────────────────────────
@@ -116,17 +124,35 @@ export class Deployment extends Component {
   }
 
   // ── Where a card may be played ───────────────────────────────────────────
-  // Inside the camp, on ground that is known, with nothing standing on it. The
-  // discovery check is not ceremony: camp goes dim when nobody is looking at it
-  // but it never goes unknown, so this only ever refuses a zone hex on a map
-  // where the camp has not been reached yet.
-  canPlace(q, r) {
-    if (!this._zoneKeys.has(key(q, r))) return false;
-    if (!this._visibility.isExplored(q, r)) return false;
-    return this._grid.isWalkable(q, r);
+  // Which units the force can bring somebody in beside. A property of the unit
+  // type rather than a list here, so a second kind of anchor is one field on a
+  // type and no change at all to this.
+  anchors() {
+    return (this._control?.units ?? []).filter(u => u.type.deployAnchor);
   }
 
-  openHexes() { return this.zone.filter(h => this.canPlace(h.q, h.r)); }
+  // Next to an anchor, on ground that is known, with nothing standing on it.
+  canPlace(q, r) {
+    if (!this._grid.isWalkable(q, r)) return false;
+    if (!this._visibility.isExplored(q, r)) return false;
+    return this.anchors().some(u => this._grid.hexDistance(u.q, u.r, q, r) === 1);
+  }
+
+  // Computed, never stored: the zone moves every time anything takes a step, and
+  // a cached copy of it would be one more thing to remember to invalidate on a
+  // board where units are the only thing that ever moves.
+  openHexes() {
+    const out = [], seen = new Set();
+    for (const u of this.anchors()) {
+      for (const n of this._grid.neighbors(u.q, u.r)) {
+        const k = key(n.q, n.r);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        if (this.canPlace(n.q, n.r)) out.push(n);
+      }
+    }
+    return out;
+  }
 
   // ── Input ────────────────────────────────────────────────────────────────
   // Each returns whether it consumed the click, so the force below only hears

@@ -16,6 +16,7 @@ const ELEV_FAR  = 1.30;           // ~75 deg at DIST_MAX
 const DIVE      = 0.65;
 
 const ZOOM_RATE = 0.0015;         // per wheel unit, applied exponentially
+const DRAG_SLOP = 5;              // px a press may wander before it is a drag
 const TILT_FREE = 0.30;           // rad the player may lean off the dive curve
 const SNAP      = Math.PI / 3;    // one hex face
 const SMOOTH    = 14;             // ease rate, per second
@@ -24,12 +25,29 @@ const PAN_SPEED = 12;             // keyboard only - the mouse pans in world uni
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Orbit/pan/zoom rig.
+//   right drag   rotate, and lean off the dive curve
 //   middle drag  pan, grabbing the ground point under the cursor
 //   wheel        zoom toward the cursor, diving as it closes in
-//   alt + drag   rotate, and lean off the dive curve
+//   alt + drag   rotate as well, for a mouse whose right button is spoken for
 //   Q / E        rotate one hex face at a time
 //   WASD/arrows  pan
-// The right button is deliberately unbound; it belongs to the game, not the camera.
+//
+// ── Sharing the right button with the game ──────────────────────────────────
+// The right button used to be unbound here on the grounds that it belongs to the
+// game: it is the order button. It is now split by *gesture* instead, which is
+// the one way two meanings can share a button without the player having to know
+// which mode they are in - a press is an order, a drag is a rotate, and nobody
+// has ever pressed a button meaning to drag it.
+//
+// The split is a distance, not a timer. `DRAG_SLOP` is how far the pointer may
+// wander before the press stops being a click, and until it is crossed nothing
+// has happened at all: the rotate does not begin, so an order given with a shaky
+// hand is still an order rather than a tenth of a degree of camera.
+//
+// `consumedRightPress` is how the game finds out. It is set the moment a press
+// becomes a drag and cleared on the next right press, which is the only
+// arrangement that works on both of the platform orderings - Chrome on Windows
+// sends `contextmenu` after `mouseup`, X11 sends it before.
 export class CameraRig extends Component {
   constructor({ dist = 24, azimuth = 0 } = {}) {
     super();
@@ -40,7 +58,11 @@ export class CameraRig extends Component {
     this._aziGo   = azimuth;
     this._tilt    = 0;            // offset from the dive curve
     this._keys    = {};
-    this._orbit   = null;
+    this._orbit   = null;         // {x, y, button} - a rotate in progress
+    this._press   = null;         // a right press that has not become one yet
+    // Whether the last right press turned into a drag. The game reads it to know
+    // whether the order that follows was meant.
+    this.consumedRightPress = false;
     this._pan     = null;         // {anchor} - world point held under the cursor
     this._zoomAt  = null;         // world point the wheel is pulling toward
 
@@ -72,14 +94,23 @@ export class CameraRig extends Component {
         if (anchor) this._pan = { anchor: anchor.clone() };
         e.preventDefault();       // else Chrome opens autoscroll
       } else if (e.button === 0 && e.altKey) {
-        this._orbit = { x: e.clientX, y: e.clientY };
+        this._orbit = { x: e.clientX, y: e.clientY, button: 0 };
         e.preventDefault();
+      } else if (e.button === 2) {
+        // Only a candidate. It is not a rotate until it has travelled, and it is
+        // deliberately not preventDefault-ed: the context menu is swallowed by
+        // whoever owns the order, on the one event that fires everywhere.
+        this._press = { x: e.clientX, y: e.clientY };
+        this.consumedRightPress = false;
       }
     });
 
     window.addEventListener('mouseup', (e) => {
       if (e.button === 1) this._pan = null;
-      if (e.button === 0) this._orbit = null;
+      if (e.button === 2) this._press = null;
+      // Whichever button started the rotate is the one that ends it, so a stray
+      // click of the other one does not drop a drag that is still in progress.
+      if (this._orbit && e.button === this._orbit.button) this._orbit = null;
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -93,7 +124,21 @@ export class CameraRig extends Component {
           this._target.z += this._pan.anchor.z - hit.z;
           this._apply();
         }
-      } else if (this._orbit) {
+        return;
+      }
+
+      // A right press becomes a rotate the moment it leaves the slop circle, and
+      // the rotate is anchored at where the press *started* rather than at where
+      // it crossed - otherwise the first frame of every drag throws away five
+      // pixels of movement and the camera lurches to catch up.
+      if (this._press && !this._orbit) {
+        const dx = e.clientX - this._press.x, dy = e.clientY - this._press.y;
+        if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+        this._orbit = { x: this._press.x, y: this._press.y, button: 2 };
+        this.consumedRightPress = true;
+      }
+
+      if (this._orbit) {
         this._azimuth -= (e.clientX - this._orbit.x) * 0.005;
         this._aziGo    = this._azimuth;
         this._tilt     = clamp(this._tilt + (e.clientY - this._orbit.y) * 0.004, -TILT_FREE, TILT_FREE);

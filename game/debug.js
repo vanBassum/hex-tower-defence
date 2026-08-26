@@ -10,12 +10,16 @@ import { GameObject } from '../engine/gameobject.js';
 // console. None of it is reachable from the game itself, so none of it needs to
 // survive into a build.
 export const DEBUG = {
-  // What the run is dealt before it begins. Nothing stands on the board at the
-  // first frame any more - the hand is where a run starts - so this is the whole
-  // of the starting loadout, and adding `'footman'` to it is how you play the
-  // second run without playing the first one.
-  startingHand: ['scout'],
+  // The Scout, before the game starts. It is always on the board: everything
+  // else is played onto a tile beside it, so a run without one is a run that can
+  // never field anything it finds.
+  scoutStart: { q: -3, r: 4 },
   scoutViewDistance: 2,
+
+  // What the run is dealt on top of it. Empty, because the first card is the one
+  // in the cache - putting `'footman'` here is how you play the second run
+  // without playing the first.
+  startingHand: [],
 
   fog: true,           // draw the fog layer at all
   showVision: false,   // ring the hexes the selected unit is lighting up

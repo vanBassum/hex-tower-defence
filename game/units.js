@@ -54,14 +54,22 @@ export const UNIT_TYPES = {
     formation: 'rings',
     jitter: 0.22,
     lamp: true,
+    // Reinforcements arrive next to it, and this one field is the whole of that
+    // rule. It is what turns the Scout from the unit that sees furthest into the
+    // unit the rest of the force depends on: where you have walked it is where
+    // anything you find can be brought in, so its position is a *commitment*
+    // rather than a viewpoint. Fielding a second one is fielding a second place
+    // the army can appear.
+    deployAnchor: true,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.scout, colors, tuning),
   },
 
   // The first thing the player finds, and the first unit that is not a Scout.
   //
-  // It sees one ring rather than two, which is the whole of its cost: walking
-  // the island with the Footmen in front is safer and slower to learn from, and
-  // that trade is the reason the Scout keeps a job after the escort arrives.
+  // It sees one ring rather than two, and that is only part of its cost. The
+  // rest is that it cannot bring anyone in - only a Scout anchors a deployment -
+  // so Footmen marched off on their own are Footmen with nothing behind them,
+  // and the Scout keeps a job long after the escort has arrived.
   // Everything else about them - what they hit, what they can take - waits for
   // combat, because a number written before there is anything to spend it on is
   // a number nobody has had to defend.

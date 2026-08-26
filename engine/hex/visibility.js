@@ -82,27 +82,6 @@ export class VisibilityMap {
     return changed;
   }
 
-  // Ground the player is taken to already know. The camp is the only thing that
-  // uses it and the reason is not a shortcut: a run now begins with nothing
-  // standing on the board, so a camp nobody can see is a camp nobody can deploy
-  // into, and the game would open unable to start. It is also simply true - you
-  // came ashore there.
-  //
-  // EXPLORED rather than VISIBLE, because nothing is looking at it yet. Which is
-  // the right reading anyway: at the first frame the camp is a place you know
-  // rather than a place you are watching.
-  reveal(hexes) {
-    let changed = false;
-    for (const h of hexes) {
-      const k = key(h.q, h.r);
-      if (this._state.get(k) !== HEX_VISIBILITY.UNEXPLORED) continue;
-      this._state.set(k, HEX_VISIBILITY.EXPLORED);
-      changed = true;
-    }
-    if (changed) for (const fn of this._listeners) fn(this);
-    return changed;
-  }
-
   // Debug: lift the whole map at once. Everything not currently in view is
   // EXPLORED rather than VISIBLE, so the two still read differently.
   revealAll() {

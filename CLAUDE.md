@@ -30,7 +30,7 @@ scene still builds.
       components/           camera, atmosphere, lights, terrain, water, fog, overlays
     game/                   this game: what is on the island and what plays on it
       main.js               composition root - every wire between components is here
-      maps.js               the level: outline, elevation, props, pickups, camp
+      maps.js               the level: outline, elevation, props, pickups
       mood.js               every colour and the one wind, in one place
       props.js / units.js / pickups.js / cards.js     what things are
       components/           prop_layer, unit, unit_control, pickup, deployment
@@ -67,10 +67,14 @@ Break one of these and something three files away goes subtly wrong.
 - **Vision is the union over the force**, recomputed from a source list in
   `UnitControl.refreshVision`. A unit that owned its own fog would un-see a hex
   two units were both standing next to.
-- **A run opens with nothing on the board.** Every unit arrives the same way: a
-  card played into the camp. The Scout is not special - it is just the card the
-  player already owns (`DEBUG.startingHand`). The camp and one ring around it are
-  seeded EXPLORED at setup, because a camp nobody can see cannot be deployed into.
+- **Cards are played beside a Scout, not in a fixed zone.** `deployAnchor: true`
+  on a unit type is the whole rule; `Deployment.anchors()` filters the roster by
+  it and the zone is recomputed on every ask, because it moves whenever anything
+  steps. No Scout on the board means nothing can be brought in - that is the
+  point, not a bug.
+- **The right button is shared by gesture.** A press is an order, a drag past
+  `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
+  learns which happened, and `main.js` throws the order away when it was a drag.
 - **Gameplay is discrete, drawing is not.** Rules run on hexes; the hexagon is
   thrown away in `VisibilityField` (hexes → texture → blur → opacity).
 
@@ -82,6 +86,7 @@ Break one of these and something three files away goes subtly wrong.
 | A prop | `game/props.js` `PROP_TYPES`, then place it in `maps.js` |
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
 | A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js` |
+| A unit others deploy beside | `deployAnchor: true` on its type |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
 | A wire between components | `game/main.js`, never inside either component |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |

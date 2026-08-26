@@ -20,13 +20,12 @@ import { Unit } from './components/unit.js';
 import { UnitControl } from './components/unit_control.js';
 import { Pickup } from './components/pickup.js';
 import { Deployment } from './components/deployment.js';
-import { HexRegionOutline } from '../engine/components/hex_region_outline.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
-// The world, and what plays on it: a camp, a hand of cards, and a map that has
-// to be walked to be seen. A run opens with nothing standing on the island - the
-// Scout is a card like any other, it just happens to be the one you already own.
+// The world, and what plays on it: a Scout, a hand of cards, and a map that has
+// to be walked to be seen. Everything the player finds is played onto a tile
+// beside the Scout, so where it is standing is where the army can arrive.
 //
 // The tower defence layer that used to live here is gone - towers, waves, an
 // economy, lives, a route across the island. What is on top of the world now is
@@ -189,40 +188,19 @@ const fog = fogGO.addComponent(new FogOfWar(map.grid, visibility, {
 }));
 game.add(fogGO);
 
-// The camp: the ground a card may be played onto, and the only place on the
-// board that belongs to the player before they have walked anywhere.
-//
-// It is drawn twice, because it answers two questions that are not asked at the
-// same time. The rim is always there and says *where home is*; it is a line on
-// the ground, which is exactly the kind of thing this board refuses to use as a
-// highlight - but a boundary is what a line is *for*, and it is dim enough to
-// read as a mark on the grass rather than as a shape laid over it. The three
-// stakes standing outside it in the prop list are the other half of that: a rim
-// vanishes when the camera drops to look along it, and something with height
-// does not.
-// The camp and the ground around it are the one part of the island a run starts
-// knowing. That is not a courtesy: nothing stands on the board at the first
-// frame any more, and a camp nobody can see is a camp nobody can deploy into -
-// the game would open unable to start. One ring out as well as the camp itself,
-// so the stakes marking it are standing in the light rather than in the bank,
-// which is the frame the whole opening rests on.
-{
-  const known = new Map();
-  for (const h of map.deployment) {
-    known.set(`${h.q},${h.r}`, h);
-    for (const n of map.grid.neighbors(h.q, h.r)) known.set(`${n.q},${n.r}`, n);
-  }
-  visibility.reveal([...known.values()]);
-}
-
-const campGO = new GameObject('Camp');
-campGO.addComponent(new HexRegionOutline(map.grid, map.deployment, {
-  color: MOOD.camp.rimColor,
-  opacity: MOOD.camp.rimOpacity,
-  y: 0.02,
-  heightAt: (q, r) => hexGround.topY(q, r),
+// The Scout. It is on the board from the first frame and a run cannot begin
+// without one, because it is what everything else arrives beside.
+const scoutGO = new GameObject('Scout');
+const scout = scoutGO.addComponent(new Unit({
+  grid: map.grid,
+  ground: hexGround,
+  type: 'scout',
+  q: DEBUG.scoutStart.q, r: DEBUG.scoutStart.r,
+  viewDistance: DEBUG.scoutViewDistance,
+  colors: MOOD.units,
+  tuning: { lamp: MOOD.scoutLamp },
 }));
-game.add(campGO);
+game.add(scoutGO);
 
 // What is out there to be found. One cache of somebody's colours on the small
 // hill east of the start, and the first thing on this board that is neither
@@ -297,9 +275,7 @@ const control = forceGO.addComponent(new UnitControl({
   grid: map.grid,
   ground: hexGround,
   visibility,
-  // No units. A run's opening roster is whatever it plays out of its hand, and
-  // the alternative - one unit placed here and every other unit deployed - was a
-  // special case pretending to be a starting position.
+  units: [scout],
   // Collecting is the join between the roster and the board, and this is the one
   // component that holds both halves of it.
   pickups,
@@ -311,8 +287,14 @@ const control = forceGO.addComponent(new UnitControl({
 // more light rather than having a hexagon painted on it - and it is off the rest
 // of the time, because "where may this go" is not a question anybody is asking
 // until they are holding something.
+//
+// It is the *only* drawing of the deployment zone now. There was a rim around a
+// fixed camp as well, always on, saying where home was; a zone that follows the
+// Scout has no home to point at, and a ring drawn permanently around a unit that
+// already has a lamp and a selection ring is the third thing competing to
+// describe the same tile.
 const placeOverlay = forceGO.addComponent(new HexOverlay(map.grid, [], {
-  color: MOOD.camp.placeColor, opacity: MOOD.camp.placeOpacity, y: 0.04, additive: true,
+  color: MOOD.deploy.color, opacity: MOOD.deploy.opacity, y: 0.04, additive: true,
   heightAt: (q, r) => hexGround.topY(q, r),
 }));
 
@@ -326,13 +308,12 @@ const cardBar = new CardBar({
 
 // The hand, and the ground it can be played onto. It goes on the same GameObject
 // as the force because it *is* the force - the part of it not standing on the
-// board yet.
+// board yet - and it reads the roster to know where the board will accept it.
 const deployment = forceGO.addComponent(new Deployment({
   grid: map.grid,
   visibility,
   control,
   deploy,
-  zone: map.deployment,
   overlay: placeOverlay,
   onChange: () => cardBar.update(deployment),
 }));
@@ -347,9 +328,9 @@ control.onSelect = () => deployment.cancel();
 
 game.add(forceGO);
 
-// What the run is dealt. Today it is one Scout, because that is what the player
-// owns; when a run can be lost this is where the collection is spent instead,
-// and it is still this call.
+// What the run is dealt on top of the Scout already standing on the board.
+// Empty today - the first card comes out of the cache - and when a run can be
+// lost this is where a collection is spent instead, still through this call.
 for (const card of DEBUG.startingHand) deployment.addCard(card);
 
 
@@ -372,19 +353,20 @@ cursor.addComponent(new HexPicker({
   ground: hexGround,
   onHover: (hex) => { deployment.handleHover(hex); control.handleHover(hex); },
   onPick:  (hex) => { if (!deployment.handlePick(hex)) control.handlePick(hex); },
-  onOrder: (hex) => { if (!deployment.handleOrder(hex)) control.handleOrder(hex); },
+  // A right *drag* is the camera's rotate and a right *press* is the order, and
+  // the rig is the one that knows which just happened - so an order that arrives
+  // at the end of a drag is thrown away here rather than in either component.
+  onOrder: (hex) => {
+    if (rig.consumedRightPress) return;
+    if (!deployment.handleOrder(hex)) control.handleOrder(hex);
+  },
 }));
 game.add(cursor);
 
-// Open looking at the camp - the only thing there is to look at, and the only
-// place anything can be put. The middle of the board is fog.
+// Open looking at the Scout rather than at the middle of a board that is almost
+// entirely hidden.
 {
-  let x = 0, z = 0;
-  for (const h of map.deployment) {
-    const w = map.grid.hexToWorld(h.q, h.r);
-    x += w.x / map.deployment.length;
-    z += w.z / map.deployment.length;
-  }
+  const { x, z } = map.grid.hexToWorld(scout.q, scout.r);
   rig.focusOn(x, z);
 }
 
@@ -430,7 +412,7 @@ game.add(motes);
 //
 // The fog is deliberately not in this list: it is the one thing in the scene that
 // is *about* the unknown rather than subject to it.
-for (const go of [groundGO, sea, propsGO, gridGO, campGO, motes, ...pickupGOs]) field.patch(go.object3D);
+for (const go of [groundGO, sea, propsGO, gridGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
 
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
