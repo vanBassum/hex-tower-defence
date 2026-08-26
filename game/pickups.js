@@ -30,12 +30,13 @@ const DEFAULT_COLORS = {
 };
 
 export const PICKUP_TYPES = {
-  // The first one, and for now the only one. What it grants is a card in every
-  // sense the game can currently express: a unit type the player did not have.
+  // The first one, and for now the only one. What it grants is a card - not the
+  // unit itself: the Footmen it names are played at camp, so the cache is worth
+  // the walk out *and* the walk back.
   cache: {
     key: 'cache',
     name: 'Abandoned colours',
-    grants: { unit: 'footman' },
+    grants: { card: 'footman' },
     build: (colors, tuning) => buildCache(colors, tuning),
   },
 };

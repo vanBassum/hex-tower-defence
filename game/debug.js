@@ -20,7 +20,7 @@ export const DEBUG = {
 
 const VISION_COLOR = 0xffc07a;
 
-export function installDebug({ game, grid, ground, rig, fog, field, control, visibility, spawn = null, pickups = [] }) {
+export function installDebug({ game, grid, ground, rig, fog, field, control, visibility, spawn = null, pickups = [], deployment = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -51,11 +51,18 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
 
   const api = {
     DEBUG,
-    game, grid, fog, field, control, visibility,
+    game, grid, ground, fog, field, control, visibility,
     // What is on the board to be found, so a reward can be taken without walking
     // to it: `hex.pickups[0].collect()`. It grants exactly what standing on it
     // would, because the pickup calls the same hook either way.
     pickups,
+    deployment,
+
+    // A card in hand without finding the thing that carries it. The one knob
+    // this milestone actually needs tried: whether a card is worth walking back
+    // to camp for depends entirely on how far camp is, and answering that by
+    // walking to the cache every time is answering it twice a minute.
+    card(key = 'footman') { return deployment?.addCard(key) ?? null; },
 
     // Both halves at once. The mist is only the visible half now - the world
     // hides itself off the same field - so a switch that lifted the sheet and

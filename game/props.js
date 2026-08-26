@@ -31,6 +31,11 @@ const DEFAULT_COLORS = {
   rock:     0x7d838b,
   lantern:  0x2f2921,
   lanternGlow: 0xffc074,
+  // Pale rather than warm, and that is the whole reason it works: the level
+  // already spends amber on lanterns and on the cache, so a third warm thing
+  // would read as a fourth lamp. A bone-coloured pennant is the brightest cloth
+  // on a dusk island without being a light.
+  pennant:  0xc9bda3,
 };
 
 export function createPropMaterials(colors = {}) {
@@ -44,6 +49,7 @@ export function createPropMaterials(colors = {}) {
     blade:    lambert(c.blade),
     rock:     lambert(c.rock),
     lantern:  lambert(c.lantern),
+    pennant:  new THREE.MeshLambertMaterial({ color: c.pennant, flatShading: true, side: THREE.DoubleSide }),
     // Unlit on purpose. A flame is a light source, so it should not get dimmer
     // when the world does - it has to stay the brightest thing in frame, which is
     // the whole reason the eye goes to it.
@@ -212,6 +218,46 @@ function buildLantern(mats, height, { lanternLight } = {}) {
   return group;
 }
 
+// A stake with a pennant on it: the cheapest object that says somebody claimed
+// this ground. It is not a lantern and deliberately carries no light - the camp
+// is marked, not lit, and a fourth pool of amber on this board would say a
+// fourth family lives here.
+//
+// The pennant is two triangles' worth of one, double-sided, and it is the only
+// part that matters: a bare post is a stick, and a post with a rag on it is a
+// boundary.
+function buildStake(mats, height) {
+  const group = new THREE.Group();
+
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(height * 0.022, height * 0.035, height, 5),
+    mats.lantern,
+  );
+  post.position.y = height * 0.5;
+  group.add(post);
+
+  // A pennant, hanging off the top and tapering to a point. Flown along local
+  // +X; PropLayer leaves the yaw it was built with alone, so which way it points
+  // is the hex's own hash and a row of them does not line up.
+  const w = height * 0.34, h = height * 0.2;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, 0, 0,
+    0, -h, 0,
+    w, -h * 0.42, 0,
+  ], 3));
+  geo.computeVertexNormals();
+  const flag = new THREE.Mesh(geo, mats.pennant);
+  flag.position.set(height * 0.03, height * 0.94, 0);
+  group.add(flag);
+
+  const cap = new THREE.Mesh(new THREE.OctahedronGeometry(height * 0.04, 0), mats.rock);
+  cap.position.y = height * 1.01;
+  group.add(cap);
+
+  return group;
+}
+
 function buildRock(mats, size) {
   const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), mats.rock);
   // Squashed and slightly sunk, so it sits like a boulder rather than floating
@@ -251,6 +297,15 @@ export const PROP_TYPES = {
   rock: {
     key: 'rock',
     build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.085 + n * 0.038)),   // ~0.17 to ~0.25 radius
+  },
+  // Taller than a person and thinner than everything else, so it reads at a
+  // distance without taking any room. It sways more than a tree does: a light
+  // post with a rag on it is the thing on this board a breeze would actually
+  // move.
+  stake: {
+    key: 'stake',
+    sway: 0.055,
+    build: (mats, n) => buildStake(mats, HEX_WIDTH * (0.19 + n * 0.03)),   // ~0.38 to ~0.44 tall
   },
   lantern: {
     key: 'lantern',

@@ -242,6 +242,27 @@ export const MOOD = {
 
     lantern: 0x27211c,
     lanternGlow: 0xff8f33,
+
+    // The camp's pennants. Pale, not warm: the amber on this board is spoken
+    // for, and cloth that is merely light reads as cloth rather than as a
+    // fourth lamp somebody left burning.
+    pennant: 0xbdb096,
+  },
+
+  // The camp itself, which is drawn twice for two different questions. The rim
+  // is always there and answers "where is home" at a glance - warm and dim,
+  // because it is a line on the ground and a line on the ground competing with
+  // the tile edges is a line nobody can read the terrain through. The overlay
+  // only appears while a card is armed, and answers "where may this go", so it
+  // is allowed to be the brightest thing on the board for the second it is up.
+  //
+  // Both are the treatment the route preview settled on: additive, so a hex
+  // catches a little more light rather than having a shape painted onto it.
+  camp: {
+    rimColor: 0xd8a56a,
+    rimOpacity: 0.5,
+    placeColor: 0xffc98a,
+    placeOpacity: 0.16,
   },
 
   // Deeper orange, and brighter to match. Green grass subtracts red from any

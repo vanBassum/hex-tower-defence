@@ -19,6 +19,9 @@ import { PropLayer } from './components/prop_layer.js';
 import { Unit } from './components/unit.js';
 import { UnitControl } from './components/unit_control.js';
 import { Pickup } from './components/pickup.js';
+import { Deployment } from './components/deployment.js';
+import { HexRegionOutline } from '../engine/components/hex_region_outline.js';
+import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
 // The world, and the first thing that plays on it: a scout, and a map it has to
@@ -197,6 +200,26 @@ const scout = scoutGO.addComponent(new Unit({
 }));
 game.add(scoutGO);
 
+// The camp: the ground a card may be played onto, and the only place on the
+// board that belongs to the player before they have walked anywhere.
+//
+// It is drawn twice, because it answers two questions that are not asked at the
+// same time. The rim is always there and says *where home is*; it is a line on
+// the ground, which is exactly the kind of thing this board refuses to use as a
+// highlight - but a boundary is what a line is *for*, and it is dim enough to
+// read as a mark on the grass rather than as a shape laid over it. The three
+// stakes standing outside it in the prop list are the other half of that: a rim
+// vanishes when the camera drops to look along it, and something with height
+// does not.
+const campGO = new GameObject('Camp');
+campGO.addComponent(new HexRegionOutline(map.grid, map.deployment, {
+  color: MOOD.camp.rimColor,
+  opacity: MOOD.camp.rimOpacity,
+  y: 0.02,
+  heightAt: (q, r) => hexGround.topY(q, r),
+}));
+game.add(campGO);
+
 // What is out there to be found. One cache of somebody's colours on the small
 // hill east of the start, and the first thing on this board that is neither
 // terrain nor the player: walk onto it and the Footmen it belonged to join the
@@ -274,10 +297,50 @@ const control = forceGO.addComponent(new UnitControl({
   // Collecting is the join between the roster and the board, and this is the one
   // component that holds both halves of it.
   pickups,
-  deploy,
   pathOverlay,
 }));
+
+// Where a card may be played, lit up only while one is armed. It is the route
+// preview's treatment at a slightly higher strength - additive, so a tile catches
+// more light rather than having a hexagon painted on it - and it is off the rest
+// of the time, because "where may this go" is not a question anybody is asking
+// until they are holding something.
+const placeOverlay = forceGO.addComponent(new HexOverlay(map.grid, [], {
+  color: MOOD.camp.placeColor, opacity: MOOD.camp.placeOpacity, y: 0.04, additive: true,
+  heightAt: (q, r) => hexGround.topY(q, r),
+}));
+
+// The hand along the bottom of the screen. The only piece of the game that is
+// not the world, and it holds no state: it is handed the deployment and paints
+// what it finds, so there is one account of what the player has.
+const cardBar = new CardBar({
+  root: document.getElementById('hand'),
+  onArm: (entry) => deployment.arm(entry),
+});
+
+// The hand, and the ground it can be played onto. It goes on the same GameObject
+// as the force because it *is* the force - the part of it not standing on the
+// board yet.
+const deployment = forceGO.addComponent(new Deployment({
+  grid: map.grid,
+  visibility,
+  control,
+  deploy,
+  zone: map.deployment,
+  overlay: placeOverlay,
+  onChange: () => cardBar.update(deployment),
+}));
+
+// The two wires between the force and the camp, tied here rather than inside
+// either of them: what a pickup grants becomes a card, and picking a unit off
+// the board puts an armed card back down. Neither component has to know the
+// other exists in order to say so, which is the only reason the pickup does not
+// have to be taught what a card is.
+control.onGrant = (grants) => { if (grants.card) deployment.addCard(grants.card); };
+control.onSelect = () => deployment.cancel();
+
 game.add(forceGO);
+
 
 // A cursor on the hex under the mouse, and now three things asking what the mouse
 // means. The picker still knows nothing about any of them: it reports a hex and
@@ -288,12 +351,17 @@ const cursor = new GameObject('Cursor');
 cursor.addComponent(new HexOverlay(map.grid, [], {
   color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
 }));
+// The camp gets first refusal on every click and the force gets what is left.
+// That order is the mode: while a card is armed the left button is placing it
+// and nothing else, and the moment it is not armed the picker's callbacks reach
+// the force unchanged. The picker itself still knows about none of this - it
+// reports a hex, and what a hex means is decided here.
 cursor.addComponent(new HexPicker({
   grid: map.grid,
   ground: hexGround,
-  onHover: (hex) => control.handleHover(hex),
-  onPick:  (hex) => control.handlePick(hex),
-  onOrder: (hex) => control.handleOrder(hex),
+  onHover: (hex) => { deployment.handleHover(hex); control.handleHover(hex); },
+  onPick:  (hex) => { if (!deployment.handlePick(hex)) control.handlePick(hex); },
+  onOrder: (hex) => { if (!deployment.handleOrder(hex)) control.handleOrder(hex); },
 }));
 game.add(cursor);
 
@@ -346,14 +414,14 @@ game.add(motes);
 //
 // The fog is deliberately not in this list: it is the one thing in the scene that
 // is *about* the unknown rather than subject to it.
-for (const go of [groundGO, sea, propsGO, gridGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
+for (const go of [groundGO, sea, propsGO, gridGO, campGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
 
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
 // far a scout sees is a number that has to be tried, not a feature.
 installDebug({
   game, grid: map.grid, ground: hexGround, rig, fog, field, control, visibility,
-  pickups,
+  pickups, deployment,
   // How a unit gets built, handed over rather than rebuilt in the debug module -
   // it is the same call a collected pickup goes through.
   spawn: deploy,

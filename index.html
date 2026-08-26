@@ -45,6 +45,111 @@
       background: rgba(143, 216, 232, 0.10);
       border: 1px solid rgba(143, 216, 232, 0.18);
     }
+
+    /* The hand. Bottom centre, because that is where a hand of cards is, and
+       because the middle of the bottom edge is the one place a wide board can
+       spare - the island is looked at from above and the camera keeps it in the
+       upper two thirds.
+
+       It is warm where the rest of the interface is cool. Every other piece of
+       chrome on this page borrows the sky's blue on purpose; a card is a thing
+       the player *found*, and the level already spent warm light to mean that. */
+    #hand {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      user-select: none;
+      transition: opacity 260ms ease, transform 260ms ease;
+    }
+    /* Nothing to say before the first card is found. */
+    #hand.is-empty {
+      opacity: 0;
+      transform: translateX(-50%) translateY(14px);
+      pointer-events: none;
+    }
+
+    .hand-hint {
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      color: #e6c79a;
+      opacity: 0;
+      transition: opacity 200ms ease;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+    }
+    .hand-hint.is-on { opacity: 0.85; }
+
+    .hand-cards { display: flex; gap: 10px; align-items: flex-end; }
+
+    .card {
+      /* Grid rather than flow, so the note can stretch and the name and the
+         footer stay pinned - fifteen words on one card must not make the card
+         next to it a different height. */
+      display: grid;
+      grid-template-rows: 44px auto 1fr auto;
+      gap: 6px;
+      width: 122px;
+      padding: 11px 11px 9px;
+      border-radius: 9px;
+      background: linear-gradient(180deg, rgba(30, 27, 24, 0.88), rgba(16, 20, 30, 0.92));
+      border: 1px solid rgba(224, 160, 92, 0.28);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+      color: #d8c3a6;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      animation: card-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .card:hover:not(:disabled) { transform: translateY(-4px); border-color: rgba(240, 180, 108, 0.5); }
+    .card:focus-visible { outline: 1px solid rgba(240, 180, 108, 0.7); outline-offset: 2px; }
+
+    /* Armed reads as *picked out of the hand*: lifted, warm, and lit. It has to
+       survive being looked at while the eye is on the board, so it is the lift
+       that carries it rather than the colour. */
+    .card.is-armed {
+      transform: translateY(-12px);
+      border-color: rgba(255, 190, 118, 0.85);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 22px rgba(255, 160, 70, 0.28);
+    }
+
+    .card.is-spent {
+      opacity: 0.34;
+      cursor: default;
+      filter: grayscale(0.7);
+      transform: none;
+      box-shadow: none;
+    }
+
+    .card-art {
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: rgba(8, 12, 20, 0.55);
+      color: #b9c6d6;
+    }
+    .card-art svg { width: 46px; height: 30px; }
+
+    .card-name { font-size: 13px; color: #f0dcc0; letter-spacing: 0.01em; }
+    .card-note { font-size: 10.5px; line-height: 1.35; color: #9d9382; }
+    .card-state {
+      font-size: 10px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: #e0a05c;
+      padding-top: 5px;
+      border-top: 1px solid rgba(224, 160, 92, 0.16);
+    }
+    .card.is-spent .card-state { color: #8b8478; }
+
+    @keyframes card-in {
+      from { opacity: 0; transform: translateY(26px) scale(0.94); }
+      to   { opacity: 1; transform: none; }
+    }
   </style>
   <script type="importmap">
   {
@@ -64,6 +169,7 @@
     <kbd>Alt + drag</kbd><span>Rotate</span>
     <kbd>Q / E</kbd><span>Turn a hex face</span>
   </div>
+  <div id="hand" class="is-empty"></div>
   <script type="module" src="game/main.js"></script>
 </body>
 </html>

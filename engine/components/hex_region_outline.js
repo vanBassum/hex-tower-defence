@@ -9,7 +9,17 @@ import { Component } from '../gameobject.js';
 // That needs no corner-to-neighbour mapping, which is the part that is easy to
 // get subtly wrong on a hex grid.
 export class HexRegionOutline extends Component {
-  constructor(grid, hexes, { color = 0x6b5836, opacity = 0.85, y = 0.01, lineWidth = 1 } = {}) {
+  // `heightAt`, when given, makes `y` a lift above each tile's own surface
+  // rather than one height for the whole region - the same reason HexOverlay
+  // takes one. A border is drawn on the ground, and ground that is not flat
+  // takes a border drawn at one height and buries half of it.
+  //
+  // A boundary edge belongs to exactly one hex, which is what makes this well
+  // defined: the height is that hex's, so a rim running along the foot of a
+  // slope stays on the low side rather than splitting the difference.
+  constructor(grid, hexes, {
+    color = 0x6b5836, opacity = 0.85, y = 0.01, lineWidth = 1, heightAt = null,
+  } = {}) {
     super();
     this._grid    = grid;
     this._hexes   = hexes;
@@ -17,6 +27,7 @@ export class HexRegionOutline extends Component {
     this._opacity = opacity;
     this._y       = y;
     this._lineWidth = lineWidth;
+    this._heightAt = heightAt;
   }
 
   start() {
@@ -26,6 +37,7 @@ export class HexRegionOutline extends Component {
 
     for (const { q, r } of this._hexes) {
       const corners = this._grid.hexCorners(q, r);
+      const y = (this._heightAt ? this._heightAt(q, r) : 0) + this._y;
       for (let i = 0; i < 6; i++) {
         const a = corners[i], b = corners[(i + 1) % 6];
         const ka = key(a), kb = key(b);
@@ -33,14 +45,14 @@ export class HexRegionOutline extends Component {
         const k = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
         const seen = counts.get(k);
         if (seen) seen.n++;
-        else counts.set(k, { n: 1, a, b });
+        else counts.set(k, { n: 1, a, b, y });
       }
     }
 
     const pos = [];
-    for (const { n, a, b } of counts.values()) {
+    for (const { n, a, b, y } of counts.values()) {
       if (n !== 1) continue;
-      pos.push(a.x, this._y, a.z, b.x, this._y, b.z);
+      pos.push(a.x, y, a.z, b.x, y, b.z);
     }
     this.segmentCount = pos.length / 6;
 

@@ -107,6 +107,37 @@ export const MAP_1 = {
     { type: 'lantern', q:  2, r: -1, spread: 0.2 },   // the promontory, inside the corner
     { type: 'lantern', q:  2, r:  1, spread: 0.2 },   // the east flank
     { type: 'lantern', q:  2, r:  3, spread: 0.2 },   // the southern headland
+
+    // Stakes standing just *outside* the camp, one on each approach. The camp's
+    // own rim is painted on the ground and a line on the ground disappears the
+    // moment the camera drops to look along it - the same reason the mist could
+    // never be the thing that hid the board. Something with height is what makes
+    // the place readable from every angle the rig allows.
+    //
+    // Outside rather than inside because a formation fills most of its tile:
+    // anything standing on a deployment hex is something fifteen people will be
+    // drawn straight through.
+    { type: 'stake', q: -4, r:  4, spread: 0.25 },   // the north-west approach
+    { type: 'stake', q: -2, r:  3, spread: 0.25 },   // the north-east approach
+    { type: 'stake', q: -3, r:  6, spread: 0.25 },   // the shore side
+  ],
+
+  // Where the force comes ashore, and the only ground a card may be played onto.
+  //
+  // Four hexes on the south-west shore, around the tile the Scout starts on. It
+  // is small on purpose. A deployment zone is a *place* - the thing that makes
+  // walking away from it cost something, so that the cache found on the far
+  // shore is a card you have to come back to spend - and a zone covering a
+  // tenth of the island is a rule with nothing behind it.
+  //
+  // It is also where the run begins, which is why the Scout's starting hex is
+  // in it rather than beside it: the camp is the answer to "where did we come
+  // from", and a camp nobody has ever stood in is a spawn point.
+  deployment: [
+    { q: -3, r: 4 },
+    { q: -3, r: 5 },
+    { q: -4, r: 5 },
+    { q: -2, r: 4 },
   ],
 
   // What is out there to be found. One cache, and where it sits is the whole of
@@ -160,6 +191,13 @@ export function buildMap(def) {
       throw new Error(`Map "${def.name}": ${p.type} pickup cannot be reached at ${p.q},${p.r}`);
     }
   }
+  // A deployment hex has to be somewhere a unit can stand, for the same reason
+  // and more sharply: a card played onto solid rock is a card destroyed.
+  for (const d of def.deployment ?? []) {
+    if (!grid.inBounds(d.q, d.r) || blockedKeys.has(`${d.q},${d.r}`)) {
+      throw new Error(`Map "${def.name}": nothing can be deployed at ${d.q},${d.r}`);
+    }
+  }
 
   checkConnected(def, grid, hexes?.[0] ?? { q: 0, r: 0 });
 
@@ -175,6 +213,7 @@ export function buildMap(def) {
     waterLevel: def.waterLevel ?? -1,
     props: def.props ?? [],
     pickups: def.pickups ?? [],
+    deployment: def.deployment ?? [],
     scatter: buildScatter(def, grid, new Set([
       ...blockedKeys,
       ...(def.props ?? []).map(p => `${p.q},${p.r}`),
@@ -182,6 +221,10 @@ export function buildMap(def) {
       // the board the player is meant to pick out of the dark, and a tuft of
       // grass drawn over its foot is the composition arguing with itself.
       ...(def.pickups ?? []).map(p => `${p.q},${p.r}`),
+      // The camp is trodden ground. Nothing about the scatter knows that a
+      // formation is going to be standing here, and a tuft growing up through
+      // fifteen people is the one place the decoration is certain to be wrong.
+      ...(def.deployment ?? []).map(d => `${d.q},${d.r}`),
     ])),
   };
 }

@@ -19,6 +19,11 @@ const key = (q, r) => `${q},${r}`;
 // standing. Nothing else in the scene knows both, and a component that did would
 // be a third list to keep in step with these two.
 //
+// What a pickup *contains* is somebody else's problem. This reports the grant
+// and stops there, because where a card goes and where it may be played are the
+// camp's business - see Deployment. The rule that keeps the two apart is that a
+// pickup is an event on the board and a card is not on the board at all.
+//
 // ── The two buttons ─────────────────────────────────────────────────────────
 // Left selects and deselects. Right orders a move. They are separate because
 // they answer different questions, and one button doing both is what forces the
@@ -42,7 +47,8 @@ export class UnitControl extends Component {
     visibility,
     units = [],
     pickups = [],          // what is out there to be found
-    deploy = null,         // (type, q, r) => Unit, how a card becomes a unit
+    onGrant = null,        // (grants, pickup) => void, when one has been taken
+    onSelect = null,       // (unit | null) => void, so a mode elsewhere can end
     pathOverlay  = null,   // the route it would take to the hovered hex
   } = {}) {
     super();
@@ -56,7 +62,8 @@ export class UnitControl extends Component {
     this._unknown = null;         // lazily built set of "q,r" nobody has seen
     this._hover = null;
     this._pathOverlay = pathOverlay;
-    this._deploy = deploy;
+    this.onGrant = onGrant;
+    this.onSelect = onSelect;
     this._pending = units;
     this._pendingPickups = pickups;
   }
@@ -127,6 +134,10 @@ export class UnitControl extends Component {
     this.selected?.setSelected(false);
     this.selected = unit;
     unit?.setSelected(true);
+    // Having a unit picked up and having a card picked up are two modes, and
+    // this is one of the two lines that keep them from both being true. The
+    // other is in Deployment.arm.
+    if (unit) this.onSelect?.(unit);
     this._refreshPath();
   }
 
@@ -187,47 +198,12 @@ export class UnitControl extends Component {
     }
   }
 
-  // What was in it. Today a card *is* a unit and it joins on the spot, because
-  // there is no run boundary yet for it to be kept across and a card put in a
-  // collection nobody can deploy from is a card the player never sees. When
-  // deployment exists this becomes two steps - the collection gains a card, and
-  // the deployment screen spends it - and the only line that moves is this one.
+  // What was in it goes out as a grant and nothing here acts on it. The unit it
+  // names does *not* appear where the cache stood: a card is played at camp, so
+  // finding something on the far shore is a walk back as well as a walk out, and
+  // that is the whole reason the deployment zone is a place rather than a rule.
   _claim(pickup) {
-    const grants = pickup.type.grants;
-    if (!grants?.unit || !this._deploy) return;
-
-    const spot = this._freeHexNear(pickup.q, pickup.r);
-    if (!spot) return;   // nowhere to stand: the island is full, which it is not
-
-    const unit = this._deploy(grants.unit, spot.q, spot.r);
-    if (!unit) return;
-    this.add(unit);
-    this.refreshVision();
-    this._refreshPath();
-  }
-
-  // Somewhere for the new unit to stand: the nearest hex that is on the board,
-  // unoccupied and already discovered, searched outward from the pickup. The
-  // pickup's own tile is normally taken by whoever just walked onto it, and the
-  // reinforcement turning up on the tile *next* to the colours is the reading we
-  // want anyway - they came from somewhere.
-  _freeHexNear(q, r) {
-    const seen = new Set([key(q, r)]);
-    let frontier = [{ q, r }];
-    for (let ring = 0; ring < 6 && frontier.length; ring++) {
-      const next = [];
-      for (const h of frontier) {
-        if (this._grid.isWalkable(h.q, h.r) && this._visibility.isExplored(h.q, h.r)) return h;
-        for (const n of this._grid.neighbors(h.q, h.r)) {
-          const k = key(n.q, n.r);
-          if (seen.has(k)) continue;
-          seen.add(k);
-          next.push(n);
-        }
-      }
-      frontier = next;
-    }
-    return null;
+    if (pickup.type.grants) this.onGrant?.(pickup.type.grants, pickup);
   }
 
   // The union of every unit's view. The fog never learns that a Scout exists.
