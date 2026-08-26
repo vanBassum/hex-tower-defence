@@ -81,6 +81,31 @@ export class HexGrid {
     }
   }
 
+  // Every hex within `n` steps of (q, r), the centre included. Vision, a blast
+  // radius and a move range are all the same question, so it is the grid's to
+  // answer rather than each caller's - and it is asked in hex steps, because a
+  // world-space radius on a hex grid gives a different shape depending on which
+  // way the ring runs.
+  //
+  // It yields hexes inside the *envelope* rather than inside the board, because
+  // the sea is drawn and is not playable: fog has to be able to lift off a
+  // stretch of water, and a coastline you cannot discover is a coastline the
+  // map has already told you about. Pass `playableOnly` when the answer has to
+  // be somewhere a unit could stand.
+  *hexesInRange(q, r, n, { playableOnly = false } = {}) {
+    for (let dq = -n; dq <= n; dq++) {
+      const lo = Math.max(-n, -dq - n);
+      const hi = Math.min( n, -dq + n);
+      for (let dr = lo; dr <= hi; dr++) {
+        const hq = q + dq, hr = r + dr;
+        const s = -hq - hr;
+        if (Math.max(Math.abs(hq), Math.abs(hr), Math.abs(s)) > this.radius) continue;
+        if (playableOnly && !this.inBounds(hq, hr)) continue;
+        yield { q: hq, r: hr };
+      }
+    }
+  }
+
   // Every hex on the board, which on a shaped board is not every hex in the
   // envelope.
   *allHexes() {

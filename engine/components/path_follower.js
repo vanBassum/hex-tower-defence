@@ -3,7 +3,7 @@ import { Component } from '../gameobject.js';
 
 // Walks the GameObject along a fixed list of world points at a constant speed.
 // `travelled` is tracked because "furthest along the path" is the target
-// priority towers will want, and it stays comparable between enemies of
+// priority a targeting rule will want, and it stays comparable between units of
 // different speeds.
 export class PathFollower extends Component {
   constructor(points, { speed = 2, y = 0, faceDirection = true, onArrive = null } = {}) {
@@ -31,7 +31,7 @@ export class PathFollower extends Component {
     if (this.arrived) return;
 
     // Budget is spent across waypoints so a corner never costs a frame of
-    // movement, which matters most for the fastest enemies.
+    // movement, which matters most for the fastest movers.
     let budget = this.speed * dt;
     while (budget > 0 && !this.arrived) {
       const target = this._points[this._index];

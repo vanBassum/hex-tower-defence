@@ -10,7 +10,7 @@ export function makeHit({ kind = 'generic', direction = null, source = null } = 
   return { kind, direction, source };
 }
 
-// Hit points with a death hook. onDeath fires exactly once — several towers can
+// Hit points with a death hook. onDeath fires exactly once — several attackers can
 // land a killing blow in the same frame — and damage is clamped so overkill is
 // reported rather than silently absorbed.
 export class Health extends Component {

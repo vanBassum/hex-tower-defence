@@ -23,9 +23,37 @@ import { buildProp, createPropMaterials } from '../props.js';
 //
 // Lantern flames are driven the same way and for the same reason: two sines at
 // unrelated rates, per lantern, so no two lamps on the level breathe together.
+//
+// **Nothing on a tile exists until the tile is found.** Every prop is scaled from
+// nothing when its hex stops being unexplored, and that is not only a flourish:
+// it is what lets the fog layer be a *thin* blanket of cloud instead of a bank
+// tall enough to swallow a tree. Hiding what stands on a tile is the prop's own
+// business, and it is much cheaper here than as a metre of extra cloud over the
+// whole board. What it buys as a flourish is worth having anyway - a stand of
+// trees rising out of the clearing cloud is the island being found rather than
+// being switched on.
+//
+// A lantern also has to be *found* before it burns. Given a visibility map, each
+// one holds a `lit` value that eases toward one the moment its tile stops being
+// unexplored, and everything the lamp does - its pool of light, its bulb, its
+// bleed - is scaled by it. That is worth more than it costs in two separate ways.
+// It is the board answering the player: walk into a corner of the island and the
+// lamp somebody left there comes up as you arrive, rather than having been on all
+// along in a place nobody had been. And it fixes something that was simply wrong
+// before it - an undiscovered lantern was still casting a real PointLight, which
+// lit the *inside* of the fog bank standing over it and put a warm bloom on the
+// cloud above a tile the player had never seen.
 export class PropLayer extends Component {
   constructor({
     grid, ground = null, props = [], colors = {}, tuning = {},
+    // What the player has seen. Optional: without it every lamp is simply lit,
+    // which is what a level with no fog on it wants.
+    visibility = null,
+    // Slow enough to read as a lamp being lit rather than as a light switch. The
+    // props come up faster, because they are following the cloud off the tile and
+    // a tree that lags behind the weather reads as a loading artefact.
+    lightUpRate = 1.3,
+    revealRate = 3.4,
     // Angle in world space, length and period as the water's swell states them:
     // long and slow, because a gust crossing the whole island is one event.
     // `strength` scales every prop's amplitude at once, so "calmer day" is one
@@ -38,6 +66,9 @@ export class PropLayer extends Component {
     this._props = props;
     this._colors = colors;
     this._tuning = tuning;
+    this._visibility = visibility;
+    this._lightUpRate = lightUpRate;
+    this._revealRate = revealRate;
     this._wind = wind;
     this._time = 0;
   }
@@ -47,6 +78,7 @@ export class PropLayer extends Component {
     this.count = 0;
     this._swaying = [];
     this._flames = [];
+    this._hidden = [];      // props still waiting for their tile to be found
 
     for (const placement of this._props) {
       const { x, z } = this._grid.hexToWorld(placement.q, placement.r);
@@ -54,6 +86,16 @@ export class PropLayer extends Component {
       const obj = buildProp(placement, this._mats, { x, z, y }, this._tuning);
       this.gameObject.object3D.add(obj);
       this.count++;
+
+      // The base scale is kept because it is not always one - a rock is built
+      // squashed - so growing in has to be a multiple of what the prop already is
+      // rather than a scale of its own.
+      if (this._visibility && !this._visibility.isExplored(placement.q, placement.r)) {
+        obj.userData.baseScale = obj.scale.clone();
+        obj.userData.reveal = 0;
+        obj.scale.set(0, 0, 0);
+        this._hidden.push({ obj, q: placement.q, r: placement.r });
+      }
 
       // Whether a prop moves in wind is the prop's business, decided in props.js.
       if (obj.userData.sway) {
@@ -74,9 +116,13 @@ export class PropLayer extends Component {
           halo: obj.userData.halo,
           baseIntensity: obj.userData.lightIntensity ?? obj.userData.light?.intensity ?? 1,
           baseOpacity: obj.userData.haloOpacity ?? obj.userData.halo?.material.opacity ?? 1,
+          baseColor: obj.userData.flameColor ?? obj.userData.flame?.material.color,
           amp: obj.userData.flicker,
           phase: obj.userData.flickerPhase ?? 0,
           rate: obj.userData.flickerRate ?? 1,
+          // Where it stands, so it can ask whether it has been found yet.
+          q: placement.q, r: placement.r,
+          lit: this._visibility ? 0 : 1,
         });
       }
     }
@@ -94,6 +140,26 @@ export class PropLayer extends Component {
   update(_dt, rawDt) {
     if (!this._swaying.length && !this._flames.length) return;
     this._time += rawDt;
+    // Exponential ease, so the rate is a rate rather than a frame count and the
+    // lamp comes up the same way whatever the machine is doing.
+    const k = this._visibility ? 1 - Math.exp(-this._lightUpRate * rawDt) : 1;
+
+    // Props coming up out of the clearing cloud. The list shrinks as they arrive,
+    // so a board that has been walked costs nothing here.
+    if (this._hidden.length) {
+      const kr = 1 - Math.exp(-this._revealRate * rawDt);
+      for (let i = this._hidden.length - 1; i >= 0; i--) {
+        const h = this._hidden[i];
+        if (h.obj.userData.reveal <= 0 && !this._visibility.isExplored(h.q, h.r)) continue;
+        const v = h.obj.userData.reveal + (1 - h.obj.userData.reveal) * kr;
+        h.obj.userData.reveal = v;
+        h.obj.scale.copy(h.obj.userData.baseScale).multiplyScalar(v);
+        if (v > 0.998) {
+          h.obj.scale.copy(h.obj.userData.baseScale);
+          this._hidden.splice(i, 1);
+        }
+      }
+    }
 
     for (const t of this._swaying) {
       const gust    = Math.sin(this._kx * t.x + this._kz * t.z - this._w * this._time);
@@ -118,15 +184,36 @@ export class PropLayer extends Component {
       // rather than on the ground.
       const wobble = 0.72 * Math.sin(this._time * f.rate * 0.9 + f.phase)
                    + 0.28 * Math.sin(this._time * f.rate * 2.3 + f.phase * 1.7);
-      const k = 1 + wobble * f.amp;
-      if (f.light) f.light.intensity = f.baseIntensity * k;
-      if (f.halo)  f.halo.material.opacity = f.baseOpacity * k;
+      // Found yet? A lantern never goes back out: what is known about the board
+      // does not un-know itself, and a lamp that switched off behind you would
+      // say it had.
+      if (this._visibility && f.lit < 1 && this._visibility.isExplored(f.q, f.r)) {
+        f.lit += (1 - f.lit) * k;
+        if (f.lit > 0.999) f.lit = 1;
+      }
+      if (f.lit <= 0) {
+        if (f.light) f.light.intensity = 0;
+        if (f.halo)  f.halo.material.opacity = 0;
+        if (f.flame) f.flame.material.color.setRGB(0, 0, 0);
+        continue;
+      }
+
+      const k2 = (1 + wobble * f.amp) * f.lit;
+      if (f.light) f.light.intensity = f.baseIntensity * k2;
+      if (f.halo)  f.halo.material.opacity = f.baseOpacity * k2;
+      // The bulb dims with the rest of it. It is `MeshBasicMaterial`, so its
+      // colour *is* how bright it looks - there is no light on it to turn down.
+      if (f.flame && f.baseColor) {
+        f.flame.material.color.copy(f.baseColor).multiplyScalar(f.lit);
+      }
       // The flame and its bleed also *swell* slightly, not just brighten. Kept
       // well under the brightness change: a lantern that visibly changes size is
       // reaching for attention, and there are five of them on a board that is
       // supposed to be quiet.
-      if (f.flame) f.flame.scale.setScalar(1 + wobble * f.amp * 0.6);
-      if (f.halo)  f.halo.scale.setScalar(1 + wobble * f.amp * 1.1);
+      // The flame grows into being as well as brightening, which is what makes it
+      // read as being lit rather than as fading up.
+      if (f.flame) f.flame.scale.setScalar((1 + wobble * f.amp * 0.6) * (0.35 + 0.65 * f.lit));
+      if (f.halo)  f.halo.scale.setScalar((1 + wobble * f.amp * 1.1) * (0.35 + 0.65 * f.lit));
     }
   }
 

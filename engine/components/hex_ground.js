@@ -7,9 +7,9 @@ import { hashHex, patchNoise } from '../hex/hex_noise.js';
 // Off-board edges drop to a base depth, so the whole board reads as one solid
 // landmass rather than a sheet of tiles.
 //
-// One cliff material covers every height change - path steps, hill sides and the
-// board rim alike - which is what keeps varied elevation looking like the same
-// piece of land.
+// One cliff material covers every height change - hill sides and the board rim
+// alike - which is what keeps varied elevation looking like the same piece of
+// land.
 //
 // Surface colour variation is two-scale on purpose. Per-hex jitter on its own
 // looks like static; a smooth large-scale component makes it form patches, which
@@ -19,7 +19,6 @@ import { hashHex, patchNoise } from '../hex/hex_noise.js';
 
 export class HexGround extends Component {
   constructor(grid, {
-    pathKeys    = null,   // Set of "q,r" painted as path
     rockKeys    = null,   // Set of "q,r" painted as bare rock (crags)
     levels      = null,   // Map of "q,r" -> integer elevation level
     step        = 0.22,   // world height of one level
@@ -34,7 +33,6 @@ export class HexGround extends Component {
     // ground. Kept rare so it stays an accent, not a terrain type.
     dirtColor   = 0x8d7d4c,
     dirtChance  = 0.07,
-    pathColor   = 0xc4aa72,
     // Bare stone, close enough in hue to the cliff faces that a crag reads as
     // the same rock pushed up through the grass rather than a different object.
     rockColor   = 0x9c968c,
@@ -47,7 +45,6 @@ export class HexGround extends Component {
   } = {}) {
     super();
     this._grid       = grid;
-    this._pathKeys   = pathKeys;
     this._rockKeys   = rockKeys;
     this._levels     = levels;
     this.step        = step;
@@ -56,7 +53,6 @@ export class HexGround extends Component {
     this._variantScale = variantScale;
     this._dirtColor = dirtColor;
     this._dirtChance = dirtChance;
-    this._pathColor  = pathColor;
     this._rockColor  = rockColor;
     this._cliffColor = cliffColor;
     this._cliffShade = cliffShade;
@@ -66,7 +62,6 @@ export class HexGround extends Component {
     this._hueAmount   = hueAmount;
   }
 
-  _isPath(q, r) { return !!this._pathKeys?.has(`${q},${r}`); }
   _isRock(q, r) { return !!this._rockKeys?.has(`${q},${r}`); }
 
   levelAt(q, r) { return this._levels?.get(`${q},${r}`) ?? 0; }
@@ -89,16 +84,14 @@ export class HexGround extends Component {
 
     for (const { q, r } of this._grid.allHexes()) {
       const { x, z } = this._grid.hexToWorld(q, r);
-      const path = this._isPath(q, r);
+      const rock = this._isRock(q, r);
       const y = this.topY(q, r);
       const corners = this._grid.hexCorners(q, r);
 
-      // The path carries less variation so the route stays readable at a glance,
-      // and so does rock - variation on stone reads as dirt on it.
-      const surface = path ? this._pathColor
-                   : this._isRock(q, r) ? this._rockColor
-                   : this._groundAt(q, r, x, z);
-      this._shade(top, q, r, x, z, surface, path ? 0.55 : this._isRock(q, r) ? 0.7 : 1);
+      // Rock carries less variation than grass does - variation on stone reads as
+      // dirt lying on it rather than as the stone itself.
+      const surface = rock ? this._rockColor : this._groundAt(q, r, x, z);
+      this._shade(top, q, r, x, z, surface, rock ? 0.7 : 1);
       for (let i = 0; i < 6; i++) {
         const a = corners[i], b = corners[(i + 1) % 6];
         // Wound (centre, b, a) so the normal points +Y. The other order faces

@@ -9,34 +9,47 @@ import { AmbientMotes } from '../engine/components/ambient_motes.js';
 import { HexGridRenderer } from '../engine/components/hex_grid_renderer.js';
 import { HexGround } from '../engine/components/hex_ground.js';
 import { HexOverlay } from '../engine/components/hex_overlay.js';
-import { LEVEL_1, buildLevel } from './level.js';
+import { HexPicker } from '../engine/components/hex_picker.js';
+import { FogOfWar } from '../engine/components/fog_of_war.js';
+import { VisibilityMap } from '../engine/hex/visibility.js';
+import { MAP_1, buildMap } from './maps.js';
 import { MOOD, WIND } from './mood.js';
-import { GameState } from './game_state.js';
-import { WaveSpawner } from './components/wave_spawner.js';
-import { LevelDirector } from './components/level_director.js';
-import { TowerPlacer } from './components/tower_placer.js';
 import { PropLayer } from './components/prop_layer.js';
-import { Hud } from './components/hud.js';
+import { Unit } from './components/unit.js';
+import { UnitControl } from './components/unit_control.js';
+import { DEBUG, installDebug } from './debug.js';
+
+// The world, and the first thing that plays on it: a scout, and a map it has to
+// walk to see.
+//
+// The tower defence layer that used to live here is gone - towers, waves, an
+// economy, lives, a route across the island. What is on top of the world now is
+// exploration and nothing else, because the question this milestone exists to
+// answer is whether walking an unknown island is already worth doing before any
+// enemy, card or turn is added to it.
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level
 
-const game  = new Game();
-const level = buildLevel(LEVEL_1);
-game.level   = level;
-game.hexGrid = level.grid;
-game.enemies = [];
-game.pathY   = (LEVEL_1.pathLevel ?? 0) * ELEVATION_STEP;   // enemies walk on the path surface
+const game = new Game();
+const map  = buildMap(MAP_1);
+game.map     = map;
+game.hexGrid = map.grid;
 
-const state = new GameState({ currency: 160, lives: 30 });
-game.state = state;
+// What is known about the board. Land and sea both: the shape of a coastline is
+// worth discovering, and a sea that starts visible has already drawn the island
+// for you. It is state, not drawing - FogOfWar below reads it and never writes.
+const visibility = new VisibilityMap(map.grid, [...map.grid.allHexes(), ...map.water]);
+game.visibility = visibility;
 
 const camera = new GameObject('Camera');
-camera.addComponent(new CameraRig({ dist: 30 }));
+// Closer than the old sightseeing distance: at the start almost nothing is
+// revealed, so a wide shot is a wide shot of fog.
+const rig = camera.addComponent(new CameraRig({ dist: 21 }));
 game.add(camera);
 
 // The hour: blue-hour sky, blue haze in the distance, and skylight doing most of
-// the lighting. Every colour below comes from mood.js, which is where the look
-// is decided - see the note there about why they cannot be tuned separately.
+// the lighting. Every colour comes from mood.js, which is where the look is
+// decided - see the note there about why they cannot be tuned separately.
 const air = new GameObject('Atmosphere');
 air.addComponent(new Atmosphere({
   sky: MOOD.sky,
@@ -60,18 +73,12 @@ sun.addComponent(new DirectionalLight({
 game.add(sun);
 
 // Grass tones in patches, crags as bare rock, and elevation as actual landform -
-// a cliff face on every drop, with the board rim carried down so it reads as one
-// solid mass.
-//
-// The route is deliberately not drawn, and neither are its ends. It still exists
-// - enemies walk it and it is still off-limits for building - but a paved road
-// with a red tile at one end and a blue tile at the other states that the level
-// is a track to be defended, and that is not the direction. It is an island now,
-// and an island is all grass.
+// a cliff face on every drop, with the board rim carried down so the island reads
+// as one solid mass rather than a sheet of tiles.
 const groundGO = new GameObject('HexGround');
-const hexGround = groundGO.addComponent(new HexGround(level.grid, {
-  rockKeys: level.blockedKeys,
-  levels: level.levels,
+const hexGround = groundGO.addComponent(new HexGround(map.grid, {
+  rockKeys: map.blockedKeys,
+  levels: map.levels,
   step: ELEVATION_STEP,
   ...MOOD.ground,
 }));
@@ -85,9 +92,9 @@ game.add(groundGO);
 // Dark water with bright crests, and the swell is the world's one wind rather
 // than a direction picked for the sea alone - so a gust crosses the water and
 // the trees on the far shore answer the same gust.
-const seaY = level.waterLevel * ELEVATION_STEP;
+const seaY = map.waterLevel * ELEVATION_STEP;
 const sea = new GameObject('Sea');
-sea.addComponent(new HexWater(level.grid, level.water, {
+sea.addComponent(new HexWater(map.grid, map.water, {
   y: seaY,
   depthColors: MOOD.water.depthColors,
   crestColor: MOOD.water.crestColor,
@@ -106,9 +113,13 @@ game.add(sea);
 // Props and scattered detail, sitting on whatever tile surface they are on, and
 // leaning in the wind.
 const propsGO = new GameObject('Props');
-const propLayer = propsGO.addComponent(new PropLayer({
-  grid: level.grid, ground: hexGround, props: [...level.props, ...level.scatter],
+propsGO.addComponent(new PropLayer({
+  grid: map.grid, ground: hexGround, props: [...map.props, ...map.scatter],
   colors: MOOD.props, wind: WIND,
+  // Lamps are lit when their tile is found rather than burning from the first
+  // frame - the board answering the player, and the reason an undiscovered
+  // lantern no longer lights the inside of the cloud standing over it.
+  visibility,
   tuning: {
     lanternLight: MOOD.lanternLight,
     flicker: { lantern: MOOD.lanternFlickerAmount },
@@ -116,26 +127,118 @@ const propLayer = propsGO.addComponent(new PropLayer({
 }));
 game.add(propsGO);
 
-// Darker than the grass, so the grid reads as seams in the ground rather than
-// as white lines drawn over it.
+// Darker than the grass, so the grid reads as seams in the ground rather than as
+// white lines drawn over it.
 const gridGO = new GameObject('HexGrid');
-gridGO.addComponent(new HexGridRenderer(level.grid, { color: MOOD.gridColor, opacity: 0.45 }));
+gridGO.addComponent(new HexGridRenderer(map.grid, { color: MOOD.gridColor, opacity: 0.45 }));
 game.add(gridGO);
 
-// The build cursor's overlay is added first so TowerPlacer.start() can find it.
-const build = new GameObject('Build');
-build.addComponent(new HexOverlay(level.grid, [], { color: 0x55dd66, opacity: 0.45, y: 0.05 }));
-const placer = build.addComponent(new TowerPlacer({ level, state, ground: hexGround, towerType: 'gun' }));
-game.add(build);
+// The unknown, lying over the board as one continuous bank of mist. It goes on
+// after the terrain because it drapes itself over the tile heights the terrain
+// settled, and it is a layer over that terrain rather than a change to it - the
+// ground mesh is built once and never rebuilt however much of it gets found.
+//
+// It reads the VisibilityMap and never writes to it. Gameplay still knows
+// exactly which hexes are unexplored, explored and visible; the mist is only how
+// that is drawn, and the two meet at one blurred texture.
+//
+// Water is fogged along with the land. Working out where the coast runs is part
+// of learning the island, and a sea drawn in full has already told you.
+const fogGO = new GameObject('Fog');
+const fog = fogGO.addComponent(new FogOfWar(map.grid, visibility, {
+  hexes: [...map.grid.allHexes(), ...map.water],
+  // Sea level is nudged up past the tallest crest the swell can raise, because
+  // the surface an explored water tile is capped at is a surface that moves - and
+  // a cap sitting exactly at rest height spends half of every wave underwater.
+  surfaceY: (q, r) => (map.grid.inBounds(q, r) ? hexGround.topY(q, r) : seaY + 0.09),
+  hexSize: map.grid.size,
+  // The bank drifts on the level's one breeze, for the reason the swell and the
+  // sway share theirs: three effects with private weather look like three
+  // effects, and one direction reads as a day with a wind on it. It sets which
+  // way the cloud field flows as well as which way the wisps lean.
+  drift: { angle: WIND.angle, amount: 0.05 * WIND.strength, period: WIND.period * 3.5 },
+  flow: WIND.strength,
+  ...MOOD.fogOfWar,
+}));
+game.add(fogGO);
+
+// The Scout. One unit, one stat, and the whole of this milestone: move, and see
+// further than you did from the last hex.
+const scoutGO = new GameObject('Scout');
+const scout = scoutGO.addComponent(new Unit({
+  grid: map.grid,
+  ground: hexGround,
+  type: 'scout',
+  q: DEBUG.scoutStart.q, r: DEBUG.scoutStart.r,
+  viewDistance: DEBUG.scoutViewDistance,
+  colors: MOOD.units,
+  tuning: { lamp: MOOD.scoutLamp },
+}));
+game.add(scoutGO);
+
+// Who the player owns, what is picked up, and what the force can see - one
+// component, because vision is the union over that same roster and splitting the
+// two would leave two lists to keep in step.
+//
+// One overlay, and it is a *brightening* rather than a wash: additive blending
+// at low strength, so a hex on the previewed route reads as catching a little
+// more light instead of having a pale hexagon painted on it.
+//
+// The wash over everywhere-you-could-walk is gone entirely. Filling tiles with
+// flat translucent white is the cheapest possible way to say something about a
+// hex and it looked exactly that cheap - a sticker on the board, fighting the
+// crisp tile edges that are the best thing about the terrain. The board is meant
+// to stay sharp and the fog is meant to be the soft thing; a hex-shaped smear of
+// white had it the wrong way round. Whatever replaces it for reachability should
+// come from the *tile* - its own brightness, a rim, a lift - or from the unit,
+// not from a decal laid over the top.
+const forceGO = new GameObject('Force');
+const pathOverlay = forceGO.addComponent(new HexOverlay(map.grid, [], {
+  color: 0x9fd8ee, opacity: 0.13, y: 0.03, additive: true,
+  heightAt: (q, r) => hexGround.topY(q, r),
+}));
+const control = forceGO.addComponent(new UnitControl({
+  grid: map.grid,
+  ground: hexGround,
+  visibility,
+  units: [scout],
+  pathOverlay,
+}));
+game.add(forceGO);
+
+// A cursor on the hex under the mouse, and now three things asking what the mouse
+// means. The picker still knows nothing about any of them: it reports a hex and
+// the force decides whether that is a unit, a destination, or a change of mind.
+// The overlay goes on first so HexPicker.start() can find it.
+const cursor = new GameObject('Cursor');
+// The cursor gets the same treatment: a lift, not a fill.
+cursor.addComponent(new HexOverlay(map.grid, [], {
+  color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
+}));
+cursor.addComponent(new HexPicker({
+  grid: map.grid,
+  ground: hexGround,
+  onHover: (hex) => control.handleHover(hex),
+  onPick:  (hex) => control.handlePick(hex),
+  onOrder: (hex) => control.handleOrder(hex),
+}));
+game.add(cursor);
+
+// Open looking at the Scout rather than at the middle of a board that is almost
+// entirely hidden.
+{
+  const { x, z } = map.grid.hexToWorld(scout.q, scout.r);
+  rig.focusOn(x, z);
+}
 
 // Fireflies over the island and glints on the water. Same component twice - what
 // differs is where they live, how far they wander, and whether they light
 // anything.
 const motes = new GameObject('Motes');
-motes.addComponent(new AmbientMotes(level.grid, [...level.grid.allHexes()], {
-  // Ten, not forty, and each one carries a real light. Kept low over the grass:
+motes.addComponent(new AmbientMotes(map.grid, [...map.grid.allHexes()], {
+  // Eight, not forty, and each one carries a real light. Kept low over the grass:
   // a firefly's pool only reaches a couple of units, so one hovering at head
-  // height lights nothing and is just a speck again.
+  // height lights nothing and is a speck again.
   count: 8, yRange: [0.25, 1.15],
   drift: { x: 1.7, y: 0.45, z: 1.3 },
   // Slow drift and rare flares. `periods` is how long a mote takes to cross its
@@ -148,9 +251,9 @@ motes.addComponent(new AmbientMotes(level.grid, [...level.grid.allHexes()], {
   light: MOOD.motes.fireflyLight,
   salt: 0,
 }));
-motes.addComponent(new AmbientMotes(level.grid, level.water, {
+motes.addComponent(new AmbientMotes(map.grid, map.water, {
   // Sitting just clear of the tallest crest, drifting almost not at all, and
-  // flicking on and off faster than the pollen does: sun off moving water.
+  // flicking on and off faster than the fireflies do: sun off moving water.
   count: 14, yRange: [seaY + 0.10, seaY + 0.13],
   drift: { x: 0.35, y: 0.02, z: 0.35 },
   twinkle: [1.6, 3.4], sharpness: 5,
@@ -158,16 +261,22 @@ motes.addComponent(new AmbientMotes(level.grid, level.water, {
 }));
 game.add(motes);
 
-const levelGO = new GameObject('Level');
-const spawner = levelGO.addComponent(new WaveSpawner({
-  waves: level.waves,
-  worldPath: level.worldPath,
-  onLeak: (enemy) => state.registerLeak(enemy),
-  onKill: (enemy) => state.registerKill(enemy),
-  onBonus: (amount) => state.earn(amount),
-}));
-levelGO.addComponent(new LevelDirector({ state, spawner }));
-levelGO.addComponent(new Hud({ state, spawner, placer }));
-game.add(levelGO);
+// Developer knobs: F hides the fog, V rings what the force is lighting up, R
+// reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
+// far a scout sees is a number that has to be tried, not a feature.
+installDebug({
+  game, grid: map.grid, ground: hexGround, rig, fog, control, visibility,
+  // How a unit gets built, handed over rather than rebuilt in the debug module -
+  // it is the same call the Scout above went through.
+  spawn: (type, q, r) => {
+    const go = new GameObject(type);
+    const u = go.addComponent(new Unit({
+      grid: map.grid, ground: hexGround, type, q, r,
+      colors: MOOD.units, tuning: { lamp: MOOD.scoutLamp },
+    }));
+    game.add(go);
+    return u;
+  },
+});
 
 game.start();

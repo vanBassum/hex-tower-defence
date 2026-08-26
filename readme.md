@@ -1,13 +1,27 @@
-# Hex Tower Defence
+# Hex Tactics
 
-Hex-grid tower defence, built on the component engine carried over from the
-`armymen` project. Phase 1 is complete: a board with a fixed path, eight waves,
-buildable machine-gun towers, an economy, and win/lose conditions. No geometry
-mechanics yet - that starts in Phase 2. The environment pass in `plan/VI.md` has
-turned the board into a drawn island in the sea and set it at blue hour; the
-route is still walked but no longer drawn.
+A turn-based tactical exploration game on a hex grid - see
+`plan/Core Gameplay Concept.md`. The player controls a few units drawn from a
+persistent collection of cards; maps are deliberately bigger than the army that
+first enters them, and what you find on a failed run is what lets you get further
+on the next one.
 
-Plain ES modules, no build step. Serve the folder and open it:
+**Almost none of that is built yet.** What exists is the world it will be played
+on - a drawn island in the sea at blue hour, terrain with real elevation, animated
+water, vegetation that moves in a shared wind, lanterns that light the ground -
+and the first thing that plays on it: **one Scout, walking an island it cannot
+see**. The tower defence prototype this grew out of has been removed - towers,
+waves, an economy, lives, a fixed route - because none of it was going to survive
+the change of genre and leaving it in would have made every later decision harder
+to see.
+
+There are no enemies, no cards, no turns and no combat, on purpose. Exploration
+was built alone so it could be judged alone, against one question: is moving a
+scout through an unknown hex world and revealing the map already worth doing?
+
+The engine underneath is the component/GameObject engine carried over from the
+`armymen` project. Plain ES modules, no build step. Serve the folder and open it,
+or use the VS Code Live Server extension:
 
     python -m http.server 8000
 
@@ -15,67 +29,76 @@ Plain ES modules, no build step. Serve the folder and open it:
 
 | Input | Action |
 | --- | --- |
-| Left-click a hex | Build a machine gun (40c) |
-| **Send wave** button | Start the next wave |
+| Mouse over a hex | Cursor follows it |
+| Left-click a unit | Select it |
+| Left-click anywhere else | Deselect |
+| Hover, while selected | The route there is picked out |
+| Right-click | Walk that route |
 | `WASD` / arrows | Pan |
-| Middle-drag | Orbit |
-| Wheel | Zoom |
+| Middle-drag | Pan, holding the grabbed ground point under the cursor |
+| Wheel | Zoom toward the cursor; pitch dives from top-down to near-horizontal |
+| `Alt` + left-drag | Rotate, and lean off the dive curve |
+| `Q` / `E` | Rotate one hex face |
 
-The build cursor turns green on a legal hex and red otherwise, and shows the
-range ring of the tower you would be placing.
+The right button belongs to the game rather than to the camera, which is why the
+camera never took it: it is the order button. Left selects, right moves, and they
+are split because they answer different questions - with one button, clicking a
+tile means "go there" or "never mind" depending on state the player cannot see.
 
-Nothing starts a wave except that button. A wave clock would be deciding the two
-things this game is about - how long you get to look at the board before
-committing, and whether you take on two waves at once - and neither is a decision
-a timer should make. Sending the next wave while the last one is still walking is
-allowed; the button turns amber and says how many are still alive, because that
-is a choice rather than a punishment for falling behind.
+Developer keys, which are not game UI and are not meant to become it: `F` hides
+the fog layer, `V` rings what the force is currently lighting up, `R` reveals the
+whole board. `window.hex` in the console has the rest - `setViewDistance(n)`,
+`teleport(q, r)`, `spawn(q, r)`, `lookAt(q, r)`. How far a scout sees is a number
+that has to be *tried*, and a knob you have to reload the page to change is a knob
+you turn twice and then stop turning.
 
 ## Layout
 
     engine/game.js                     render loop + GameObject registry
     engine/gameobject.js               GameObject / Component base classes
-    engine/hex/hex_grid.js             axial hex grid, lines, occupancy, A*
+    engine/hex/hex_grid.js             axial hex grid, ranges, lines, occupancy, A*
     engine/hex/hex_noise.js            deterministic per-hex noise
+    engine/hex/visibility.js           what the player has seen of the board
     engine/assets.js                   glTF loading + clone cache (unused for now)
     engine/components/camera_rig.js    pan / orbit / zoom camera
     engine/components/atmosphere.js    sky, fog, skylight - what hour it is
     engine/components/directional_light.js
-    engine/components/ground_plane.js  flat shadow-receiving ground (unused by LEVEL_1)
+    engine/components/ground_plane.js  flat shadow-receiving ground (unused)
     engine/components/ambient_motes.js drifting specks - fireflies, water sparkle
     engine/components/hex_water.js     sea as hex tiles, shaded by depth
     engine/components/water_plane.js   flat ocean beyond the tiles
     engine/components/hex_ground.js    tile tops + cliff faces, grass tones
     engine/components/hex_region_outline.js  border around a hex region (unused)
     engine/components/hex_grid_renderer.js  hex outlines
-    engine/components/hex_overlay.js   filled hex tiles (path, build cursor)
+    engine/components/hex_overlay.js   filled hex tiles (cursor, ranges)
+    engine/components/hex_picker.js    mouse to hex, plus the cursor on it
+    engine/components/fog_of_war.js    the unknown, drawn over the board
     engine/components/health.js        hit points, hit descriptors, death hook
     engine/components/health_bar.js    camera-facing bar above the owner
     engine/components/path_follower.js constant-speed walk along world points
-    game/level.js                      level definition + path expansion
+    game/maps.js                       map definitions + expansion
     game/mood.js                       the palette and the wind, in one place
-    game/game_state.js                 currency, lives, win/lose status
-    game/enemies.js                    enemy stat table + spawn factory
     game/props.js                      procedural trees, rocks, scrub, lanterns
-    game/towers.js                     tower stat table + build factory
-    game/components/enemy.js           enemy marker, keeps game.enemies
-    game/components/tower.js           targeting + hitscan fire
-    game/components/tower_placer.js    mouse-to-hex build cursor
-    game/components/shot_tracer.js     fading muzzle-to-target line
-    game/components/wave_spawner.js    runs the level's wave table
-    game/components/level_director.js  end conditions
-    game/components/prop_layer.js      places a level's decoration + its wind
-    game/components/hud.js             readout + end-of-level banner
+    game/components/prop_layer.js      places a map's decoration + its wind
+    game/units.js                      unit types + the Scout's placeholder mesh
+    game/components/unit.js            something standing on a hex
+    game/components/unit_control.js    selection, movement, and the force's vision
+    game/debug.js                      developer knobs for the exploration pass
     game/main.js                       scene setup
     tools/map.mjs                      prints the board as text, for authoring
 
-## Level
+## Map
 
-`LEVEL_1` is a 75-hex island drawn inside a radius-6 envelope. Its path is stated
-as waypoints and expanded into hexes by `HexGrid.hexLine`, so it reads as straight
-runs: a 10-hex diagonal across the middle, a 120-degree corner, then 6 hexes down
-to the base. None of it is drawn - see *Blue hour* below. The path hexes are
-collected into `pathKeys`, which drives tower placement rejection.
+`MAP_1` is a 75-hex island in 144 tiles of sea, drawn inside a radius-9 envelope.
+It is terrain and nothing else: no route through it, nothing scheduled to arrive,
+no positions marked as special. Where anything goes and when is the tactical
+layer's business, and a map with opinions about that is a level rather than a
+place.
+
+`buildMap` expands the definition into what the scene needs - the grid, per-hex
+elevation, the sea tiles, the crags (marked occupied, so impassable), the props
+and the scatter - and refuses outlines that are wrong: a prop off the board, or an
+island accidentally drawn as two.
 
 ## The island
 
@@ -91,34 +114,34 @@ radius 6 and the sea it sits in takes the three rings beyond it - 75 land hexes
 and 144 of water.
 
 Only `HexGrid` knows about it. `inBounds` means *playable*, so land is in it and
-sea is not, and everything that asks - ground mesh, rim cliffs, grid lines, build
-rejection, elevation regions - already went through `inBounds`. Water being drawn
-but off the board is therefore free: nothing builds or walks there without a
-single extra rule. `buildLevel` refuses an outline that strands a hex away from the
-route, or that drops a prop or the route into the sea.
+sea is not, and everything that asks - ground mesh, rim cliffs, grid lines,
+elevation regions - already went through `inBounds`. Water being drawn but off the
+board is therefore free: nothing stands or walks there without a single extra
+rule. `buildMap` refuses an outline that strands a hex from the rest, or that
+drops a prop into the sea.
 
-Every cut says where a stretch of route can be covered from:
+Every cut narrows the ground somewhere, and narrow ground is where a tactical
+decision lives - the difference between advancing on a front and advancing in
+single file:
 
-- The **north-east bay** comes right up to the second half of the diagonal, so
-  that stretch is a causeway with water on its north side and can only be shot at
-  from the south. The first half keeps its north shoulder, which is also the high
-  ground - so the two halves of one straight run play differently.
-- The **corner is a promontory** into that bay. It is the strongest ground on the
-  level, both legs of the route passing within reach, and the sea behind it is
-  what makes that strength finite.
-- A **bay bites into the middle of the descending run**, so its east shore is two
-  separate pieces: the promontory's flank and the base's headland.
-- The spawn sits on a **two-hex spit** and the south is one lobe carrying the
-  small hill as a **cape**, so neither end of the route is a straight board rim.
+- The **north-east bay** cuts the middle of the island down to a causeway.
+  Anything crossing it can be met from one side only. The high ground on its west
+  shoulder overlooks the approach.
+- The **corner beyond it is a promontory** pointing into that bay: the strongest
+  ground here, and finite, because the sea is behind it.
+- A **second bay** bites into the east shore, splitting it into the promontory's
+  flank and the headland south of it.
+- The north-west is a **two-hex spit** and the south is a single lobe carrying the
+  small hill as a **cape**, so no edge of the island is a straight board rim.
 
 **Crags** (`^`) are the non-playable terrain: land that stands at `cragLevel` and
-is marked occupied in the grid, so it is impassable as well as unbuildable. Four
-of the five are scenery - a ridge on the highland, a stack on the promontory
-point, a knoll by the southern cape. The fifth, at `1,0`, is inside the play area
-on purpose: it takes a build hex off the causeway's south side, which is the only
-side the causeway has. The build cursor reports it as "solid rock" rather than
-"already taken", because one is a property of the map and the other is something
-the player did.
+is marked occupied in the grid, so it is impassable. Four of the five are scenery
+- a ridge on the highland, a stack on the promontory point, a knoll by the
+southern cape. The fifth, at `1,0`, stands in open ground on purpose: it takes a
+hex off the causeway's south shoulder, which is the only shoulder the causeway
+has, so the crossing is narrow on both counts. Occupancy is a grid fact rather
+than a rule each consumer reimplements, which is the only reason a crag being
+impassable needed no code anywhere else.
 
 **Water** is hex tiles, on the same grid and drawn the same way as the land: one
 merged, vertex-coloured mesh, sitting one elevation step below the lowest land so
@@ -162,20 +185,19 @@ passes ripples between neighbours would do it too, but for an ambience effect it
 is a simulation to keep stable for no visible gain, so the analytic version is
 what this waits to need.
 
-Making grass, path, cliff and water actually *meet* - the coast is still a hard
-edge, with no foam or wet rock - is the next step in `plan/VI.md`, not this one.
+Making grass, cliff and water actually *meet* - the coast is still a hard edge,
+with no foam or wet rock - is the obvious next terrain job.
 
 Elevation is a second authored layer: integer levels per hex, world height being
 `level * 0.22`. Regions are declared as a centre plus radius, a run, or a hex
-list, applied low-to-high; path hexes are stamped last at `pathLevel`, so a
-mis-authored hill can never flatten the route. Hills are kept clear of the path
-so its step stays readable.
+list, applied low-to-high, and crags are stamped last so a crag on a summit still
+stands above it.
 
 The board is one merged mesh with vertex colours: a top face per hex at its own
 height, and a cliff face on every edge where the neighbour sits lower. Off-board
 edges drop to a base depth, so the board reads as one solid landmass. A single
-cliff material covers every drop - path steps, hill sides and the rim alike -
-which is what keeps varied elevation looking like the same piece of land.
+cliff material covers every drop - hill sides and the rim alike - which is what
+keeps varied elevation looking like the same piece of land.
 
 Grass uses three discrete tones picked from a broad noise field, so they form
 patches rather than per-tile static - measured at 70% of neighbours sharing a
@@ -201,8 +223,8 @@ share geometry and materials - for when better-matching assets turn up.
 Beside the six hand-placed props there is a **scatter**: grass tufts and the odd
 bush, spread from the hex hash rather than positioned by hand. `chance` is per
 tile and `per` is how many draws a tile gets, so grass arrives in ones and twos
-and leaves gaps - a tuft on every tile reads as carpet. It skips the route, the
-crags and the hand-placed props, which is what keeps the authored composition
+and leaves gaps - a tuft on every tile reads as carpet. It skips the crags and
+the hand-placed props, which is what keeps the authored composition
 legible underneath the texture, and it is deterministic because a board that
 reshuffles its grass every reload cannot be photographed twice. Tufts do not cast
 shadows: one is smaller than a shadow map texel at this range, so casting costs a
@@ -249,11 +271,6 @@ height lights nothing and is a speck again. Drift periods, flare interval and
 `sharpness` all run long: something that flares every few seconds is an event,
 while the same light at twice the rate is a strobe you learn to ignore.
 
-Enemies: `grunt` (190 hp, speed 2.0), `runner` (105 hp, 4.2), `brute` (780 hp, 1.3).
-Eight waves, 136 enemies, 36,770 total hp. A wave states its shape and nothing
-about when it happens - it arrives when the player sends it. A wave's `enemy` can
-be a repeating pattern, so a wave has an ordering and not just a head count.
-
 ## Blue hour
 
 The level is set at dusk, and every colour that decides that is in
@@ -275,9 +292,9 @@ little pockets of civilization in it**. Everything else follows from that:
   times object height across the board, and faint enough that it shapes the
   terrain without lighting it. The warmth in frame is meant to come from the
   lanterns, not from it.
-- **Lanterns are placement, not decoration.** Five of them, strung along the route
-  about every four hexes - close enough that the pools nearly touch, far enough
-  that the dark between them is still dark. Each is a prop that owns its own
+- **Lanterns are placement, not decoration.** Five of them, from the north-west
+  spit across the causeway to the southern headland - close enough that the pools
+  nearly touch, far enough that the dark between them is still dark. Each is a prop that owns its own
   `PointLight`, because a lantern without its light is a decoration and a light
   without its lantern is a mystery. The flame is `MeshBasicMaterial`: a light
   source should not dim when the world does, and it has to stay the brightest
@@ -313,27 +330,254 @@ absurdly high next to the old daylight values - hemisphere 6.0 against the old
 ambient 0.4 - and still come out darker. Judge them by the rendered colour, not by
 the number.
 
-There is no road, and no marked ends. The route still exists, enemies still walk
-it and it is still off-limits for building, but it is not drawn, it no longer
-stands a step proud, and the spawn and base tiles are gone with it. A paved
-causeway with a red tile at one end and a blue tile at the other states that the
-level is a track to be defended, and that is not where this is going. It is an
-island, and an island is all grass.
+There is no road and no marked positions. There was a paved causeway across the
+island with a red tile at one end and a blue tile at the other, which stated that
+the place was a track to be defended - so it went when the genre did. What the
+lanterns string together is the only route the map still suggests, and suggesting
+is all it does.
 
-## Balance
+## Exploration
 
-**The measured figures no longer describe this level and have been removed.** They
-were taken on the radius-6 disc with waves on a timer, and both of those changed:
-the island cut the board from 127 hexes to 75, a crag took one of the corner
-cluster's build hexes, and waves now arrive when the player asks. Several of the
-hexes those runs built on are sea. Re-measuring needs the headless harness rebuilt
-against the current components.
+The first thing that plays on the board. One Scout, one stat, and a map that has
+to be walked to be seen.
 
-What still holds is the shape of the problem. The economy funds about 13 guns in
-total, and that ceiling is what makes placement matter at all. With single-target
-towers, position matters *only* because the budget is capped: towers fire whenever
-anything is in range, so on a crowded path a badly placed tower still shoots
-almost constantly, and coverage buys much less than it looks like it should. What
-the island adds is stretches of route that can only be covered from one side.
-Making position genuinely decisive is still what penetration, splash and prisms
-are for, starting in Phase 2.
+**Visibility is state, and drawing it is a separate job.** `VisibilityMap` is a
+hex and a state each - `UNEXPLORED`, `EXPLORED`, `VISIBLE` - and the one rule that
+matters between them: *seen once is seen forever*. Vision is a fact about now and
+comes and goes as units move; discovery is a fact about the run. Keeping them
+apart is the whole thing, because if they were one state then walking away from a
+hill would un-draw it. Nothing in the map writes `UNEXPLORED` after construction,
+which is where that rule is enforced - once, rather than at every call site that
+recomputes vision.
+
+`update(sources)` takes a *list* of `{q, r, viewDistance}` rather than a unit,
+and recomputes from scratch. Both of those are for the second unit that does not
+exist yet. What the player can see is the union over everything they own, so a
+unit that owned its own fog would un-see a hex two units were both standing next
+to; and a source list means adding that second unit is a longer array here and no
+other change anywhere. There is exactly one Scout today and the fog has never
+heard of it.
+
+Range is `HexGrid.hexesInRange`, in hex steps. A world-space radius gives a
+different shape depending which way the ring runs, which is the sort of bug that
+shows up as "vision looks slightly wrong on the diagonals" and takes an afternoon.
+It yields hexes inside the *envelope* rather than inside the board, because the
+sea has to be discoverable: an island whose coastline is drawn for you from the
+first frame is an island you have already been told the shape of.
+
+**Fog is drawn over the terrain, never cut out of it.** `HexGround` is one merged
+mesh, so hiding part of it would mean rebuilding the world every time a unit takes
+a step - and rebuilding the world to describe what is *known* about it is the
+wrong way round. The ground mesh is built once and never touched.
+
+The layer is **one sheet with a shader on it**, and that is the whole design. An
+earlier version built the mist out of a thousand overlapping translucent lenses -
+a hex-footprint lid to conceal, blanket discs for the far field, wisps at the
+boundary - and no amount of tuning was ever going to fix it, which is worth
+writing down because four passes were spent trying. A field of soft-edged
+ellipsoids has *silhouettes*, and silhouettes are what the eye counts. Broader,
+softer, flatter, more numerous, better shaded: each one only changed the size of
+the bubbles. Mist has no silhouette. The only way to have none is for the shape
+you see to be painted rather than built.
+
+So there are three parts, and only the first is geometry:
+
+- **The sheet.** A regular triangle lattice spanning the fogged region, its height
+  sampled from the terrain and then smoothed, lying over the island like a cloth.
+  Draping matters for exactly one reason: the sheet is the only thing hiding the
+  board, and a flat plane at crag height would float a full step over the low
+  ground and show the coast from any camera below the top of the dive.
+- **The mask.** What the player has discovered, rasterised into a world-space
+  texture and blurred. Three channels: discovered, in-view-right-now, and
+  inside-the-fogged-region-at-all.
+- **The shader.** Three noise fields at three scales drifting at three speeds
+  along the level's one wind, over a slow domain warp so they knead each other
+  instead of scrolling past. The mask decides how much survives.
+
+**Gameplay stays on hexes; the mask is where the hexagon is thrown away.** The
+pipeline is `hexes -> texture -> blur -> opacity`. `VisibilityMap` is read and
+never written, so the rules stay exactly as discrete as they were - a hex is
+unexplored, explored or visible and nothing in between - while what is drawn has
+no hex in it anywhere. A fourth noise field nudges the mask's own threshold up and
+down, so the line between known and unknown is a ragged coast rather than a
+contour of the blur. The reveal *animates* by easing the blurred field rather than
+the hex one: the operation is linear, so an eased blur is still a blur, and the
+mist visibly recedes rather than stepping.
+
+**Depth into the unknown removes detail rather than adding it.** Both the alpha
+variation and the colour variation are scaled by a factor that falls to almost
+nothing well inside the unexplored, leaving a near-opaque sheet with a slow swell
+in it. This is not an aesthetic preference: unexplored ground has to reveal
+nothing, and structure out there is structure the terrain can be read through. All
+the tearing, holing and wisping is spent at the boundary, which is the only place
+it says anything.
+
+**The sheet writes depth and discards where it is clear**, which sounds
+contradictory and is the point. Over the unknown it occludes the motes and water
+sparkles that would otherwise draw on top of it; over known ground it leaves no
+trace, so the path overlay and the cursor still read through where it passes above
+them.
+
+**Two boundaries, and the outer one is an artefact.** The reveal boundary is the
+player's doing and gets all the noise it can take. The *region* boundary is just
+where the level's hex list stops, somewhere out at sea, and drawing attention to
+it would be drawing a line round the map: it gets its own much wider blur, a
+low-frequency bow to break the envelope's six straight sides, and no lit lip -
+that highlight is gated to the reveal boundary, because ungated it painted a
+bright outline round the whole fogged area. The region channel is also *grown* out
+to sea before it is blurred, and the noise that tears it is clamped one way only.
+That clamp is load-bearing: a bulge of mist may wander further out, but it can
+never be pulled back inland far enough to thin the bank over a tile nobody has
+walked to. An earlier pass without it lifted the fog clean off the eastern
+coastline.
+
+**The blanket drapes rather than steps.** Cell heights are constant across a hex,
+so a crag standing three levels up would give the sheet a three-level step, and a
+step between two hexagons is a hexagon. Each hex's reference height is therefore
+raised to its neighbourhood's maximum a couple of rings out and *then* averaged:
+the maximum first, because averaging alone pulls a summit's own height down and
+the sheet then has to be clamped back up to clear the rock, which puts the
+hexagonal step back one tile further on. The lattice is smoothed again on top of
+that, which is what kills the last of the hex. A hard floor still guarantees every
+vertex clears the tile under it.
+
+**Colour is stated outright rather than lit**, which reverses what the blob
+version did and is worth the note. A lit material was the right answer while the
+mist was geometry: it made the fog take the colour of the hour on its own. A
+painted field has no surface to light - it is uniformly flat-on to the sky - so
+lighting it buys nothing and costs exact control over how dark and how blue the
+deep field reads. The one rule that carries over is that it stays blue-*grey*:
+saturated blue sits next to the water and reads as more water.
+
+**The wisps are decoration and nothing rests on them.** A dozen or so small
+translucent lenses drift near the reveal line, each dissolving toward its own rim.
+They hide nothing and `wisps: 0` costs the layer nothing but parallax - which is
+their entire job, because a painted sheet does not move when the camera turns and
+a few real objects crossing in front of it are what keep it from reading as a
+texture stuck to the ground. The first attempt at them was three times the size
+and twice the opacity and put the bubbles straight back: a pale disc seen from a
+camera that is mostly looking *down* is a disc, however soft its edge. Small, dim
+and thin is the whole of what keeps them readable as air.
+
+Explored-but-unseen ground is dimmed and nothing else, straight out of the mask's
+second channel. Nothing is hidden there - the player has been told what is on that
+tile and taking it back would be a lie - it is only darker, which is the
+difference between remembering a place and looking at it.
+
+**Nothing is drawn *on* a tile.** There was a pale wash over every hex the
+selection could reach and a brighter one along the previewed route, and filling
+tiles with flat translucent white turned out to be the cheapest possible way to
+say something about a hex and to look exactly that cheap - a sticker on the board,
+fighting the crisp tile edges that are the best thing about the terrain. The board
+is meant to stay sharp and the fog is meant to be the soft thing, and a hex-shaped
+smear of white had that the wrong way round. The reachable wash is gone entirely;
+the route preview and the cursor are now *additive* at low strength, so a hex
+reads as catching a little more light rather than as having a shape painted on it.
+Whatever eventually marks reachability should come from the tile - its own
+brightness, a rim, a lift - or from the unit, and not from a decal laid over the
+top.
+
+**The world lights up as it is found.** Every prop is scaled from nothing when its
+hex stops being unexplored, and a lantern's flame, halo and `PointLight` all ramp
+with it. That started as a way to keep the fog thin and stayed because it is the
+board answering the player: walk into a corner of the island and the lamp somebody
+left there comes up as you arrive, rather than having been on all along in a place
+nobody had been. It also fixed something that was simply wrong - an undiscovered
+lantern was still casting a real light, which lit the *inside* of the bank
+standing over it and put a warm bloom on the cloud above a tile nobody had seen.
+A lamp never goes back out: what is known does not un-know itself.
+
+**A unit's position is its hex.** The world position is a consequence, and the
+walk between two tiles is an animation over that consequence. The coordinate
+advances one tile at a time as the march reaches it, so a long walk *reveals* a
+long walk: the fog lifts a tile at a time along the route, and where you chose to
+go is what you find out about. A unit holds its hex in the grid's occupancy set,
+which is how it becomes impassable to everything else for nothing - crags already
+work that way, and `isWalkable` and A* already ask.
+
+**A move is a route, not a step.** Walking an island a tile at a time is a lot of
+clicking to say one thing, and the route is the interesting part anyway - which is
+why hovering a destination draws it before you commit to it. It is walked at a
+constant speed straight through, the way `PathFollower` walks a list of points: a
+distance budget is spent across waypoints, so a corner never costs a frame of
+movement and a tile boundary is not an event. The first version eased each tile
+separately, which put an accelerate-and-stop in the middle of every hex - fifteen
+people repeatedly coming to rest on their way somewhere. The easing that remains
+is at the two ends of the *whole* route, which is where a body actually does start
+and stop. The gait that rides on top is driven by distance covered rather than by
+progress through a tile, for the same reason: tied to the tile it resets at every
+hex and reads as a stumble.
+
+There are still no movement points, no terrain cost and no turns. Every one of
+those is a decision the tactical layer has to make, and making them here, before
+there is a game to make them against, is deciding them in the dark.
+
+**You may only order a move into ground you have discovered**, and A* is given
+every unseen hex as impassable. That is not a restriction bolted onto the fog; it
+is what fog *means*. A route that threads perfectly between crags nobody has seen
+is the player reading the level file, and the whole point of the Scout is that
+finding the way is the thing being played.
+
+The Scout has one gameplay stat, `viewDistance`, and it is `2`. That is far enough
+that stepping forward visibly buys something and short enough that the island still
+takes a walk to learn. It is in `game/debug.js` next to the starting hex, and
+`window.hex.setViewDistance(n)` changes it live, because that number is the whole
+tuning surface of this milestone.
+
+**Scale is set by what stands on a tile**, and it is stated in `game/units.js`
+because everything else is measured against it. A hex holds an army unit of about
+fifteen people, so it is roughly 12 m of ground and one world unit is about 7 m -
+which makes a person 0.26 units and a tree about 0.8. The first pass drew a unit
+as a *single* figure 0.84 units tall, a five-metre soldier, and that one object
+quietly told the eye that a hex was three paces across; every prop on the board
+had to come down by a third once it was fixed. A unit is now a formation - two
+InstancedMeshes, a body pass and a head pass, so it costs two draw calls whatever
+it is made of, and so the day a formation has to lose people it is a `count`.
+
+Three things the first passes got wrong, all the same mistake - putting light or
+weight where the eye was already going:
+
+- The Scout's lamp started at lantern strength. It washed the tiles around it
+  amber, so the one part of the board the player is looking at was the one part
+  not in the level's palette, and the warm cliff faces at the coast lit up into
+  what read as a selection outline. The lamp says *where the scout is standing*.
+  The fog is what makes that tile legible.
+- The move highlight started at the opacity a highlight wants on a bright board.
+  On grass a lantern is already tinting warm, at dusk, it was invisible.
+- The cloud started at a near-white albedo, so the fog was the brightest thing in
+  frame and the discovered clearing was a dark hole punched in it. Cloud has to be
+  pale *against a dark sea* and still lose to a lit tile.
+
+`HexPicker` also grew a second pass while this went in. It intersects a flat
+plane rather than raycasting the terrain, which was off by a whole hex on a hill
+seen from a low camera - cosmetic while nothing could be clicked, and a bug the
+moment aiming at high ground sent the Scout somewhere else. It now solves the
+plane twice: once at `y = 0` to find roughly which tile, then again at *that
+tile's* height. One correction covers one step of elevation, which is all this
+board has, and it is still two plane intersections rather than a raycast against
+the merged ground mesh.
+
+## What is left to build
+
+The world is done enough to play on. Nothing on top of it exists yet, and the
+order that matters first:
+
+- **Turns.** Whose turn it is, and what a unit has left to spend on this one.
+  Movement is currently free and unlimited, which is the first thing a turn takes
+  away.
+- **A route longer than one hex.** Clicking an adjacent tile is enough to prove
+  the loop, but not enough to play. `HexGrid.findPath` and `PathFollower` are both
+  sitting there for it, and a multi-hex move is the first thing that needs to know
+  what a step *costs*.
+- **Combat.** `Health` and `HealthBar` survived the cull and are unused. This is
+  where the unit table in `game/units.js` stops being three fields.
+- **Cards, deployment and persistence.** The progression loop from the concept
+  doc, and the last thing to build rather than the first: it is meaningless until
+  a run can be lost.
+
+Two things deliberately kept out of the way until they are needed: `engine/assets.js`
+(glTF loading with a clone cache) and `engine/components/ground_plane.js`.
+
+The Scout's mesh is a knowing placeholder - a hooded figure with a lamp, built
+from the same flat-shaded primitives the props are so it sits in the scene rather
+than on top of it. It is not worth art until it is worth art.

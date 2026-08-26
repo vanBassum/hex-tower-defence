@@ -5,10 +5,16 @@ import { hashHex } from '../engine/hex/hex_noise.js';
 // segment counts plus flatShading gives crisp facets without any textures, and
 // the colours stay under our control rather than baked into an asset.
 //
-// Sizes are chosen against the board rather than picked by eye. A hex is 2 wide
-// (1.73 flat to flat), enemies stand 0.65 to 1.10 tall and a tower is about 0.6,
-// so a tree at ~1.4 reads as scenery you look past and a rock at ~0.4 reads as
-// something you could step over.
+// Sizes are chosen against the board rather than picked by eye, and the board's
+// scale is set in game/units.js: a hex holds an army unit of about fifteen
+// people, so it is roughly 12 m of ground and one world unit is about 7 m.
+//
+// These were all a third larger before a unit was drawn as a formation rather
+// than as a single giant figure, and a tree nearly as tall as its tile is wide is
+// what had been quietly telling the eye that a hex was three paces across. A tree
+// is now ~6 m, a rock is something you step over, and a lantern is a post about
+// three times a person's height - tall for a lamp, which is the point, because it
+// is meant to be seen from the next tile along.
 const HEX_WIDTH = 2;
 
 // Materials are shared across every prop instead of per instance - there is no
@@ -160,12 +166,16 @@ function buildLantern(mats, height, { lanternLight } = {}) {
   cap.position.y = headY + height * 0.115;
   group.add(cap);
 
+  // Its own copy of the bulb material, for the reason the halo below has one:
+  // a lantern is lit *when its tile is found*, so the flame's brightness is a
+  // per-lantern number now rather than one shared colour.
   const flame = new THREE.Mesh(
     new THREE.IcosahedronGeometry(height * 0.052, 0),
-    mats.lanternGlow,
+    mats.lanternGlow.clone(),
   );
   flame.position.y = headY;
   flame.userData.noShadow = true;
+  flame.userData.ownMaterial = true;
   group.add(flame);
 
   // Its own copy of the halo material, because the opacity is animated per
@@ -198,6 +208,7 @@ function buildLantern(mats, height, { lanternLight } = {}) {
   group.userData.halo = halo;
   group.userData.lightIntensity = light.intensity;
   group.userData.haloOpacity = halo.material.opacity;
+  group.userData.flameColor = flame.material.color.clone();
   return group;
 }
 
@@ -218,7 +229,7 @@ export const PROP_TYPES = {
   tree: {
     key: 'tree',
     sway: 0.042,
-    build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.62 + n * 0.16)),   // ~1.24 to ~1.56 tall
+    build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.36 + n * 0.10)),   // ~0.72 to ~0.92 tall, so ~5 to ~6.5 m
   },
   // Shorter things get a bigger angle, because what the eye reads is how far the
   // top travels: a tuft leaning 0.2 rad moves its tip about as far as a tree
@@ -227,7 +238,7 @@ export const PROP_TYPES = {
   bush: {
     key: 'bush',
     sway: 0.075,
-    build: (mats, n) => buildBush(mats, HEX_WIDTH * (0.085 + n * 0.045)),  // ~0.17 to ~0.26 radius
+    build: (mats, n) => buildBush(mats, HEX_WIDTH * (0.055 + n * 0.028)),  // ~0.11 to ~0.17 radius
   },
   grass: {
     key: 'grass',
@@ -235,11 +246,11 @@ export const PROP_TYPES = {
     // A tuft is smaller than a shadow map texel at this range, so casting from it
     // costs a draw call per blade and buys a flicker.
     shadow: false,
-    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.055 + n * 0.03)),  // ~0.18 to ~0.27 tall
+    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019)),  // ~0.12 to ~0.18 tall
   },
   rock: {
     key: 'rock',
-    build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.13 + n * 0.06)),   // ~0.26 to ~0.38 radius
+    build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.085 + n * 0.038)),   // ~0.17 to ~0.25 radius
   },
   lantern: {
     key: 'lantern',
@@ -247,7 +258,7 @@ export const PROP_TYPES = {
     // that visibly pulses reads as a fault, not as a flame.
     flicker: 0.09,
     build: (mats, n, tuning) =>
-      buildLantern(mats, HEX_WIDTH * (0.5 + n * 0.07), tuning),   // ~1.0 to ~1.14 tall
+      buildLantern(mats, HEX_WIDTH * (0.30 + n * 0.045), tuning),   // ~0.60 to ~0.69 tall, so ~4.5 m
   },
 };
 

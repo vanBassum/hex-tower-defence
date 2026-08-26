@@ -2,12 +2,49 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Hex Tower Defence</title>
+  <title>Hex Tactics</title>
   <link rel="icon" href="data:,">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; }
     body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+
+    /* Corner legend. Alt+drag is the one binding nobody guesses, so the camera
+       needs to say so somewhere. Held at low opacity and lifted on hover: it is
+       a reminder for the first minute, not part of the picture after that.
+       It takes the pointer rather than passing it through, which costs the few
+       hexes of sea behind it - the alternative is `pointer-events: none`, and an
+       element that ignores the pointer never receives :hover either. */
+    #controls {
+      position: fixed;
+      left: 16px; bottom: 16px;
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 5px 12px;
+      align-items: center;
+      padding: 11px 14px;
+      border-radius: 7px;
+      background: rgba(9, 16, 30, 0.55);
+      border: 1px solid rgba(143, 216, 232, 0.14);
+      color: #b9cfe0;
+      font-size: 12px;
+      line-height: 1;
+      opacity: 0.4;
+      transition: opacity 220ms ease;
+      user-select: none;
+      cursor: default;
+    }
+    #controls:hover { opacity: 1; }
+    #controls kbd {
+      justify-self: end;
+      font: inherit;
+      color: #dcecf6;
+      white-space: nowrap;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+    }
   </style>
   <script type="importmap">
   {
@@ -19,6 +56,14 @@
   </script>
 </head>
 <body>
+  <div id="controls">
+    <kbd>Left-click</kbd><span>Select / deselect</span>
+    <kbd>Right-click</kbd><span>Walk there</span>
+    <kbd>Middle-drag</kbd><span>Pan</span>
+    <kbd>Wheel</kbd><span>Zoom</span>
+    <kbd>Alt + drag</kbd><span>Rotate</span>
+    <kbd>Q / E</kbd><span>Turn a hex face</span>
+  </div>
   <script type="module" src="game/main.js"></script>
 </body>
 </html>

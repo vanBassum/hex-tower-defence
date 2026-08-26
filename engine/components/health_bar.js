@@ -4,7 +4,7 @@ import { Health } from './health.js';
 
 // Camera-facing bar above the owner. Depth testing is off so bars are never
 // swallowed by the geometry they belong to, and a full bar stays hidden to keep
-// an untouched wave from looking like a wall of UI.
+// an untouched group from looking like a wall of UI.
 export class HealthBar extends Component {
   constructor({ width = 0.7, height = 0.1, y = 1.0, hideWhenFull = true } = {}) {
     super();
