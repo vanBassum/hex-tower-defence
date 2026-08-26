@@ -611,7 +611,7 @@ finding the way is the thing being played.
 
 The Scout has one gameplay stat, `viewDistance`, and it is `2`. That is far enough
 that stepping forward visibly buys something and short enough that the island still
-takes a walk to learn. It is in `game/debug.js` next to the starting hex, and
+takes a walk to learn. It is in `game/debug.js` next to the starting hand, and
 `window.hex.setViewDistance(n)` changes it live, because that number is the whole
 tuning surface of this milestone.
 
@@ -747,11 +747,27 @@ only at camp, the same cache is a walk out and a walk back, and where the Scout
 is standing starts to matter for a reason that has nothing to do with what it can
 see.
 
-**The camp is four hexes on the south-west shore**, around the tile the Scout
-starts on. Small on purpose: a zone covering a tenth of the island is a rule with
-nothing behind it. The Scout's own starting hex is inside it rather than beside
-it, because the camp is the answer to "where did we come from", and a camp nobody
-has ever stood in is a spawn point.
+**The camp is four hexes on the south-west shore**, and a run opens with nothing
+standing on any of them. Small on purpose: a zone covering a tenth of the island
+is a rule with nothing behind it.
+
+**The Scout is a card too - it is just the one you already own.** That is the
+whole of the opening now: an empty marked camp in the fog, one card at the bottom
+of the screen, and one thing you are allowed to do. It replaced a Scout that
+started already standing on a particular hex, which was a special case dressed up
+as a starting position - the tile it stood on was in `debug.js`, the deployment
+zone had to be built around it, and every *other* unit arrived by a route that
+one did not. Now there is one way a unit gets onto this island. `DEBUG.startingHand`
+is what a run is dealt, and adding `'footman'` to it is how you play the second
+run without playing the first.
+
+It costs one thing and buys two. The cost is that the camp has to be *visible*
+before anything can be put in it, so the deployment hexes and one ring around
+them are seeded EXPLORED at setup - `VisibilityMap.reveal`, the first thing other
+than the debug key that ever writes into that map. That is honest rather than
+convenient: you came ashore there. What it buys is an opening frame that states
+the whole game in one picture, and the card mechanic taught before the first
+pickup rather than by it.
 
 **It is drawn twice, for two questions that are never asked at once.** The rim is
 always there and says where home is. It is a line on the ground, which is exactly
@@ -828,10 +844,10 @@ order that matters first:
   than the first - but the hand is already the shape it needs, because a run
   would deal it from a collection instead of filling it from pickups and
   `Deployment.addCard` would not move.
-- **The Scout as a card.** The run starts with it already standing in the camp,
-  which is the one special case the rest of the game no longer needs: once a run
-  has a beginning, the honest version is an empty board, a Scout card, and the
-  camp as the only ground you are allowed to put it on.
+- **A reason to hold a card back.** Every card in hand is played the moment it
+  is found, because nothing is gained by waiting and nothing is lost by
+  committing. That only becomes a decision when a card costs something to play -
+  a turn, an upkeep, a slot - which is another thing turns bring with them.
 
 Two things deliberately kept out of the way until they are needed: `engine/assets.js`
 (glTF loading with a clone cache) and `engine/components/ground_plane.js`.

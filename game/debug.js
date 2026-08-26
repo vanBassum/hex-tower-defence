@@ -10,8 +10,11 @@ import { GameObject } from '../engine/gameobject.js';
 // console. None of it is reachable from the game itself, so none of it needs to
 // survive into a build.
 export const DEBUG = {
-  // The Scout, before the game starts. Both are read once, at setup.
-  scoutStart: { q: -3, r: 4 },
+  // What the run is dealt before it begins. Nothing stands on the board at the
+  // first frame any more - the hand is where a run starts - so this is the whole
+  // of the starting loadout, and adding `'footman'` to it is how you play the
+  // second run without playing the first one.
+  startingHand: ['scout'],
   scoutViewDistance: 2,
 
   fog: true,           // draw the fog layer at all

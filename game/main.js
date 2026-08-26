@@ -24,8 +24,9 @@ import { HexRegionOutline } from '../engine/components/hex_region_outline.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
-// The world, and the first thing that plays on it: a scout, and a map it has to
-// walk to see.
+// The world, and what plays on it: a camp, a hand of cards, and a map that has
+// to be walked to be seen. A run opens with nothing standing on the island - the
+// Scout is a card like any other, it just happens to be the one you already own.
 //
 // The tower defence layer that used to live here is gone - towers, waves, an
 // economy, lives, a route across the island. What is on top of the world now is
@@ -65,9 +66,11 @@ game.visibilityField = field;
 game.add(fieldGO);
 
 const camera = new GameObject('Camera');
-// Closer than the old sightseeing distance: at the start almost nothing is
-// revealed, so a wide shot is a wide shot of fog.
-const rig = camera.addComponent(new CameraRig({ dist: 21 }));
+// Closer again than the last time this was pulled in. A run opens on nothing but
+// the camp - a couple of dozen hexes of known ground in a board of mist - and a
+// wide shot of that is a wide shot of fog with a coin in the middle of it. The
+// wheel is right there for anyone who wants the sightseeing distance back.
+const rig = camera.addComponent(new CameraRig({ dist: 14 }));
 game.add(camera);
 
 // The hour: blue-hour sky, blue haze in the distance, and skylight doing most of
@@ -186,20 +189,6 @@ const fog = fogGO.addComponent(new FogOfWar(map.grid, visibility, {
 }));
 game.add(fogGO);
 
-// The Scout. One unit, one stat, and the whole of this milestone: move, and see
-// further than you did from the last hex.
-const scoutGO = new GameObject('Scout');
-const scout = scoutGO.addComponent(new Unit({
-  grid: map.grid,
-  ground: hexGround,
-  type: 'scout',
-  q: DEBUG.scoutStart.q, r: DEBUG.scoutStart.r,
-  viewDistance: DEBUG.scoutViewDistance,
-  colors: MOOD.units,
-  tuning: { lamp: MOOD.scoutLamp },
-}));
-game.add(scoutGO);
-
 // The camp: the ground a card may be played onto, and the only place on the
 // board that belongs to the player before they have walked anywhere.
 //
@@ -211,6 +200,21 @@ game.add(scoutGO);
 // stakes standing outside it in the prop list are the other half of that: a rim
 // vanishes when the camera drops to look along it, and something with height
 // does not.
+// The camp and the ground around it are the one part of the island a run starts
+// knowing. That is not a courtesy: nothing stands on the board at the first
+// frame any more, and a camp nobody can see is a camp nobody can deploy into -
+// the game would open unable to start. One ring out as well as the camp itself,
+// so the stakes marking it are standing in the light rather than in the bank,
+// which is the frame the whole opening rests on.
+{
+  const known = new Map();
+  for (const h of map.deployment) {
+    known.set(`${h.q},${h.r}`, h);
+    for (const n of map.grid.neighbors(h.q, h.r)) known.set(`${n.q},${n.r}`, n);
+  }
+  visibility.reveal([...known.values()]);
+}
+
 const campGO = new GameObject('Camp');
 campGO.addComponent(new HexRegionOutline(map.grid, map.deployment, {
   color: MOOD.camp.rimColor,
@@ -293,7 +297,9 @@ const control = forceGO.addComponent(new UnitControl({
   grid: map.grid,
   ground: hexGround,
   visibility,
-  units: [scout],
+  // No units. A run's opening roster is whatever it plays out of its hand, and
+  // the alternative - one unit placed here and every other unit deployed - was a
+  // special case pretending to be a starting position.
   // Collecting is the join between the roster and the board, and this is the one
   // component that holds both halves of it.
   pickups,
@@ -341,6 +347,11 @@ control.onSelect = () => deployment.cancel();
 
 game.add(forceGO);
 
+// What the run is dealt. Today it is one Scout, because that is what the player
+// owns; when a run can be lost this is where the collection is spent instead,
+// and it is still this call.
+for (const card of DEBUG.startingHand) deployment.addCard(card);
+
 
 // A cursor on the hex under the mouse, and now three things asking what the mouse
 // means. The picker still knows nothing about any of them: it reports a hex and
@@ -365,10 +376,15 @@ cursor.addComponent(new HexPicker({
 }));
 game.add(cursor);
 
-// Open looking at the Scout rather than at the middle of a board that is almost
-// entirely hidden.
+// Open looking at the camp - the only thing there is to look at, and the only
+// place anything can be put. The middle of the board is fog.
 {
-  const { x, z } = map.grid.hexToWorld(scout.q, scout.r);
+  let x = 0, z = 0;
+  for (const h of map.deployment) {
+    const w = map.grid.hexToWorld(h.q, h.r);
+    x += w.x / map.deployment.length;
+    z += w.z / map.deployment.length;
+  }
   rig.focusOn(x, z);
 }
 
@@ -414,7 +430,7 @@ game.add(motes);
 //
 // The fog is deliberately not in this list: it is the one thing in the scene that
 // is *about* the unknown rather than subject to it.
-for (const go of [groundGO, sea, propsGO, gridGO, campGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
+for (const go of [groundGO, sea, propsGO, gridGO, campGO, motes, ...pickupGOs]) field.patch(go.object3D);
 
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how

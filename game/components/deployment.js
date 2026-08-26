@@ -79,6 +79,25 @@ export class Deployment extends Component {
 
   get playable() { return this.hand.filter(e => !e.spent).length; }
 
+  // The one line of text the game says to the player, and it lives here rather
+  // than in the bar that draws it because every condition it turns on is a fact
+  // this component owns. It exists only while it is true - a hint that is always
+  // up is furniture, and furniture is not read.
+  get hint() {
+    if (this.armed) {
+      return this.openHexes().length
+        ? `Place the ${this.armed.card.name ?? this.armed.card.key} in the camp - Esc to cancel`
+        : 'No room in the camp - move something out of it first';
+    }
+    // An empty board is the opening, and the opening has to say what to do once.
+    // After that there is something standing on the island and the player has
+    // already done it.
+    if (this.playable && !(this._control?.units.length)) {
+      return 'Play a card into the camp to begin';
+    }
+    return '';
+  }
+
   // ── Arming ───────────────────────────────────────────────────────────────
   arm(entry) {
     if (!entry || entry.spent || this.armed === entry) return this.cancel();

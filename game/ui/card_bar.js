@@ -49,18 +49,13 @@ export class CardBar {
       el.querySelector('.card-state').textContent = entry.spent ? 'Deployed' : 'Deploy';
     }
 
-    // The hint is the one line of instruction in the game, and it exists only
-    // while it is true: arming a card is a mode the player entered one click
-    // ago, and a mode with no visible consequence is a mode they are stuck in.
-    // A hand with nowhere to play into is the one state that has to explain
-    // itself: an armed card lights the camp up, and a camp that lights up as
-    // nothing looks identical to a highlight that has not arrived yet.
-    this._hint.textContent = !deployment.armed
-      ? ''
-      : deployment.openHexes().length
-        ? `Place the ${name(deployment.armed.card)} in the camp - Esc to cancel`
-        : 'No room in the camp - move something out of it first';
-    this._hint.classList.toggle('is-on', !!deployment.armed);
+    // The hint is composed by the component that knows the conditions, not here.
+    // Every case it turns on - armed, nowhere to place, an empty board waiting
+    // for the first card - is a fact about the deployment, and a bar that worked
+    // them out for itself would be a second account of the same state.
+    const hint = deployment.hint;
+    this._hint.textContent = hint;
+    this._hint.classList.toggle('is-on', !!hint);
   }
 
   _build(entry) {
