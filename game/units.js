@@ -371,10 +371,10 @@ function buildSquad(type, colors = {}, tuning = {}) {
       // deliberately not multiples of each other so they do not drift into step.
       beat: 0.82 + hashHex(i, 0, 47) * 0.71,
       phase: hashHex(i, 0, 53) * 2.4,
-      // What he has taken since he last showed it, and how much of showing it
-      // he has left. See Unit.damage.
-      sting: 0,
+      // How much of wearing a blow he has left, and whether his own thrust has
+      // already landed this beat. See Unit.struck.
       flinch: 0,
+      landed: false,
     });
     write(i, x + jx, z + jz);
   }

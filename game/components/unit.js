@@ -59,13 +59,10 @@ const STANDOFF = 0.16;   // how far short of the edge the line stops
 // out. Quick in and a slower recovery, then he stands there until his next one.
 const THRUST_SPAN = 0.34;
 const THRUST_OUT = 0.30;
-// A hit reaction. Damage lands as a rate against a frame, so a man shows it once
-// he has taken `HIT_BLOW` of it - anything smaller and he twitches every frame
-// at whatever rate the renderer happens to be running. At the attack rates in
-// units.js that is a little under one a second each, which is about the rhythm
-// of the thrusts coming the other way.
-const HIT_BLOW = 0.30;   // people's worth of damage that reads as one blow
-const HIT_TIME = 0.18;   // and how long he wears it - a jerk, not a stumble
+// How long a man wears a blow - a jerk, not a stumble. What triggers it is not
+// damage but the spear of the man opposite him reaching full extension; see
+// `struck`.
+const HIT_TIME = 0.18;
 
 let UNIT_ID = 0;
 
@@ -171,17 +168,7 @@ export class Unit extends Component {
         const takes = spots[i].hp * weight / spots[i].bite;
         if (takes < step) { step = takes; victim = i; }
       }
-      for (const i of line) {
-        const share = step * spots[i].bite / weight;
-        spots[i].hp -= share;
-        // He wears it the moment he has taken enough of it to have been hit by
-        // something. The onset is instant and the recovery is the decay of
-        // `flinch` - that is the whole reaction, and `_writeMelee` reads it.
-        if ((spots[i].sting += share) >= HIT_BLOW) {
-          spots[i].sting = 0;
-          spots[i].flinch = HIT_TIME;
-        }
-      }
+      for (const i of line) spots[i].hp -= step * spots[i].bite / weight;
       pending -= step;
       if (victim >= 0) this._fall(victim, spots);
     }
@@ -387,6 +374,33 @@ export class Unit extends Component {
     if (this._ring) this._ring.visible = on;
   }
 
+  // Somebody opposite just put a spear into the man holding `file`. Called from
+  // the attacker's own melee pass on the frame his thrust reaches full
+  // extension, which is what makes the two animations one event: he is not
+  // reacting to damage arriving, he is reacting to that spear.
+  //
+  // The pairing is the file and nothing else. Both units lay their line along
+  // the same edge counted from the same end - opposite `side`, out of Battle -
+  // so file f of one stands opposite file f of the other by construction. A file
+  // the enemy has nobody left in is a thrust into air, which is correct.
+  struck(file, from) {
+    const spots = this._mesh?.userData.spots;
+    if (!spots || this.dead) return;
+    const m = this._fights?.length || 1;
+    // Which of this unit's fights the attacker is, so a flanked unit takes the
+    // blow on the front it actually came from.
+    const t = m > 1 ? this._fights.findIndex((x) => x.foe === from) : 0;
+    if (t < 0) return;
+    for (let i = 0; i < this.people; i++) {
+      const sp = spots[i];
+      if (sp.slot % m !== t) continue;
+      const slot = (sp.slot / m) | 0;
+      if (slot >= FRONT_WIDTH || FILE_ORDER[slot % FRONT_WIDTH] !== file) continue;
+      sp.flinch = HIT_TIME;
+      return;
+    }
+  }
+
   // The fights this unit is in this frame, as Battle describes them, or null.
   setMelee(fights) {
     if (fights) this._settling = true;
@@ -452,9 +466,13 @@ export class Unit extends Component {
         // both count the line from the same end and file 0 faces file 0.
         // Odd ranks sit half a file over - a rank directly behind a rank is a
         // grid, and a grid is a parade.
-        const along = ((file - (FRONT_WIDTH - 1) / 2) * FILE_GAP
-                      + (rank & 1 ? FILE_GAP * 0.5 : 0)) * reach * e.side
-                    + (hashHex(e.seed, slot, 3) - 0.5) * reach * 0.16;
+        // The jitter is inside the `side` too, or the two lines scatter their
+        // men in opposite directions and a pair drifts apart by twice it - the
+        // one thing that cannot happen now that one man's spear is the reason
+        // the other one flinches.
+        const along = (((file - (FRONT_WIDTH - 1) / 2) * FILE_GAP
+                       + (rank & 1 ? FILE_GAP * 0.5 : 0)) * reach
+                     + (hashHex(e.seed, slot, 3) - 0.5) * reach * 0.16) * e.side;
         // Toward it: the line stops just short of the edge and each rank behind
         // falls back one more step into its own tile.
         const out = e.mid - (STANDOFF + rank * RANK_GAP) * reach
@@ -477,6 +495,12 @@ export class Unit extends Component {
           lunge = t >= THRUST_SPAN ? 0
                 : t < out ? t / out
                 : 1 - (t - out) / (THRUST_SPAN - out);
+          // Full extension is where the thrust arrives, so that is the frame the
+          // man opposite wears it. Nothing travels between them and nothing is
+          // scheduled: one man's animation is the other man's cue.
+          const home = t >= out && t < THRUST_SPAN;
+          if (home && !sp.landed) e.foe?.struck(file, this);
+          sp.landed = home;
         }
       }
 

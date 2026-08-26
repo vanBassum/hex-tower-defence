@@ -49,24 +49,26 @@ export class Battle extends Component {
   // front lines are counted from the same end of the shared edge and end up
   // opposite each other rather than interleaved.
   //
-  // This is a description of where the fight *is* - the direction of the enemy
-  // and how far it is to the edge between them - and nothing about who hits
-  // whom. Unit turns it into a front line and ranks behind it; the casualties
-  // above do not read any of it.
+  // This is a description of where the fight *is* - the direction of the enemy,
+  // how far it is to the edge between them, and who is over there. Unit turns it
+  // into a front line and ranks behind it, and uses `foe` to tell the man
+  // opposite that a thrust has landed on him. The casualties above read none of
+  // it: what a fight costs and what it looks like are still two separate
+  // accounts of it, and only the second one knows about individuals.
   _engage(u, v) {
     const a = this._grid.hexToWorld(u.q, u.r);
     const b = this._grid.hexToWorld(v.q, v.r);
     const dx = b.x - a.x, dz = b.z - a.z;
     const d = Math.hypot(dx, dz) || 1;
     const seed = Math.min(u.id, v.id) * 97 + Math.max(u.id, v.id);
-    const put = (who, dir, side) => {
+    const put = (who, dir, side, foe) => {
       const list = this._fights.get(who) ?? [];
-      list.push({ dir, side, seed, mid: d * 0.5 });
+      list.push({ dir, side, seed, mid: d * 0.5, foe });
       this._fights.set(who, list);
     };
     const first = u.id < v.id ? 1 : -1;
-    put(u, { x: dx / d, z: dz / d }, first);
-    put(v, { x: -dx / d, z: -dz / d }, -first);
+    put(u, { x: dx / d, z: dz / d }, first, v);
+    put(v, { x: -dx / d, z: -dz / d }, -first, u);
   }
 
   _clash(ours, theirs, dt) {
