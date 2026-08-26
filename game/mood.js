@@ -87,6 +87,16 @@ export const MOOD = {
   // The one rule that carries over: keep it blue-*grey*. Saturated blue sits next
   // to the water and reads as more water.
   fogOfWar: {
+    // How the bank sits on the land. `height` is how far the sheet floats over
+    // the drape it takes from the terrain, and one elevation step is 0.22 - so
+    // the default of 0.30 had the mist riding a step and a half over open ground
+    // and reading as a ceiling rather than as weather lying on the island. Low
+    // enough to skim the tiles is the version that looks like ground fog, and it
+    // costs nothing to hide with: the terrain paints *itself* out, so the sheet
+    // has never been what conceals the board.
+    height:   0.12,
+    minCover: 0.05,          // the least it may ever clear a tile's own top
+
     color:       0x27303f,   // the body of it
     colorLight:  0x46536a,   // where the field piles up thick
     rimColor:    0x76889f,   // the lit lip on a receding edge

@@ -486,7 +486,12 @@ export class FogOfWar extends Component {
         cell: null, next: null, pending: false, ease: 0,
         dx: (hashHex(i, 3, 11) - 0.5) * 2.0 * this._hexSize,
         dz: (hashHex(i, 5, 13) - 0.5) * 2.0 * this._hexSize,
-        rise: (hashHex(i, 6, 15) - 0.4) * 0.35,
+        // Scattered above and below the sheet, and *proportionally* so: the
+        // spread used to be an absolute 0.35, which was a third of the sheet's
+        // own float when the bank rode high and three times it once the bank was
+        // lowered onto the tiles. A wisp well clear of a low sheet is not air
+        // drifting through mist, it is a blob hanging over it.
+        rise: (hashHex(i, 6, 15) - 0.4) * this._height * 1.17,
         size: this._hexSize * (sMin + (sMax - sMin) * hashHex(i, 7, 17)),
         aspect: 0.7 + hashHex(i, 9, 19) * 0.7,
         thick: 0.07 + hashHex(i, 11, 23) * 0.07,

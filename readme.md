@@ -541,6 +541,18 @@ hexagonal step back one tile further on. The lattice is smoothed again on top of
 that, which is what kills the last of the hex. A hard floor still guarantees every
 vertex clears the tile under it.
 
+**And it lies low.** The sheet floats `MOOD.fogOfWar.height` over that drape, and
+one elevation step on this board is 0.22 - so the 0.30 it started at had the mist
+riding a step and a half above open ground and reading as a *ceiling*, something
+the island was under rather than something lying on it. At 0.12 it skims the
+tiles and a formation standing in it is standing in weather up to its waist. It
+costs nothing to hide with, because the sheet was never what hid anything: the
+terrain paints itself out through `VisibilityField`, and the mist has only ever
+been the mood on top of that. The wisps drifting near the reveal line scatter
+*proportionally* to that height rather than by the fixed amount they used to,
+because a wisp well clear of a low sheet is not air moving through mist - it is a
+blob hanging over it.
+
 **Colour is stated outright rather than lit**, which reverses what the blob
 version did and is worth the note. A lit material was the right answer while the
 mist was geometry: it made the fog take the colour of the hour on its own. A
