@@ -116,6 +116,8 @@ you turn twice and then stop turning.
     game/components/pickup.js          something on a hex worth walking to
     game/components/unit_control.js    the force: selection, movement, vision, pickups
     game/components/deployment.js      the hand, and the ground beside the King
+    game/components/enemy_force.js     who is out there, and what they do about you
+    game/components/battle.js          what happens when the two sides touch
     game/ui/card_bar.js                that hand, along the bottom of the screen
     game/debug.js                      developer knobs for the exploration pass
     game/main.js                       scene setup
@@ -135,6 +137,10 @@ risk - in exactly the way a spawn timer is not. It is the same kind of authoring
 as where the lanterns go, and `node tools/map.mjs` prints it as `P` for the
 reason it prints everything else: how far it sits from where a run begins is a
 number being tuned, and it cannot be judged from a pair of axial coordinates.
+
+The enemies are the other thing a level places, for the same reason: where a
+picket stands is a statement about the ground it is standing on. `node
+tools/map.mjs` prints them as `e`.
 
 There is deliberately no deployment zone in the map any more. Where the player
 may bring units in is a fact about where their King is standing, not about the
@@ -885,6 +891,78 @@ left button entirely while it is up, and it cannot be held at the same time as a
 selected unit - arming a card drops the selection, selecting a unit drops the
 card. Two lines, and no flag anybody has to read.
 
+## The other side
+
+Two bodies of Spearmen hold the neck of the island, past the cache and short of
+everything the causeway leads to. They are the first thing here that is not the
+player's, and combat is the *next* milestone rather than this one - so what is
+built is the smallest thing that makes an encounter mean something, and nothing
+that would have to be decided without an enemy anybody has ever fought.
+
+**A unit's strength is its people count.** Fifteen people is what a formation
+draws and what damage comes out of, and they are one field - so the health
+display is the unit itself thinning out, on the board, in the place the player is
+already looking. There is no bar over anybody's head. `Health` and `HealthBar`
+have been sitting unused in the engine since the tower defence cull and this
+deliberately does not use them: a pool of hit points behind a bar is a second
+account of the same fact, and two accounts drift. Losing people is lowering
+`count` on the instanced passes, which is what the two-pass build was written for
+long before there was anything on this island that could take somebody out of a
+rank.
+
+The float behind it matters. Damage is a *rate* against real time, so the tally
+is fractional and `people` is what it rounds up to - otherwise the smallest tick
+either kills somebody or is thrown away, and at fifteen people a thrown-away tick
+is most of the fight.
+
+**A fight is a fact about where things are standing.** `Battle` takes the two
+rosters and, for any two opposing units on adjacent hexes, takes casualties off
+both at their own rates. No attack order, no target selection, no turn. Nothing
+pins anybody: you can walk out of a fight, or straight through one, and pay for
+it in people - a rule that held units in place would be a rule about turns, and
+holding somebody still in a game with no turn to spend is holding them still
+forever. Flanking is not implemented and happens anyway, because a unit with two
+enemies beside it is simply in two pairs.
+
+The numbers are one per type and they are what the first map is balanced on: one
+body of Footmen beats one body of Spearmen with a third of itself standing, and
+loses to two. That is the encounter the concept doc asks for - the first time you
+come up here you lose, and the second time you come up here with more.
+
+**They only come if you come close, and they go home if you leave.** `aggro` on
+the type is the whole behaviour: three hexes, which is one further than a Scout
+can see, so the first thing you learn about a picket is that it is already
+moving. Each one remembers the hex the level stood it on and walks back to it
+when nothing is in range - without that a player who pokes and retreats drags the
+picket across the island a hex at a time, and "don't get close" stops being a
+decision you can make twice.
+
+Enemies think whether or not they are visible, and that is not a cheat: they live
+here, and being unobserved does not make them asleep. The fog hides them through
+the same `field.patch` sweep as everything else.
+
+Where they stand took one correction worth writing down. Sitting them *in* the
+crossing put them three hexes from where the King starts - the same distance as
+the cache - so the first thing that happened on a new run was a picket marching
+into the camp. This island is small, and "beyond the pickup" is a thing to be
+measured rather than eyeballed.
+
+**A spent card is that unit's readout.** The card keeps hold of what it played,
+so it goes on saying something after it is spent: how many are still standing
+against what it started with, a thin fill under the art, and then `Lost`. That is
+where the comparison lives - the board tells you a formation is thinner and the
+card tells you by how much - and it costs no new UI, because the hand was already
+on screen. It is polled rather than pushed: damage lands on some frame or other
+rather than at an event worth subscribing to, and comparing three cards is
+cheaper than the bookkeeping that would avoid it.
+
+**They read as a mob.** Everything the player owns stands in rings or in ranks;
+Spearmen stand in a crowd, jittered nearly five times as hard, with their spears
+going every way at once and dull red hoods where the Footmen have pale steel
+helmets. The colour is the smaller half of that. What carries at the game's
+camera is that one of these two crowds is *ordered* and the other is not, which
+is legible at any zoom and in any light.
+
 ## What is left to build
 
 The world is done enough to play on. Nothing on top of it exists yet, and the
@@ -897,12 +975,13 @@ order that matters first:
   movement points, no terrain cost, no limit on how far a turn carries you. That
   is the other half of the turn above, and the first thing that makes a route a
   decision rather than a click.
-- **Combat.** `Health` and `HealthBar` survived the cull and are unused. This is
-  where the unit table in `game/units.js` stops being four fields, and it is what
-  the Footmen were found for.
-- **An enemy on the causeway.** The concept's first map turns on a force the Scout
-  cannot beat and the Footmen can, standing where the island is narrowest. The
-  ground for it is drawn already and nothing stands on it.
+- **Combat, properly.** What exists is adjacency and a rate. There is no
+  retreating that costs anything, no ground worth holding, no difference between
+  attacking and being attacked, and no reason to bring two units instead of one
+  big one. Most of those are turns wearing a different hat.
+- **Losing.** The King can be killed now and nothing happens when he is: the hand
+  says nothing can be brought in, and the run carries on being unplayable rather
+  than ending. That is the first thing the next pass owes.
 - **The run boundary, and the collection behind the hand.** A card is found,
   played and spent inside one session; nothing survives a reload, and there is no
   losing a run to keep anything *across*. Still the last thing to build rather

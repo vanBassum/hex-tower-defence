@@ -15,6 +15,9 @@ const propAt = new Map(map.props.map(p => [key(p.q, p.r), p.type]));
 // design decision about what the player finds and when, which is exactly the
 // kind of thing this tool exists so nobody has to judge from a coordinate.
 const pickupAt = new Set(map.pickups.map(p => key(p.q, p.r)));
+// And who is standing on the board at setup. Where a picket sits relative to the
+// cache is the shape of the first run, and it is not judgeable from coordinates.
+const enemyAt = new Set(map.enemies.map(e => key(e.q, e.r)));
 const GLYPH = { tree: ' T ', rock: ' r ', bush: ' b ', grass: ' , ', lantern: ' i ', stake: ' I ' };
 
 const cells = new Map();   // "row,q" -> glyph
@@ -35,7 +38,8 @@ for (const { q, r } of grid.allHexes()) {
   const lvl = map.levels.get(key(q, r)) ?? 0;
 
   let glyph;
-  if (pickupAt.has(key(q, r)))             glyph = ' P ';
+  if (enemyAt.has(key(q, r)))              glyph = ' e ';
+  else if (pickupAt.has(key(q, r)))        glyph = ' P ';
   else if (propAt.has(key(q, r)))          glyph = GLYPH[propAt.get(key(q, r))] ?? ' * ';
   else if (map.blockedKeys.has(key(q, r))) glyph = ' X ';
   else if (lvl >= 2)                       glyph = ' ^ ';
@@ -73,5 +77,6 @@ for (let row = minRow; row <= maxRow; row++) {
 }
 console.log('');
 console.log('  ~ sea  X crag (solid)  n hill  ^ high hill  ' +
-            'T tree  b bush  r rock  i lantern  I stake  P pickup  . grass');
+            'T tree  b bush  r rock  i lantern  I stake  ' +
+            'P pickup  e enemy  . grass');
 console.log('  columns are q; rows are 2r+q, so r = (row - q) / 2');

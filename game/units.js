@@ -9,6 +9,19 @@ import { hashHex } from '../engine/hex/hex_noise.js';
 // damage is a number nobody has ever had to defend. Combat stats arrive with
 // combat, in this table, without moving anything else.
 //
+// ── Casualties are the count, and that is the only health there is ──────────
+// A unit *is* fifteen people, so it loses them. There is no hit-point pool
+// hidden behind a bar over its head: `people` is the number the mesh draws and
+// the number it takes damage out of, and the two cannot drift apart because they
+// are one field. A formation thinning out as it fights is a health bar that is
+// already on the board, in the place the player is already looking, and it needs
+// no UI at all.
+//
+// `attack` is the other half and it is a *rate* - people killed per second while
+// two units stand next to each other. Not a die roll and not a turn's worth of
+// damage, because there are no turns yet and a number that assumed them would be
+// a number that has to be rewritten the day they arrive.
+//
 // There are two entries now rather than one, and the second is the whole point
 // of the first pickup: the Scout finds a set of colours somebody left on the
 // island and the Footmen who follow them join the force. What separates them is
@@ -54,6 +67,9 @@ export const UNIT_TYPES = {
     formation: 'rings',
     jitter: 0.22,
     lamp: true,
+    // It can defend itself and that is all. A Scout that fights is a Scout being
+    // used wrong, and the number says so without a rule having to.
+    attack: 0.4,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.scout, colors, tuning),
   },
 
@@ -101,6 +117,9 @@ export const UNIT_TYPES = {
     // everything comes back to.
     lamp: true,
     deployAnchor: true,
+    // A retinue of nine that can hold for a moment. He is not a fighting unit
+    // and the day he has to be one is the day the run was already lost.
+    attack: 1.4,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.king, colors, tuning),
   },
 
@@ -126,7 +145,44 @@ export const UNIT_TYPES = {
     jitter: 0.12,
     spears: true,
     lamp: false,
+    // What they are for. One body of Footmen beats one body of Spearmen with a
+    // third of itself left standing, and loses to two - which is the encounter
+    // the concept doc asks the first map to open with.
+    attack: 2.2,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.footman, colors, tuning),
+  },
+
+  // ── The other side ─────────────────────────────────────────────────────────
+  // The first thing on this island that is not the player's, and the shape the
+  // rest of them will be poured into: a type with `hostile` on it and a
+  // behaviour, so a second kind that keeps its distance or runs for help is a
+  // new entry here and a new branch in EnemyForce, not a new system.
+  //
+  // Spearmen sit still until somebody comes within three hexes and then come for
+  // them. That is the whole of it, and it is deliberately the simplest reaction
+  // that is still a reaction: the player has to decide how close is too close
+  // before they know what is out there, which is the only tension exploration can
+  // carry before there are turns to spend.
+  spearmen: {
+    key: 'spearmen',
+    name: 'Spearmen',
+    hostile: true,
+    viewDistance: 1,
+    people: 12,
+    attack: 1.8,
+    // How near you may walk before they come. Three is one further than a Scout
+    // can see, on purpose - the first thing you learn about them is that they are
+    // already moving.
+    aggro: 3,
+    // A mob rather than a formation, and that is the read. Everything the player
+    // owns stands in rings or in ranks; this stands in a crowd, with its spears
+    // going every way at once. It works at any zoom and in any light, which
+    // colour alone does not.
+    formation: 'rings',
+    jitter: 0.55,
+    spears: true,
+    spearTilt: 0.7,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.spearmen, colors, tuning),
   },
 };
 
@@ -239,7 +295,8 @@ function buildSquad(type, colors = {}, tuning = {}) {
       // the middle of anyone's head.
       pos.x += Math.cos(yaw) * h * 0.16;
       pos.z -= Math.sin(yaw) * h * 0.16;
-      tilt.set((hashHex(i, 0, 31) - 0.5) * 0.26, yaw, (hashHex(i, 0, 37) - 0.5) * 0.26);
+      const t = type.spearTilt ?? 0.26;
+      tilt.set((hashHex(i, 0, 31) - 0.5) * t, yaw, (hashHex(i, 0, 37) - 0.5) * t);
       quat.setFromEuler(tilt);
       m.compose(pos, quat, scale);
       spears.setMatrixAt(i, m);
@@ -375,6 +432,11 @@ function buildSquad(type, colors = {}, tuning = {}) {
   group.userData.selectionRing = ring;
   group.userData.lamp = light;
   group.userData.people = n;
+  // The passes whose `count` is the unit's strength. Losing people is lowering a
+  // number here and nothing else - which is what the two-pass instanced build
+  // was for in the first place, written down long before there was anything on
+  // this island that could take somebody out of a formation.
+  group.userData.ranks = spears ? [bodies, heads, spears] : [bodies, heads];
   return group;
 }
 

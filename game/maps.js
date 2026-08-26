@@ -113,6 +113,27 @@ export const MAP_1 = {
     { type: 'lantern', q:  2, r:  3, spread: 0.2 },   // the southern headland
   ],
 
+  // Who is out there. Two bodies of Spearmen holding the neck of the island,
+  // north of the cache and south of everything the causeway leads to - which is
+  // the encounter the concept doc asks the first map to open with. One body of
+  // Footmen beats one of these and loses to both, so the first time the player
+  // comes up here they lose, and the second time they come up here with more.
+  //
+  // They stand *past* the neck rather than in it, and that placement took one
+  // correction worth writing down. Sitting them on the crossing itself put them
+  // three hexes from where the King starts - the same distance as the cache - so
+  // the first thing that happened on a new run was a picket marching into the
+  // camp. This island is small, and "beyond the pickup" has to be measured
+  // rather than eyeballed.
+  //
+  // From here they are four and five hexes from the start, and the tile that
+  // wakes them is the one before the crossing: you get one look at them moving
+  // before anything can reach anything.
+  enemies: [
+    { type: 'spearmen', q: 0, r:  0 },
+    { type: 'spearmen', q: 1, r: -1 },
+  ],
+
   // What is out there to be found. One cache, and where it sits is the whole of
   // the first map's teaching: three hexes east of where the Scout starts, on the
   // small hill by the southern tree, which is a landmark from the moment it is
@@ -165,6 +186,13 @@ export function buildMap(def) {
     }
   }
 
+  // Anything the level stands on the board has to be somewhere a unit can be.
+  for (const e of def.enemies ?? []) {
+    if (!grid.inBounds(e.q, e.r) || blockedKeys.has(`${e.q},${e.r}`)) {
+      throw new Error(`Map "${def.name}": ${e.type} cannot stand at ${e.q},${e.r}`);
+    }
+  }
+
   checkConnected(def, grid, hexes?.[0] ?? { q: 0, r: 0 });
 
   return {
@@ -179,6 +207,7 @@ export function buildMap(def) {
     waterLevel: def.waterLevel ?? -1,
     props: def.props ?? [],
     pickups: def.pickups ?? [],
+    enemies: def.enemies ?? [],
     scatter: buildScatter(def, grid, new Set([
       ...blockedKeys,
       ...(def.props ?? []).map(p => `${p.q},${p.r}`),
@@ -186,6 +215,7 @@ export function buildMap(def) {
       // the board the player is meant to pick out of the dark, and a tuft of
       // grass drawn over its foot is the composition arguing with itself.
       ...(def.pickups ?? []).map(p => `${p.q},${p.r}`),
+      ...(def.enemies ?? []).map(e => `${e.q},${e.r}`),
     ])),
   };
 }

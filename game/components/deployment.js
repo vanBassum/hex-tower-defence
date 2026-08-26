@@ -36,6 +36,18 @@ const key = (q, r) => `${q},${r}`;
 // see on a first run - that the thing they found is the thing now standing on
 // the board. When a run can be lost, the hand is rebuilt from the collection and
 // the spent flags go with it.
+//
+// ── A spent card is that unit's readout ─────────────────────────────────────
+// The entry keeps the unit it played, so the card goes on saying something after
+// it is spent: how many of them are still standing, and then that they are gone.
+// That is the whole of the damage display - there is no bar over anybody's head,
+// because a formation thinning out on the board already *is* one, and the card
+// is where you look to compare it against what it started as.
+//
+// It is polled rather than pushed. Damage arrives as a rate against real time,
+// so `people` changes on some frame or other rather than at an event worth
+// subscribing to, and a comparison across a hand of two or three cards is
+// cheaper than the bookkeeping that would avoid it.
 export class Deployment extends Component {
   constructor({
     grid,
@@ -193,6 +205,7 @@ export class Deployment extends Component {
     const unit = this._deploy?.(entry.card.unit, hex.q, hex.r);
     if (!unit) return null;
     entry.spent = true;
+    entry.unit = unit;
     this.armed = null;
 
     this._control?.add(unit);
@@ -211,6 +224,18 @@ export class Deployment extends Component {
   // is easy to forget: the hand's own line of text is written from this count -
   // "no room in the camp" has to stop being true the moment somebody walks out
   // of it, or the player is told to do the thing they have just done.
+  // Watches what the played cards are doing, and tells the bar when it changes.
+  update() {
+    let changed = false;
+    for (const e of this.hand) {
+      const now = e.unit ? (e.unit.dead ? -1 : e.unit.people) : null;
+      if (now === e.shown) continue;
+      e.shown = now;
+      changed = true;
+    }
+    if (changed) this._changed();
+  }
+
   _boardChanged() {
     if (!this.armed) return;
     this._refreshOverlay();

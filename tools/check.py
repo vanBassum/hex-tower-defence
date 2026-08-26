@@ -108,6 +108,10 @@ def main():
                     metavar='Q,R', help='left-click this hex (a real mouse event)')
     ap.add_argument('--order', type=hexarg, action=Step,
                     metavar='Q,R', help='right-click this hex - the order button')
+    # --settle is one number for every step; this is a wait you can put *between*
+    # two of them, which is what watching something play out actually needs.
+    ap.add_argument('--pause', type=float, action=Step,
+                    metavar='SECONDS', help='wait here, in sequence with the other steps')
     ap.add_argument('--at', type=hexarg, metavar='Q,R', help='point the camera at a hex')
     ap.add_argument('--dist', type=float, help='camera distance (default is the game\'s 21)')
     ap.add_argument('--reveal', action='store_true', help='lift the fog off the whole board')
@@ -168,6 +172,8 @@ def main():
             for kind, value in steps:
                 if kind == 'eval':
                     last = page.evaluate(f'() => {{ {value} }}')
+                elif kind == 'pause':
+                    page.wait_for_timeout(value * 1000)
                 else:
                     xy = hex_to_screen(page, *value)
                     page.mouse.move(xy['x'], xy['y'])

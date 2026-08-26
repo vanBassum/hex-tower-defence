@@ -90,7 +90,7 @@
          footer stay pinned - fifteen words on one card must not make the card
          next to it a different height. */
       display: grid;
-      grid-template-rows: 44px auto 1fr auto;
+      grid-template-rows: 44px auto 1fr auto auto;
       gap: 6px;
       width: 122px;
       padding: 11px 11px 9px;
@@ -136,15 +136,39 @@
 
     .card-name { font-size: 13px; color: #f0dcc0; letter-spacing: 0.01em; }
     .card-role { font-size: 10.5px; line-height: 1.35; color: #9d9382; }
+    /* How the unit this card played is doing. It replaces the border the footer
+       used to draw, so a card that has been played gains a reading rather than a
+       decoration - and an unplayed one draws an empty track, which is the line
+       that was there before. */
+    .card-fill {
+      display: block;
+      height: 2px;
+      border-radius: 1px;
+      background: rgba(224, 160, 92, 0.16);
+      overflow: hidden;
+    }
+    .card-fill i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: #e0a05c;
+      transition: width 240ms ease;
+    }
+    .card.is-lost .card-fill i { background: #7c5a4a; }
+
     .card-state {
       font-size: 10px;
       letter-spacing: 0.09em;
       text-transform: uppercase;
       color: #e0a05c;
       padding-top: 5px;
-      border-top: 1px solid rgba(224, 160, 92, 0.16);
     }
     .card.is-spent .card-state { color: #8b8478; }
+    /* Spent is dim; lost is dim *and* said. A card the player can no longer act
+       on still has to be legible, because what it is telling them is that the
+       thing they found is not on the board any more. */
+    .card.is-lost { opacity: 0.5; }
+    .card.is-lost .card-state { color: #a8564b; }
 
     @keyframes card-in {
       from { opacity: 0; transform: translateY(26px) scale(0.94); }

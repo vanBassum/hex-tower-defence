@@ -27,7 +27,8 @@ export const DEBUG = {
 
 const VISION_COLOR = 0xffc07a;
 
-export function installDebug({ game, grid, ground, rig, fog, field, control, visibility, spawn = null, pickups = [], deployment = null }) {
+export function installDebug({ game, grid, ground, rig, fog, field, control, visibility,
+                               spawn = null, pickups = [], deployment = null, enemies = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -64,6 +65,9 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     // would, because the pickup calls the same hook either way.
     pickups,
     deployment,
+    // The other side, so a fight can be started without walking into one:
+    // `hex.enemies.units[0].damage(5)`, or `hex.teleport(0, 2)` and wait.
+    enemies,
 
     // A card in hand without finding the thing that carries it. The one knob
     // this milestone actually needs tried: whether a card is worth walking back

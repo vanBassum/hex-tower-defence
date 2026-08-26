@@ -77,6 +77,15 @@ Break one of these and something three files away goes subtly wrong.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.
+- **A unit's strength IS its people count.** Damage lowers `people`, which is the
+  `count` on its InstancedMesh passes - one field, so the display cannot drift
+  from the fact. There is no health bar over anything; `Health`/`HealthBar` in
+  the engine stay unused on purpose. A unit with nobody left removes its own
+  GameObject and every roster drops it via `onDied`.
+- **Enemies are a unit type with `hostile` and a behaviour field**, driven by
+  `EnemyForce` (roster + one decision every 0.4s) and fought by `Battle`
+  (adjacency → casualties, both directions, no turn). A new kind of enemy is an
+  entry in `UNIT_TYPES` and a branch in `EnemyForce`, not a new system.
 - **Gameplay is discrete, drawing is not.** Rules run on hexes; the hexagon is
   thrown away in `VisibilityField` (hexes → texture → blur → opacity).
 
@@ -89,6 +98,7 @@ Break one of these and something three files away goes subtly wrong.
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
 | A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js`. `role` says what the troop is *for* - never a stat |
 | A unit others deploy beside | `deployAnchor: true` on its type |
+| An enemy kind | `UNIT_TYPES` with `hostile` + a behaviour field; place it in `maps.js` `enemies` |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
 | A wire between components | `game/main.js`, never inside either component |

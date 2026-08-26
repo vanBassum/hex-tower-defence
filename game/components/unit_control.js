@@ -89,7 +89,24 @@ export class UnitControl extends Component {
     if (this.units.includes(unit)) return unit;
     this.units.push(unit);
     unit.onMoved(() => this._afterMove());
+    unit.onDied(() => this.remove(unit));
     return unit;
+  }
+
+  // Off the roster the moment it has nobody left. Everything downstream reads
+  // the roster rather than a flag - vision is the union over it, selection is
+  // one of its entries, and the deployment zone is whichever of them can anchor
+  // - so a dead unit left in the list is a unit that still sees, can still be
+  // clicked, and can still be deployed next to.
+  remove(unit) {
+    const i = this.units.indexOf(unit);
+    if (i < 0) return;
+    this.units.splice(i, 1);
+    if (this.selected === unit) {
+      this.selected = null;
+      this._refreshPath();
+    }
+    this.refreshVision();
   }
 
   unitAt(q, r) {

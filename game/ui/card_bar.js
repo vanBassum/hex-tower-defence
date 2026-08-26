@@ -45,8 +45,9 @@ export class CardBar {
       }
       el.classList.toggle('is-armed', deployment.armed === entry);
       el.classList.toggle('is-spent', entry.spent);
+      el.classList.toggle('is-lost', !!entry.unit?.dead);
       el.disabled = entry.spent;
-      el.querySelector('.card-state').textContent = entry.spent ? 'Deployed' : 'Deploy';
+      this._state(el, entry);
     }
 
     // The hint is composed by the component that knows the conditions, not here.
@@ -66,6 +67,7 @@ export class CardBar {
       `<span class="card-art">${ART[entry.card.unit] ?? ART.default}</span>` +
       `<span class="card-name"></span>` +
       `<span class="card-role"></span>` +
+      `<span class="card-fill"><i></i></span>` +
       `<span class="card-state">Deploy</span>`;
     el.querySelector('.card-name').textContent = name(entry.card);
     // What it is for, not what it is worth. See the note in cards.js: a stat on
@@ -76,6 +78,29 @@ export class CardBar {
     return el;
   }
 }
+
+// How the unit this card played is doing, which is the only thing a spent card
+// still has to say. A count against what it started with rather than a
+// percentage: fifteen people is a number the player can see on the board and
+// count, and "80%" is a number about a bar.
+CardBar.prototype._state = function (el, entry) {
+  const u = entry.unit;
+  const fill = el.querySelector('.card-fill i');
+
+  if (!entry.spent) {
+    el.querySelector('.card-state').textContent = 'Deploy';
+    fill.style.width = '0%';
+    return;
+  }
+  if (!u || u.dead) {
+    el.querySelector('.card-state').textContent = 'Lost';
+    fill.style.width = '0%';
+    return;
+  }
+  const max = u.type.people ?? 1;
+  el.querySelector('.card-state').textContent = `${u.people} of ${max}`;
+  fill.style.width = `${Math.max(0, Math.min(1, u.people / max)) * 100}%`;
+};
 
 function name(card) {
   return card.name ?? NAMES[card.unit] ?? card.key;

@@ -23,6 +23,19 @@ import { UNIT_TYPES } from '../units.js';
 // The unit holds its hex in the grid's occupancy set, which is how it becomes
 // impassable to everything else for free: crags already work that way, and A*
 // and `isWalkable` already ask.
+//
+// ── Strength is the count, and there is no bar over its head ────────────────
+// A unit is fifteen people and it loses them. `people` is both the number the
+// formation draws and the number damage comes out of, so the health display is
+// the unit itself thinning out - already on the board, in the place the player
+// is already looking. `Health` and `HealthBar` are still sitting unused in the
+// engine and this deliberately does not use them: a pool of hit points behind a
+// bar is a second account of the same fact, and the two would drift.
+//
+// The float behind it matters. Damage arrives as a rate against real time, so
+// `_strength` is fractional and `people` is what that rounds up to - otherwise
+// the smallest tick of damage either kills somebody or is thrown away, and at
+// fifteen people a thrown-away tick is most of the fight.
 export class Unit extends Component {
   constructor({
     grid,
@@ -46,6 +59,7 @@ export class Unit extends Component {
     emerge = false,
     emergeRate = 2.2,
     onMoved = null,         // (unit) => void, fired the instant the hex changes
+    onDied = null,          // (unit) => void, fired when the last of them is gone
   } = {}) {
     super();
     this.type = UNIT_TYPES[type];
@@ -67,6 +81,16 @@ export class Unit extends Component {
     this._emergeRate = emergeRate;
     this._born = emerge ? 0 : 1;   // 0..1, how much of the formation has arrived
 
+    // Whose it is. A fact about the type rather than the placement, because what
+    // makes something an enemy is what it is, not where the level put it.
+    this.hostile = !!this.type.hostile;
+    this.attack = this.type.attack ?? 0;
+    this.people = this.type.people ?? 1;
+    this._strength = this.people;
+    this.dead = false;
+    this._deathListeners = new Set();
+    if (onDied) this._deathListeners.add(onDied);
+
     this._leg = null;       // {from, to, len} - the tile being walked into
     this._along = 0;        // how far along that leg
     this._route = [];       // hexes still to enter, in order
@@ -78,6 +102,38 @@ export class Unit extends Component {
     // whatever spends the movement point - so it is a list rather than one slot.
     this._moveListeners = new Set();
     if (onMoved) this._moveListeners.add(onMoved);
+  }
+
+  // Fires once, when the unit has nobody left. Returns an unsubscribe function.
+  onDied(fn) {
+    this._deathListeners.add(fn);
+    return () => this._deathListeners.delete(fn);
+  }
+
+  // Takes casualties. `amount` is in people and may be fractional - it arrives
+  // as a rate times a frame - and the mesh is only touched when the whole number
+  // actually changes, so a fight costs one `count` write per person lost rather
+  // than one per frame.
+  damage(amount) {
+    if (this.dead || amount <= 0) return;
+    this._strength -= amount;
+
+    const left = Math.max(0, Math.ceil(this._strength));
+    if (left !== this.people) {
+      this.people = left;
+      for (const m of this._ranks) m.count = left;
+    }
+    if (this._strength <= 0) this._die();
+  }
+
+  // Nobody left. The unit takes itself off the board rather than waiting to be
+  // collected: its hex has to be freed and its mesh has to stop being drawn
+  // whoever owned it, and `destroy` already does both.
+  _die() {
+    if (this.dead) return;
+    this.dead = true;
+    for (const fn of this._deathListeners) fn(this);
+    this.gameObject.game?.remove(this.gameObject);
   }
 
   // Fires the instant the hex coordinate changes, not when the walk finishes.
@@ -105,6 +161,7 @@ export class Unit extends Component {
     this._mesh = this.type.build(this._colors, { ...this._tuning, hexSize: this._grid.size });
     this.gameObject.object3D.add(this._mesh);
     this._ring = this._mesh.userData.selectionRing ?? null;
+    this._ranks = this._mesh.userData.ranks ?? [];
     this._grid.occupy(this.q, this.r);
     this._snap();
     this._facing = this.gameObject.rotation.y;

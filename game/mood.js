@@ -184,6 +184,18 @@ export const MOOD = {
       lampGlow: 0xffa855,
     },
 
+    // The other side. Colder and darker than anything the player owns, with the
+    // one warm note kept for the heads - a dull red hood against the Footmen's
+    // pale steel helmet, which is the only place the two crowds differ in
+    // colour. The real difference is that this one stands in a mob and theirs
+    // stands in ranks; colour is what stops them being the same *material* as
+    // well as the same shape.
+    spearmen: {
+      cloak: 0x2c2b34,
+      trim:  0x7a3a34,
+      steel: 0x6f6a64,
+    },
+
     // Darker and browner than the Scout - leather rather than travelling cloth -
     // with the two cool notes reserved for the parts that are meant to be metal.
     // The helmets and the spears are the only thing on a Footman that catches

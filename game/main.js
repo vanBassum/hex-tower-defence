@@ -20,6 +20,8 @@ import { Unit } from './components/unit.js';
 import { UnitControl } from './components/unit_control.js';
 import { Pickup } from './components/pickup.js';
 import { Deployment } from './components/deployment.js';
+import { EnemyForce } from './components/enemy_force.js';
+import { Battle } from './components/battle.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
@@ -242,14 +244,15 @@ for (const p of map.pickups) {
 // unit, and the debug console that spawns one to check a claim with. Whatever
 // deployment eventually looks like - a screen, a hand of cards, a starting
 // roster - it ends in this call.
-function deploy(type, q, r) {
+function deploy(type, q, r, { emerge = true } = {}) {
   const go = new GameObject(type);
   const unit = go.addComponent(new Unit({
     grid: map.grid, ground: hexGround, type, q, r,
     viewDistance: type === 'scout' ? DEBUG.scoutViewDistance : null,
     colors: MOOD.units, tuning: { lamp: LAMPS[type] },
-    // Scaled up rather than switched on: this one was not here a moment ago.
-    emerge: true,
+    // Scaled up rather than switched on, for anything that was not here a moment
+    // ago. What the level stands on the board at setup was always there.
+    emerge,
   }));
   game.add(go);
   // Built after the sweep at the bottom of this file, so it patches itself in.
@@ -341,6 +344,22 @@ game.add(forceGO);
 for (const card of DEBUG.startingHand) deployment.addCard(card);
 
 
+// The other side. It goes on after the force because it watches it, and its
+// units are built through the same call the player's are - a unit is a unit, and
+// what makes one an enemy is a field on its type rather than a different way of
+// getting onto the board.
+const enemyGO = new GameObject('Enemies');
+const enemies = enemyGO.addComponent(new EnemyForce({ grid: map.grid, control }));
+game.add(enemyGO);
+for (const e of map.enemies) enemies.add(deploy(e.type, e.q, e.r, { emerge: false }));
+
+// And what happens when the two of them end up next to each other. It is handed
+// both rosters and neither of them is told: a side is anything with a `units`
+// array, so the day there is a third one it is one more entry here.
+const battleGO = new GameObject('Battle');
+battleGO.addComponent(new Battle({ grid: map.grid, sides: [control, enemies] }));
+game.add(battleGO);
+
 // A cursor on the hex under the mouse, and now three things asking what the mouse
 // means. The picker still knows nothing about any of them: it reports a hex and
 // the force decides whether that is a unit, a destination, or a change of mind.
@@ -426,7 +445,7 @@ for (const go of [groundGO, sea, propsGO, gridGO, kingGO, motes, ...pickupGOs]) 
 // far a scout sees is a number that has to be tried, not a feature.
 installDebug({
   game, grid: map.grid, ground: hexGround, rig, fog, field, control, visibility,
-  pickups, deployment,
+  pickups, deployment, enemies,
   // How a unit gets built, handed over rather than rebuilt in the debug module -
   // it is the same call a collected pickup goes through.
   spawn: deploy,
