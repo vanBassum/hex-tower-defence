@@ -127,6 +127,10 @@ export class Unit extends Component {
   // as a rate times a frame - and the mesh is only touched when the whole number
   // actually changes, so a fight costs one `count` write per person lost rather
   // than one per frame.
+  //
+  // *Which* person that is, is decided in `_writeMelee`: a count always drops
+  // the highest instance, so the melee hands that index the front line and the
+  // one behind it steps up. Nothing here has to know that.
   damage(amount) {
     if (this.dead || amount <= 0) return;
     this._strength -= amount;
@@ -305,11 +309,25 @@ export class Unit extends Component {
   // formation is bent into and not a second movement system. It is also why
   // there is nothing to undo: `setMelee(null)` and the same easing walks them
   // home.
+  //
+  // ── The line is filled from the back ────────────────────────────────────
+  // Casualties are a `count` on an InstancedMesh, and a count draws instances
+  // 0..count-1 - so the person a casualty takes off the board is always the
+  // *highest* live index, and there is no choosing otherwise short of a second
+  // index buffer nobody needs. The people doing the dying are supposed to be the
+  // people doing the fighting, so the slots are handed out backwards: the
+  // highest live index stands on the front line and index 0 stands at the back.
+  //
+  // The replacement falls out of that and costs nothing. `live` drops by one, so
+  // every remaining person's slot drops by one, so the whole body steps up a
+  // place - and because a slot is a target eased toward rather than a position
+  // written, that step reads as the ranks closing over the gap.
   _writeMelee(dt) {
     const g = this._mesh.userData;
     if (!g.write) return;
     const f = this._fights;
     const n = g.spots.length;
+    const live = this.people;
     const reach = g.reach;
     const k = 1 - Math.exp(-4 * dt);
     // Battle describes the fight in world space; people are placed in the mesh's
@@ -323,11 +341,16 @@ export class Unit extends Component {
       const sp = g.spots[i];
       let tx = sp.x, tz = sp.z, tyaw = sp.yaw;
 
-      if (f && f.length) {
+      // Counted from the back, so the front line sits at the high indices - see
+      // above. Anyone past `live` is not drawn; they wait at their home spot so
+      // there is somewhere sane to come back from if the unit is ever refilled.
+      const j = live - 1 - i;
+
+      if (f && f.length && j >= 0) {
         // Flanked units split their people between the fights they are in, so
         // each front gets a thinner line rather than one front getting all of it.
-        const e = f[i % f.length];
-        const slot = (i / f.length) | 0;
+        const e = f[j % f.length];
+        const slot = (j / f.length) | 0;
         const file = slot % FRONT_WIDTH;
         const rank = (slot / FRONT_WIDTH) | 0;
 
