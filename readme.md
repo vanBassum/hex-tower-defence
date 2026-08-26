@@ -929,23 +929,41 @@ body of Footmen beats one body of Spearmen with a third of itself standing, and
 loses to two. That is the encounter the concept doc asks for - the first time you
 come up here you lose, and the second time you come up here with more.
 
-**They only come if you come close, and they go home if you leave.** `aggro` on
-the type is the whole behaviour: three hexes, which is one further than a Scout
-can see, so the first thing you learn about a picket is that it is already
-moving. Each one remembers the hex the level stood it on and walks back to it
-when nothing is in range - without that a player who pokes and retreats drags the
-picket across the island a hex at a time, and "don't get close" stops being a
-decision you can make twice.
+**They hold, and holding is the whole behaviour.** Spearmen do not come for you
+and do not follow you. Nothing happens until something is standing on the tile
+next to them, at which point Battle costs both sides people for as long as that
+stays true.
+
+They chased, for one version, and it was wrong for a reason worth keeping: the
+entire job of a Scout is to see a thing before the thing is a problem, and an
+enemy that sets off the moment you are three hexes out takes that away. Looking
+at a picket, deciding not to touch it, and going somewhere else has to be a move
+the player can make. `stance` on the type is where that lives - `'hold'` for
+these, and `'hunt'` still implemented in `EnemyForce` for the kind that is
+*supposed* to deny you the look. A hunter comes for the nearest unit inside
+`aggro`, stops one hex short, and walks back to the hex the level stood it on
+when nobody is left in range; without that post, a player who pokes and retreats
+would drag it across the island a hex at a time.
 
 Enemies think whether or not they are visible, and that is not a cheat: they live
 here, and being unobserved does not make them asleep. The fog hides them through
 the same `field.patch` sweep as everything else.
 
-Where they stand took one correction worth writing down. Sitting them *in* the
-crossing put them three hexes from where the King starts - the same distance as
-the cache - so the first thing that happened on a new run was a picket marching
-into the camp. This island is small, and "beyond the pickup" is a thing to be
-measured rather than eyeballed.
+**Where they stand took two corrections, and the second is the useful one.** They
+were on the north-east crossing, which *looks* like the neck of the island and is
+not: pull those two hexes out of the board and nothing becomes unreachable,
+because the coast road round by 1,1 and 2,0 goes past them. A picket that blocks
+nothing is scenery, and it had only been reading as an encounter because it used
+to come and find you - which is the sort of thing that stays hidden until the
+behaviour stops covering for the placement.
+
+The real cut is the west shoulder. Two hexes there are the whole of the way onto
+the northern hill: take them out and sixteen hexes go with them, a fifth of the
+island. They stand on the rising ground looking down the approach, which is what
+the elevation was drawn for. Three hexes from where the King starts, which is
+close, and stopped mattering the moment they stopped chasing - the first map now
+opens with *walk north, see for yourself that the way is held, and go the other
+way to find something that gets you through it*.
 
 **A spent card is that unit's readout.** The card keeps hold of what it played,
 so it goes on saying something after it is spent: how many are still standing

@@ -82,10 +82,12 @@ Break one of these and something three files away goes subtly wrong.
   from the fact. There is no health bar over anything; `Health`/`HealthBar` in
   the engine stay unused on purpose. A unit with nobody left removes its own
   GameObject and every roster drops it via `onDied`.
-- **Enemies are a unit type with `hostile` and a behaviour field**, driven by
-  `EnemyForce` (roster + one decision every 0.4s) and fought by `Battle`
-  (adjacency → casualties, both directions, no turn). A new kind of enemy is an
-  entry in `UNIT_TYPES` and a branch in `EnemyForce`, not a new system.
+- **Enemies are a unit type with `hostile` and a `stance`**, driven by
+  `EnemyForce` and fought by `Battle` (adjacency → casualties, both directions,
+  no turn). `'hold'` never moves and costs EnemyForce nothing - Battle fights
+  whatever steps next to it. `'hunt'` chases inside `aggro` and returns to its
+  post. Spearmen hold, because a Scout has to be able to see a thing and choose
+  not to touch it. A new kind is an entry in `UNIT_TYPES`, not a new system.
 - **Gameplay is discrete, drawing is not.** Rules run on hexes; the hexagon is
   thrown away in `VisibilityField` (hexes → texture → blur → opacity).
 

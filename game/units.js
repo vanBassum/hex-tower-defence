@@ -158,11 +158,17 @@ export const UNIT_TYPES = {
   // behaviour, so a second kind that keeps its distance or runs for help is a
   // new entry here and a new branch in EnemyForce, not a new system.
   //
-  // Spearmen sit still until somebody comes within three hexes and then come for
-  // them. That is the whole of it, and it is deliberately the simplest reaction
-  // that is still a reaction: the player has to decide how close is too close
-  // before they know what is out there, which is the only tension exploration can
-  // carry before there are turns to spend.
+  // Spearmen hold. They do not come for you, they do not follow you, and nothing
+  // happens until something is standing on the tile next to them - at which
+  // point Battle costs both sides people for as long as that stays true.
+  //
+  // They chased, for one version, and it was wrong for a reason worth keeping:
+  // the whole job of a Scout is to see a thing before the thing is a problem, and
+  // an enemy that starts walking the moment you are three hexes out takes that
+  // away. Seeing them, deciding not to touch them, and going somewhere else has
+  // to be a move the player can make. The machinery for the other kind is still
+  // in EnemyForce under `stance: 'hunt'`, because the next sort along will want
+  // it - this one is `'hold'`.
   spearmen: {
     key: 'spearmen',
     name: 'Spearmen',
@@ -170,10 +176,7 @@ export const UNIT_TYPES = {
     viewDistance: 1,
     people: 12,
     attack: 1.8,
-    // How near you may walk before they come. Three is one further than a Scout
-    // can see, on purpose - the first thing you learn about them is that they are
-    // already moving.
-    aggro: 3,
+    stance: 'hold',
     // A mob rather than a formation, and that is the read. Everything the player
     // owns stands in rings or in ranks; this stands in a crowd, with its spears
     // going every way at once. It works at any zoom and in any light, which

@@ -7,20 +7,27 @@ import { Component } from '../../engine/gameobject.js';
 // question asked a few times a second - is anybody near enough to come for?
 //
 // ── Behaviour belongs to the type ───────────────────────────────────────────
-// `aggro` on a unit type is the whole of what Spearmen do. The next kind will
-// want something else - hold a tile whatever happens, fall back to a friend,
-// shout for one - and the shape that has to survive is that each of those is a
-// field on the type and a branch here, rather than a new component per enemy.
-// Nothing about this is written as "the Spearmen behaviour"; it is written as
-// what a unit with an `aggro` number does.
+// `stance` on a unit type is what it does about you, and there are two:
+//
+//   'hold'  stand there. Whatever walks next to it gets fought, because Battle
+//           resolves adjacency and needs nobody's permission - so a holder
+//           costs this component nothing at all.
+//   'hunt'  come for the nearest player unit inside `aggro` hexes, stop one
+//           short, and walk back to its post when there is nobody left in range.
+//
+// Spearmen hold, and the reason is the Scout. Its whole job is to see a thing
+// before the thing is a problem, and an enemy that sets off the moment you are
+// three hexes out takes that away - looking at a picket and deciding to go round
+// it has to be a move the player can make. Hunters are for the kind that is
+// *supposed* to deny you that, and when one exists it is an entry in UNIT_TYPES
+// and no change here.
 //
 // ── They are not fogged, and that is not a cheat ────────────────────────────
 // An enemy thinks whether or not the player can see it. It lives here; being
 // unobserved does not make it asleep. What the fog does is hide it - the same
-// `field.patch` sweep every other layer goes through - so the first you know of
-// a picket you walked too close to is that it is already moving. That is the
-// tension the aggro range exists to produce, and it only works if the range is
-// wider than a Scout can see.
+// `field.patch` sweep every other layer goes through - so a hunter you have not
+// found yet is a hunter already moving, and a holder you have not found yet is
+// the thing you walk into.
 export class EnemyForce extends Component {
   constructor({
     grid,
@@ -63,7 +70,10 @@ export class EnemyForce extends Component {
     this._since = 0;
 
     for (const e of this.units) {
-      if (e.dead || !e.type.aggro) continue;
+      if (e.dead) continue;
+      // A holder is not a decision. It stands where the level put it, and what
+      // it does about anybody is what Battle already does on its behalf.
+      if (e.type.stance !== 'hunt') continue;
 
       const target = this._nearest(e);
       if (!target) { this._goHome(e); continue; }

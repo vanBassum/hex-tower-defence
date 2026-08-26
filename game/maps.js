@@ -119,19 +119,25 @@ export const MAP_1 = {
   // Footmen beats one of these and loses to both, so the first time the player
   // comes up here they lose, and the second time they come up here with more.
   //
-  // They stand *past* the neck rather than in it, and that placement took one
-  // correction worth writing down. Sitting them on the crossing itself put them
-  // three hexes from where the King starts - the same distance as the cache - so
-  // the first thing that happened on a new run was a picket marching into the
-  // camp. This island is small, and "beyond the pickup" has to be measured
-  // rather than eyeballed.
+  // Where they stand took two corrections, and the second one is the interesting
+  // one. They were on the north-east crossing, which *looks* like the neck of the
+  // island and is not: pull those two hexes out of the board and nothing at all
+  // becomes unreachable, because the coast road through 1,1 and 2,0 goes round
+  // them. A picket that blocks nothing is scenery, and it was only reading as an
+  // encounter because it used to come and find you.
   //
-  // From here they are four and five hexes from the start, and the tile that
-  // wakes them is the one before the crossing: you get one look at them moving
-  // before anything can reach anything.
+  // The real cut is on the west shoulder. These two hexes are the whole of the
+  // way onto the northern hill - take them out and sixteen hexes go with them,
+  // a fifth of the island - and they stand on rising ground looking down the
+  // approach, which is what the elevation was drawn for.
+  //
+  // Three hexes from where the King starts, which is close, and that stopped
+  // being a problem when they stopped chasing. It is the first map: walk north,
+  // see with your own Scout that the way is held, and go and find something that
+  // gets you through it. The cache is the other direction.
   enemies: [
-    { type: 'spearmen', q: 0, r:  0 },
-    { type: 'spearmen', q: 1, r: -1 },
+    { type: 'spearmen', q: -3, r: 1 },
+    { type: 'spearmen', q: -3, r: 0 },
   ],
 
   // What is out there to be found. One cache, and where it sits is the whole of
