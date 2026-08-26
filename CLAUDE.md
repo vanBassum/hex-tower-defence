@@ -93,18 +93,26 @@ Break one of these and something three files away goes subtly wrong.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.
-- **A unit's strength IS its people count.** Damage lowers `people`, which is the
-  `count` on its InstancedMesh passes - one field, so the display cannot drift
-  from the fact. There is no health bar over anything; `Health`/`HealthBar` in
-  the engine stay unused on purpose. A unit with nobody left removes its own
-  GameObject and every roster drops it via `onDied`.
+- **A unit's strength IS the men left standing.** Damage lowers `people`; the
+  instances past it are the same men lying on the ground, so the roster and the
+  display are one array and cannot drift. `count` stays at the full roster -
+  every man is drawn, alive or not. There is no health bar over anything;
+  `Health`/`HealthBar` in the engine stay unused on purpose. A unit with nobody
+  left removes its own GameObject and every roster drops it via `onDied` - which
+  takes its dead with it, the one place bodies do not persist.
 - **Hit points belong to a man, not to a unit.** Each entry in `spots` carries
   `hp` and `bite`, spread either side of one so fifteen men are still worth
   fifteen; damage lands on the front rank only. That is what makes the casualty
   somebody who was fighting, and what stops the line emptying in the same place
-  every time. `count` culls the tail, so `Unit._fall` swaps the dead man's entry
-  to the end - everything that makes a man himself lives in his `spots` entry,
-  never in the instance index he is drawn at.
+  every time. `Unit._fall` swaps the dead man's entry to the end, so the tail of
+  `spots` is the fallen in the order they fell - everything that makes a man
+  himself lives in his `spots` entry, never in the instance index he is drawn
+  at.
+- **A body is pinned to the world, not to its unit.** It is drawn out of the
+  unit's InstancedMesh, so it sits in the unit's local space and would march off
+  with it. `_fall` records where he went down and `_writeMelee` undoes the unit's
+  transform for him every frame - which is why that pass keeps running for a unit
+  that has stopped fighting.
 - **Enemies are a unit type with `hostile` and a `stance`**, driven by
   `EnemyForce` and fought by `Battle` (adjacency → casualties, both directions,
   no turn). `'hold'` never moves and costs EnemyForce nothing - Battle fights
