@@ -315,26 +315,12 @@ export class Unit extends Component {
   // there is nothing to undo: `setMelee(null)` and the same easing walks them
   // home.
   //
-  // ── The line is filled from the back, and only the gap moves ───────────
+  // ── Who dies, and who steps up ─────────────────────────────────────────
   // Casualties are a `count` on an InstancedMesh, and a count draws instances
   // 0..count-1 - so the person a casualty takes off the board is always the
   // *highest* live index, and there is no choosing otherwise short of a second
-  // index buffer nobody needs. The people doing the dying have to be the people
-  // doing the fighting, so the highest live index is handed the front of the
-  // line and everybody else falls in behind in order:
-  //
-  //     slot = i === live - 1 ? 0 : i + 1
-  //
-  // Small, and it does the whole job. Slot 0 is the front of the line and the
-  // highest index holds it, so a casualty is always a front-line one. When that
-  // person goes `live` drops by one and *exactly one* other slot changes - the
-  // new highest index, which was standing at the very back on slot `live - 1`,
-  // takes the empty slot 0. Every other person's `i + 1` is what it already was.
-  //
-  // The first version numbered the slots backwards (`live - 1 - i`), which put
-  // the front line at the high indices just as well but renumbered every slot on
-  // every casualty, so the whole body shuffled a place sideways each time
-  // somebody fell. One person walks up from the back. The line stands still.
+  // index buffer nobody needs. `meleeSlot` below is what turns that into the
+  // right man dying and the right man replacing him.
   _writeMelee(dt) {
     const g = this._mesh.userData;
     if (!g.write) return;
@@ -354,16 +340,15 @@ export class Unit extends Component {
       const sp = g.spots[i];
       let tx = sp.x, tz = sp.z, tyaw = sp.yaw;
 
-      // See above: the highest live index takes the front of the line, everyone
-      // else keeps the place they already had. Anyone past `live` is not drawn
-      // and waits at their home spot.
-      const j = i === live - 1 ? 0 : i + 1;
-
+      // Anyone past `live` is not drawn and waits at their home spot.
       if (f && f.length && i < live) {
         // Flanked units split their people between the fights they are in, so
-        // each front gets a thinner line rather than one front getting all of it.
-        const e = f[j % f.length];
-        const slot = (j / f.length) | 0;
+        // each front gets a thinner line rather than one front getting all of
+        // it. Which fight is `i % m` and never changes, so a casualty on one
+        // front leaves the other front standing exactly as it was.
+        const m = f.length;
+        const e = f[i % m];
+        const slot = meleeSlot((i / m) | 0, Math.ceil((live - (i % m)) / m));
         const file = FILE_ORDER[slot % FRONT_WIDTH];
         const rank = (slot / FRONT_WIDTH) | 0;
 
@@ -485,4 +470,31 @@ export class Unit extends Component {
       if (o.userData.ownMaterial) o.material.dispose();
     });
   }
+}
+
+// Which place in the line the k-th of `n` people takes.
+//
+// The trick is one column. Slots 0, W, 2W ... are the same file at every rank -
+// a file running back from the front of the line - and the top indices are
+// stacked down it, front-most first. A casualty always takes the highest index,
+// so the highest index is the man on the line; the next index is the man
+// directly behind him, and the one after that is behind *him*.
+//
+// So when the front man falls, `n` drops by one and every member of that column
+// steps into the place ahead of it: the man behind the line takes the line, the
+// man behind him closes up the second rank, and so on to the back. It is the
+// nearest man each time and it is one step, because the column is what the
+// indices were laid out along.
+//
+// Everybody else fills the slots the column does not use, in order, and their
+// place does not depend on `n` at all - so the rest of the body, the three men
+// still fighting on the line included, does not move. The one exception is the
+// tail: as the column shortens the rearmost rank loses a place, and the last man
+// in it slides across to close the hole. That keeps the slots a permutation of
+// 0..n-1, which is what stops holes opening in the middle of the block.
+function meleeSlot(k, n) {
+  const W = FRONT_WIDTH;
+  const col = Math.ceil(n / W);                 // how deep the column reaches
+  if (k >= n - col) return (n - 1 - k) * W;
+  return ((k / (W - 1)) | 0) * W + (k % (W - 1)) + 1;
 }

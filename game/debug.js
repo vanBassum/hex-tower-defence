@@ -82,6 +82,7 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
       DEBUG.fog = on;
       fog.setShown(on);
       field?.setMasking(on);
+      api.onFogChanged?.();
       return on;
     },
 
@@ -130,8 +131,10 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     },
   };
 
-  // Speed slider, bottom right. Purely for watching a fight at 10% or skipping
-  // a walk at 100%.
+  // Speed slider and a fog switch, bottom right. Purely for watching a fight at
+  // 10% or skipping a walk at 100%, and for looking at the island without it.
+  // Both are on F and the slider already, so this is only so the two knobs
+  // anybody actually reaches for are visible rather than remembered.
   {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;gap:8px;'
@@ -149,8 +152,18 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     };
     slider.addEventListener('input', apply);
     apply();
-    wrap.append(document.createTextNode('Speed'), slider, out);
+    const fog = document.createElement('button');
+    fog.style.cssText = 'padding:4px 9px;border-radius:5px;cursor:pointer;font:12px system-ui;'
+      + 'background:rgba(143,216,232,0.10);border:1px solid rgba(143,216,232,0.28);color:#b9cfe0';
+    const label = () => { fog.textContent = DEBUG.fog ? 'Fog on' : 'Fog off'; };
+    fog.addEventListener('click', () => { api.toggleFog(); label(); });
+    label();
+
+    wrap.append(document.createTextNode('Speed'), slider, out, fog);
     document.body.append(wrap);
+    // F still works, and the button has to agree with it or it lies the first
+    // time somebody uses both.
+    api.onFogChanged = label;
   }
 
   window.addEventListener('keydown', (e) => {
