@@ -87,7 +87,7 @@ Break one of these and something three files away goes subtly wrong.
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
 | A prop | `game/props.js` `PROP_TYPES`, then place it in `maps.js` |
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
-| A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js` |
+| A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js`. `role` says what the troop is *for* - never a stat |
 | A unit others deploy beside | `deployAnchor: true` on its type |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |

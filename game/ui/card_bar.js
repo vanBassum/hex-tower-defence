@@ -65,10 +65,13 @@ export class CardBar {
     el.innerHTML =
       `<span class="card-art">${ART[entry.card.unit] ?? ART.default}</span>` +
       `<span class="card-name"></span>` +
-      `<span class="card-note"></span>` +
+      `<span class="card-role"></span>` +
       `<span class="card-state">Deploy</span>`;
     el.querySelector('.card-name').textContent = name(entry.card);
-    el.querySelector('.card-note').textContent = entry.card.note ?? '';
+    // What it is for, not what it is worth. See the note in cards.js: a stat on
+    // the face of a card is a number nobody asked for in the one second they
+    // have to read it.
+    el.querySelector('.card-role').textContent = entry.card.role ?? '';
     el.addEventListener('click', () => this._onArm?.(entry));
     return el;
   }

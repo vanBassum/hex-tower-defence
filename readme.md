@@ -853,6 +853,16 @@ card is the unit's *silhouette*, because the silhouette is what has to be matche
 against the thing standing on the board - spears above helmets on the card,
 spears above helmets on the tile.
 
+**A card says what a troop is for, and never what its numbers are.** "Sees one
+hex" is a stat wearing a sentence, and it is the wrong thing to put in front of
+somebody deciding where to put a unit down: a hand is read in the second between
+finding a card and choosing a tile, and what has to survive that second is the
+*job*. This one goes ahead; that one stands in front. Numbers are for comparing
+two things you already understand, and they get their own place on the card when
+there are enough of them to compare - a row of figures, not prose pretending to
+be a description. The field is called `role` so that nobody writes a stat into it
+by accident.
+
 **One card is one unit.** It is spent when played, and stays in the hand greyed
 rather than vanishing. Removing it would be tidier and would throw away the thing
 a first run most needs to show: that what was found in the dark is what is now

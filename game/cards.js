@@ -10,10 +10,19 @@ import { UNIT_TYPES } from './units.js';
 // hand is a list of cards rather than a table of counts. Two entries that happen
 // to name the same unit are two cards, and nothing has to special-case it.
 //
-// The table is thin because a card is currently a name and a unit type. What it
-// is *not* is a copy of the unit's stats: `unit` points into UNIT_TYPES and the
-// card carries nothing the unit already knows, so there is exactly one place to
-// change how far Footmen see.
+// The table is thin because a card is currently a name, a unit type and a job.
+// What it is *not* is a copy of the unit's stats: `unit` points into UNIT_TYPES
+// and the card carries nothing the unit already knows, so there is exactly one
+// place to change how far Footmen see.
+//
+// ── `role` says what a troop is for, never what its numbers are ─────────────
+// "Sees one hex" is a stat wearing a sentence, and it is the wrong thing to put
+// in front of somebody deciding where to put a unit down. A hand is read at a
+// glance, in the second between finding a card and choosing a tile, and what has
+// to survive that second is the *job*: this one goes ahead, that one stands in
+// front. Numbers are for comparing two of something you already understand, and
+// they will get their own place on the card when there are enough of them to
+// compare - a row of figures, not prose pretending to be a description.
 export const CARD_TYPES = {
   // The one the run begins holding. It is a card like any other and always was -
   // the concept doc has the player owning a Scout before they own anything else,
@@ -25,16 +34,13 @@ export const CARD_TYPES = {
   scout: {
     key: 'scout',
     unit: 'scout',
-    note: 'Sees two hexes. Carries the lamp.',
+    role: 'Goes where nothing is known.',
   },
 
   footman: {
     key: 'footman',
     unit: 'footman',
-    // What the player is told, and it is deliberately about the *unit* rather
-    // than about the card: a hand is read at a glance while deciding where to
-    // put something, so the useful sentence is what the thing does on the board.
-    note: 'Fifteen spears. Sees one hex.',
+    role: 'Holds the ground the Scout finds.',
   },
 };
 
