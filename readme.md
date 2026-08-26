@@ -9,8 +9,8 @@ on the next one.
 **Almost none of that is built yet.** What exists is the world it will be played
 on - a drawn island in the sea at blue hour, terrain with real elevation, animated
 water, vegetation that moves in a shared wind, lanterns that light the ground -
-and the first two things that play on it: **one Scout, walking an island it
-cannot see**, and **the first thing there is to find on it**. The tower defence
+and the loop that plays on it: **one Scout, walking an island it cannot see**,
+**a cache to find out there**, and **a camp to carry what you find back to**. The tower defence
 prototype this grew out of has been removed - towers, waves, an economy, lives, a
 fixed route - because none of it was going to survive the change of genre and
 leaving it in would have made every later decision harder to see.
@@ -18,8 +18,9 @@ leaving it in would have made every later decision harder to see.
 There are no enemies, no turns and no combat, on purpose. Exploration was built
 alone so it could be judged alone, against one question: is moving a scout
 through an unknown hex world and revealing the map already worth doing? The
-pickup is the second question laid on top of the first: does finding something
-out there make the walk worth more than the walk was?
+pickup and the camp are the second question laid on top of the first: does
+finding something out there, and having to carry it home before it is worth
+anything, make the walk worth more than the walk was?
 
 The engine underneath is the component/GameObject engine carried over from the
 `armymen` project. Plain ES modules, no build step. Serve the folder and open it,
@@ -36,6 +37,9 @@ or use the VS Code Live Server extension:
 | Left-click anywhere else | Deselect |
 | Hover, while selected | The route there is picked out |
 | Right-click | Walk that route |
+| Click a card | Pick it up, ready to place |
+| Left-click in the camp, holding one | Deploy it there |
+| `Esc`, or right-click | Put the card back down |
 | `WASD` / arrows | Pan |
 | Middle-drag | Pan, holding the grabbed ground point under the cursor |
 | Wheel | Zoom toward the cursor; pitch dives from top-down to near-horizontal |
@@ -50,6 +54,12 @@ tile means "go there" or "never mind" depending on state the player cannot see.
 There is no third button for taking things. What is on the board is picked up
 by *standing on it*, which is the only interaction a tactical game already has
 room for and the only one that needs nothing explained.
+
+Holding a card is a mode, and it is the only one in the game. It takes over the
+left button entirely (while a card is up, left-click places it and nothing else)
+and it cannot be held at the same time as a selected unit, because the two would
+be two meanings for one click. Arming a card drops the selection and
+selecting a unit drops the card: two lines, and no flag anybody has to read.
 
 Developer keys, which are not game UI and are not meant to become it: `F` hides
 the fog layer, `V` rings what the force is currently lighting up, `R` reveals the
@@ -75,7 +85,7 @@ you turn twice and then stop turning.
     engine/components/hex_water.js     sea as hex tiles, shaded by depth
     engine/components/water_plane.js   flat ocean beyond the tiles
     engine/components/hex_ground.js    tile tops + cliff faces, grass tones
-    engine/components/hex_region_outline.js  border around a hex region (unused)
+    engine/components/hex_region_outline.js  border around a hex region - the camp's rim
     engine/components/hex_grid_renderer.js  hex outlines
     engine/components/hex_overlay.js   filled hex tiles (cursor, ranges)
     engine/components/hex_picker.js    mouse to hex, plus the cursor on it
@@ -90,9 +100,12 @@ you turn twice and then stop turning.
     game/components/prop_layer.js      places a map's decoration + its wind
     game/units.js                      unit types + their placeholder meshes
     game/pickups.js                    what is left on the board to be found
+    game/cards.js                      a unit you may put on the board, once
     game/components/unit.js            something standing on a hex
     game/components/pickup.js          something on a hex worth walking to
     game/components/unit_control.js    the force: selection, movement, vision, pickups
+    game/components/deployment.js      the camp, and the hand that plays into it
+    game/ui/card_bar.js                that hand, along the bottom of the screen
     game/debug.js                      developer knobs for the exploration pass
     game/main.js                       scene setup
     tools/map.mjs                      prints the board as text, for authoring
@@ -105,15 +118,20 @@ scheduled to arrive, no positions marked as special. Where anything *goes* and
 when is the tactical layer's business, and a map with opinions about that is a
 level rather than a place.
 
-The pickup is the one exception, and it is deliberate. Where a reward sits is a
-statement about the place - this corner is worth the walk, that one is worth the
-risk - in exactly the way a spawn timer is not, and it is the same kind of
-authoring as where the lanterns go.
+The pickup and the camp are the two exceptions, and both are deliberate. Where a
+reward sits is a statement about the place - this corner is worth the walk, that
+one is worth the risk - in exactly the way a spawn timer is not, and where the
+camp sits is what decides that "far from home" means anything at all. Both are
+the same kind of authoring as where the lanterns go, and `node tools/map.mjs`
+prints them (`P` and `D`) for the reason it prints everything else: the distance
+between them is the number being tuned, and it cannot be judged from a pair of
+axial coordinates.
 
 `buildMap` expands the definition into what the scene needs - the grid, per-hex
 elevation, the sea tiles, the crags (marked occupied, so impassable), the props
 and the scatter - and refuses outlines that are wrong: a prop off the board, a
-pickup somewhere nothing can walk to, or an island accidentally drawn as two.
+pickup or a deployment hex somewhere nothing can walk to, or an island
+accidentally drawn as two.
 
 ## The island
 
@@ -682,14 +700,11 @@ sphere half again as large reads as a pale disc pasted over the scene - the exac
 mistake the fog's wisps were shrunk to fix. What should visibly brighten is the
 grass, not the sphere.
 
-**What it grants joins on the spot, and that is knowingly a stand-in.** In the
-concept a pickup puts a *card* in a collection and the card is spent at the next
-deployment. There is no run boundary yet for a card to be kept across, and a card
-sitting in a collection nobody can deploy from is a card the player never sees -
-so today the Footmen simply arrive, on the nearest discovered unoccupied tile,
-scaled up out of nothing rather than switched on. When deployment exists this
-becomes two steps - the collection gains a card, the deployment screen spends it -
-and the only thing that moves is `UnitControl._claim`.
+**What it grants is a card, not a unit.** Nothing appears where the cache stood.
+The Footmen it names go into the hand at the bottom of the screen and can only be
+played at camp, which is what makes the cache worth a walk out *and* a walk back
+- see below. `UnitControl` reports the grant and stops there: it has never heard
+of a card, and the pickup has never heard of the camp.
 
 **The Footmen are a second unit type, and one stat is all they are allowed.** They
 see one ring where the Scout sees two, and that is the whole of their cost:
@@ -723,6 +738,72 @@ all: a reward already visible from the start hex is a reward the player was give
 rather than one they found. The board does the rest with the only two things it
 has - raised ground, and a light in the dark.
 
+## The camp, and the hand
+
+A card is *where* as much as it is *what*, and that is the whole design. A
+reinforcement that can appear anywhere costs nothing to be far from home, which
+would make the cache on the far shore a reward collected by touching it. Playable
+only at camp, the same cache is a walk out and a walk back, and where the Scout
+is standing starts to matter for a reason that has nothing to do with what it can
+see.
+
+**The camp is four hexes on the south-west shore**, around the tile the Scout
+starts on. Small on purpose: a zone covering a tenth of the island is a rule with
+nothing behind it. The Scout's own starting hex is inside it rather than beside
+it, because the camp is the answer to "where did we come from", and a camp nobody
+has ever stood in is a spawn point.
+
+**It is drawn twice, for two questions that are never asked at once.** The rim is
+always there and says where home is. It is a line on the ground, which is exactly
+what this board refused to use for the reachability wash - but a boundary is what
+a line is *for*, and at this dimness it reads as a mark on the grass rather than
+as a shape laid over it. The three stakes standing just outside it are the other
+half: a rim disappears the moment the camera drops to look along it, for the same
+reason a blanket of mist could never be the thing that hid the board, and
+something with height does not. They stand outside rather than inside because a
+formation fills most of its tile, and anything on a deployment hex is something
+fifteen people get drawn straight through.
+
+The second drawing only exists while a card is up. It is the route preview's
+treatment at slightly higher strength - additive, so a tile catches more light
+rather than having a hexagon painted onto it - because "where may this go" is not
+a question anybody is asking until they are holding something.
+`HexRegionOutline` had been sitting unused in the engine since the tower defence
+cull for exactly this job, and it grew one thing on the way in: a `heightAt`,
+because a border drawn at one height buries half of itself on ground that is not
+flat.
+
+**The hand is the first piece of the game that is not the world**, and it is DOM.
+That is a decision rather than a shortcut: a card is a menu, not an object on the
+island, and putting it in the scene would mean building text layout, hit testing
+and focus against a camera that pans and rotates. It holds no state at all -
+`CardBar.update(deployment)` paints whatever it is handed - so there is one
+account of what the player has, and it lives in the component that also knows
+where it can be played.
+
+Cards are warm where every other piece of chrome on the page is cool, and the
+level already spent that meaning: warm is what somebody left behind. The art on a
+card is the unit's *silhouette*, because the silhouette is what has to be matched
+against the thing standing on the board - spears above helmets on the card,
+spears above helmets on the tile.
+
+**One card is one unit.** It is spent when played, and stays in the hand greyed
+rather than vanishing. Removing it would be tidier and would throw away the thing
+a first run most needs to show: that what was found in the dark is what is now
+standing at camp. A second copy of a card is therefore a second body of Footmen
+and not a better one - the arithmetic the whole progression loop in the concept
+doc rests on - so the hand is a list of cards rather than a table of counts, and
+two entries naming the same unit need no special case.
+
+**Everything that can go wrong is a state that says so.** A camp with nothing
+free in it lights up as nothing, which looks exactly like a highlight that has not
+arrived yet, so the hint line says the camp is full instead - and stops saying it
+the moment somebody walks out. That last part needed a subscription this component
+would not obviously have reached for: a unit leaving camp frees a tile without
+changing what anybody has *discovered*, so watching visibility alone leaves both
+the highlight and the hint a step behind the board. Occupancy is already a grid
+fact with a listener on it, which is the only reason that is two lines.
+
 ## What is left to build
 
 The world is done enough to play on. Nothing on top of it exists yet, and the
@@ -741,10 +822,16 @@ order that matters first:
 - **An enemy on the causeway.** The concept's first map turns on a force the Scout
   cannot beat and the Footmen can, standing where the island is narrowest. The
   ground for it is drawn already and nothing stands on it.
-- **The run boundary, and cards across it.** Deployment and persistence, the last
-  thing to build rather than the first: a pickup grants a unit on the spot today
-  precisely because there is no run to keep a card across, and the whole idea is
-  meaningless until a run can be lost.
+- **The run boundary, and the collection behind the hand.** A card is found,
+  played and spent inside one session; nothing survives a reload, and there is no
+  losing a run to keep anything *across*. Still the last thing to build rather
+  than the first - but the hand is already the shape it needs, because a run
+  would deal it from a collection instead of filling it from pickups and
+  `Deployment.addCard` would not move.
+- **The Scout as a card.** The run starts with it already standing in the camp,
+  which is the one special case the rest of the game no longer needs: once a run
+  has a beginning, the honest version is an empty board, a Scout card, and the
+  camp as the only ground you are allowed to put it on.
 
 Two things deliberately kept out of the way until they are needed: `engine/assets.js`
 (glTF loading with a clone cache) and `engine/components/ground_plane.js`.
