@@ -93,7 +93,16 @@ export class Deployment extends Component {
   // this component owns. It exists only while it is true - a hint that is always
   // up is furniture, and furniture is not read.
   get hint() {
-    if (!this.armed) return '';
+    // The opening, and it is said once. A King standing alone with a card in
+    // hand is a board where nothing has happened yet, and the one thing that is
+    // not obvious about this game is that the bar at the bottom is where units
+    // come from. The moment anything has been played the player knows, so the
+    // condition is "nothing has been played" rather than a timer or a flag.
+    if (!this.armed) {
+      return this.playable && !this.hand.some(e => e.spent)
+        ? 'Click a card to bring it onto the board'
+        : '';
+    }
     const name = this.armed.card.name ?? this.armed.card.key;
     const anchors = this.anchors();
     // Losing every anchor is a real end state rather than a guard: nothing can

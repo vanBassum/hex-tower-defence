@@ -23,10 +23,10 @@ import { Deployment } from './components/deployment.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
-// The world, and what plays on it: a King, a Scout, a hand of cards, and a map
-// that has to be walked to be seen. Everything the player finds is played onto a
-// tile beside the King, so where he is standing is the whole of the force's
-// reach - and he walks, so that reach is something the player pushes forward.
+// The world, and what plays on it: a King, a hand of cards, and a map that has
+// to be walked to be seen. Everything - the Scout the run is dealt, and whatever
+// it finds afterwards - is played onto a tile beside the King, so where he is
+// standing is the whole of the force's reach, and he walks.
 //
 // The tower defence layer that used to live here is gone - towers, waves, an
 // economy, lives, a route across the island. What is on top of the world now is
@@ -189,12 +189,14 @@ const fog = fogGO.addComponent(new FogOfWar(map.grid, visibility, {
 }));
 game.add(fogGO);
 
-// The two units a run always has, both on the board from the first frame.
-//
-// The King is the base: every card is played onto a tile beside him, so a run
-// without one can never field anything it finds. The Scout is how anything is
-// found in the first place. Neither is a card, because a card would have to be
-// played somewhere and these two are what "somewhere" means.
+// What a unit carries a light for is a fact about its type; how bright it burns
+// is a fact about the hour. The two halves meet here, which is the only place
+// that already knows both.
+const LAMPS = { scout: MOOD.scoutLamp, king: MOOD.kingFire };
+
+// The King, and the only thing the game puts on the board itself. Everything
+// else is a card played onto a tile beside him - including the Scout the run is
+// dealt - so something has to be standing there before the first card can be.
 const kingGO = new GameObject('King');
 const king = kingGO.addComponent(new Unit({
   grid: map.grid,
@@ -202,21 +204,9 @@ const king = kingGO.addComponent(new Unit({
   type: 'king',
   q: DEBUG.kingStart.q, r: DEBUG.kingStart.r,
   colors: MOOD.units,
-  tuning: { lamp: MOOD.kingFire },
+  tuning: { lamp: LAMPS.king },
 }));
 game.add(kingGO);
-
-const scoutGO = new GameObject('Scout');
-const scout = scoutGO.addComponent(new Unit({
-  grid: map.grid,
-  ground: hexGround,
-  type: 'scout',
-  q: DEBUG.scoutStart.q, r: DEBUG.scoutStart.r,
-  viewDistance: DEBUG.scoutViewDistance,
-  colors: MOOD.units,
-  tuning: { lamp: MOOD.scoutLamp },
-}));
-game.add(scoutGO);
 
 // What is out there to be found. One cache of somebody's colours on the small
 // hill east of the start, and the first thing on this board that is neither
@@ -256,7 +246,8 @@ function deploy(type, q, r) {
   const go = new GameObject(type);
   const unit = go.addComponent(new Unit({
     grid: map.grid, ground: hexGround, type, q, r,
-    colors: MOOD.units, tuning: { lamp: MOOD.scoutLamp },
+    viewDistance: type === 'scout' ? DEBUG.scoutViewDistance : null,
+    colors: MOOD.units, tuning: { lamp: LAMPS[type] },
     // Scaled up rather than switched on: this one was not here a moment ago.
     emerge: true,
   }));
@@ -291,7 +282,7 @@ const control = forceGO.addComponent(new UnitControl({
   grid: map.grid,
   ground: hexGround,
   visibility,
-  units: [king, scout],
+  units: [king],
   // Collecting is the join between the roster and the board, and this is the one
   // component that holds both halves of it.
   pickups,
@@ -344,9 +335,9 @@ control.onSelect = () => deployment.cancel();
 
 game.add(forceGO);
 
-// What the run is dealt on top of the Scout already standing on the board.
-// Empty today - the first card comes out of the cache - and when a run can be
-// lost this is where a collection is spent instead, still through this call.
+// What the run is dealt: one Scout, because that is what the player owns. When
+// a run can be lost this is where a collection is spent instead, and it is still
+// this call.
 for (const card of DEBUG.startingHand) deployment.addCard(card);
 
 
@@ -428,7 +419,7 @@ game.add(motes);
 //
 // The fog is deliberately not in this list: it is the one thing in the scene that
 // is *about* the unknown rather than subject to it.
-for (const go of [groundGO, sea, propsGO, gridGO, kingGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
+for (const go of [groundGO, sea, propsGO, gridGO, kingGO, motes, ...pickupGOs]) field.patch(go.object3D);
 
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how

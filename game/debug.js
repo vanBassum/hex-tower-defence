@@ -10,17 +10,16 @@ import { GameObject } from '../engine/gameobject.js';
 // console. None of it is reachable from the game itself, so none of it needs to
 // survive into a build.
 export const DEBUG = {
-  // Where the run begins. Both are always on the board - the King because every
-  // card is played onto a tile beside him, so a run without one can never field
-  // anything it finds, and the Scout because without one nothing is ever found.
-  kingStart:  { q: -3, r: 4 },
-  scoutStart: { q: -3, r: 5 },
+  // Where the run begins, and it is one hex rather than a roster. The King is
+  // the only thing the game puts on the board itself, because every card is
+  // played onto a tile beside him and something has to be there first.
+  kingStart: { q: -3, r: 4 },
   scoutViewDistance: 2,
 
-  // What the run is dealt on top of it. Empty, because the first card is the one
-  // in the cache - putting `'footman'` here is how you play the second run
+  // Everything else is dealt. The Scout is a card like any other - the player
+  // places it - and adding `'footman'` here is how you play the second run
   // without playing the first.
-  startingHand: [],
+  startingHand: ['scout'],
 
   fog: true,           // draw the fog layer at all
   showVision: false,   // ring the hexes the selected unit is lighting up

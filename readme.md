@@ -9,9 +9,9 @@ on the next one.
 **Almost none of that is built yet.** What exists is the world it will be played
 on - a drawn island in the sea at blue hour, terrain with real elevation, animated
 water, vegetation that moves in a shared wind, lanterns that light the ground -
-and the loop that plays on it: **one Scout, walking an island it cannot see**,
-**a cache to find out there**, and **a hand of cards that can only be played
-beside the King**. The tower defence
+and the loop that plays on it: **a King standing alone in the fog**, **a hand of
+cards that can only be played beside him** - starting with the Scout - and **a
+cache out there to find another one in**. The tower defence
 prototype this grew out of has been removed - towers, waves, an economy, lives, a
 fixed route - because none of it was going to survive the change of genre and
 leaving it in would have made every later decision harder to see.
@@ -767,8 +767,8 @@ The second was the **Scout**, which was better and still not right: it made the
 one unit that must survive the same one you send ahead to look at things, so the
 rule pulled against itself.
 
-**The rule lives on the King.** He is always on the board, he walks, and every
-card is played onto a free tile next to him - so where he is standing is the
+**The rule lives on the King.** He is the one unit the game puts on the board
+itself, he walks, and every card is played onto a free tile next to him - so where he is standing is the
 whole of the force's reach, and that reach is something the player pushes
 forward and has to defend rather than a corner of the map they return to. He is
 a base, and the base moves.
@@ -777,6 +777,9 @@ Everything else falls out of it without being written down anywhere:
 
 - Walking the King forward extends where the army can appear, and walks the one
   thing you cannot lose toward whatever is out there.
+- It is why the King cannot be a card and the Scout can. A card is played beside
+  something, so something has to be there first - and the run opens with exactly
+  one thing on the board and exactly one thing you are allowed to do with it.
 - The Scout goes back to being what it is for: it sees two hexes and finds
   things, and it does not have to survive for the force to keep functioning.
 - Footmen cannot bring anyone in either. The King is the only anchor, so an army
@@ -788,6 +791,14 @@ Everything else falls out of it without being written down anywhere:
 He is worth nothing else yet. Losing him will one day lose the run, and that is
 a rule to write when there is something on this island that could kill him -
 today it would be a sentence nobody could test.
+
+**The opening is one card.** A King alone in a clearing of fog seven hexes
+across, a Scout in hand, and a line of text saying to click it. That is the whole
+game stated in one frame: this is yours, this is where things arrive, put
+something down. The Scout being a card rather than a unit already standing there
+is worth the one click - it teaches the bar at the bottom before the first cache
+is ever found, which is the only part of this that is not self-evident from the
+board.
 
 **A King is read by his standard.** Every unit on this board is ten pixels of
 dark shape at the game's camera, so each one gets a silhouette rather than a

@@ -71,8 +71,9 @@ Break one of these and something three files away goes subtly wrong.
   on a unit type is the whole rule; `Deployment.anchors()` filters the roster by
   it and the zone is recomputed on every ask, because it moves whenever anything
   steps. No King on the board means nothing can be brought in - that is the
-  point, not a bug. A run always starts with a King and a Scout, both placed
-  from `DEBUG` and neither of them a card.
+  point, not a bug. The King is the only unit the game places itself
+  (`DEBUG.kingStart`); everything else, the Scout included, is a card the player
+  plays (`DEBUG.startingHand`).
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.

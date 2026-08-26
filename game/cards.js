@@ -17,10 +17,11 @@ import { UNIT_TYPES } from './units.js';
 export const CARD_TYPES = {
   // The one the run begins holding. It is a card like any other and always was -
   // the concept doc has the player owning a Scout before they own anything else,
-  // and the version where it started already standing on the board was a special
-  // case dressed up as a starting position. Played from the hand it costs one
-  // click and buys the opening its own beat: an empty marked camp in the fog, and
-  // one thing you are allowed to do.
+  // and a Scout that started already standing somewhere was a special case
+  // dressed up as a starting position. Played from the hand it costs one click
+  // and buys the opening its own beat: a King alone in the fog, one card, and one
+  // thing you are allowed to do. It works now only because the King is on the
+  // board first - a card has to be played beside something.
   scout: {
     key: 'scout',
     unit: 'scout',
