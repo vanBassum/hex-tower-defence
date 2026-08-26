@@ -57,6 +57,10 @@ const LEAN = 0.16;           // how far the man himself leans in behind it
 const HIT_RECOIL = 0.24;     // and how far a blow puts him back off it
 const HIT_TILT = 0.32;       // tipping him off his feet as it goes
 
+// Going down. He tips away from whatever killed him - he was facing it - and
+// then he is left there. The field keeps its dead for now.
+const DEATH_SLIDE = 0.28;    // how far the fall carries him back off the line
+
 export const UNIT_TYPES = {
   scout: {
     key: 'scout',
@@ -292,18 +296,24 @@ function buildSquad(type, colors = {}, tuning = {}) {
   // in formation everyone points the way the unit does, and in a fight they
   // point at whoever is opposite them. The spear follows it - a shouldered shaft
   // that stayed pointed the old way is the tell that a man only slid sideways.
-  const write = (i, x, z, yaw = spots[i].yaw, lunge = 0, jolt = 0) => {
+  // `fell` is how far over he is, 0 upright to 1 flat; `drop` lifts him off the
+  // group's origin, which is what lets a body stay where it died while the unit
+  // it belonged to marches somewhere else. See Unit._writeMelee.
+  const write = (i, x, z, yaw = spots[i].yaw, lunge = 0, jolt = 0, fell = 0, drop = 0) => {
     const sp = spots[i];
     const fx = Math.sin(yaw), fz = Math.cos(yaw);      // the way he is facing
-    // Forward behind his own thrust, back off the blow that answers it. One
-    // number, because a man taking one while giving one is doing both at once.
-    const push = lunge * LEAN - jolt * HIT_RECOIL;
-    pos.set(x + fx * push * h, 0, z + fz * push * h);
+    const tip = fell * fell * (3 - 2 * fell);
+    // Forward behind his own thrust, back off the blow that answers it, and back
+    // again off the one that finishes him. One number, because a man taking one
+    // while giving one is doing both at once.
+    const push = lunge * LEAN - jolt * HIT_RECOIL - tip * DEATH_SLIDE;
+    pos.set(x + fx * push * h, drop, z + fz * push * h);
     // Tipped back off his feet, which is what a man pivots about when he is
-    // knocked rather than when he leans. Pure yaw when he is not, so the common
-    // case still costs one axis-angle.
-    if (jolt > 0) {
-      tilt.set(-jolt * HIT_TILT, yaw, 0);
+    // knocked rather than when he leans - and all the way over when it is the
+    // last one. Pure yaw when he is neither, so the common case still costs one
+    // axis-angle.
+    if (jolt > 0 || tip > 0) {
+      tilt.set(-(jolt * HIT_TILT + tip * Math.PI * 0.5), yaw, 0);
       quat.setFromEuler(tilt);
     } else {
       quat.setFromAxisAngle(up, yaw);
@@ -316,17 +326,19 @@ function buildSquad(type, colors = {}, tuning = {}) {
       // The shaft goes further in than the man does, and drops as it goes. It
       // comes back with him too - a spear that held its place while its owner
       // was knocked off it reads as a fencepost.
-      const ahead = lunge * THRUST_REACH - jolt * HIT_RECOIL;
+      const ahead = lunge * THRUST_REACH - jolt * HIT_RECOIL - tip * DEATH_SLIDE;
       pos.x = x + fx * ahead * h + Math.cos(yaw) * h * 0.16;
       pos.z = z + fz * ahead * h - Math.sin(yaw) * h * 0.16;
-      tilt.set(sp.tilt.x + lunge * THRUST_PITCH, yaw, sp.tilt.z);
+      tilt.set(sp.tilt.x + lunge * THRUST_PITCH - tip * Math.PI * 0.5, yaw, sp.tilt.z);
       quat.setFromEuler(tilt);
       // Pivot at his grip. The shaft's geometry stands on the ground, so
       // rotating it as composed swings it about his feet and lays it flat
-      // instead of levelling it at chest height.
-      grip.set(0, GRIP * h * sp.s, 0).applyQuaternion(quat);
+      // instead of levelling it at chest height. The grip comes down with him as
+      // he falls, or the shaft ends up lying in the air where his hand was.
+      const gy = GRIP * h * sp.s * (1 - tip);
+      grip.set(0, gy, 0).applyQuaternion(quat);
       pos.x -= grip.x;
-      pos.y = GRIP * h * sp.s - grip.y;
+      pos.y = gy - grip.y + drop;
       pos.z -= grip.z;
       m.compose(pos, quat, scale);
       spears.setMatrixAt(i, m);
@@ -375,6 +387,9 @@ function buildSquad(type, colors = {}, tuning = {}) {
       // already landed this beat. See Unit.struck.
       flinch: 0,
       landed: false,
+      // How far over he is and where in the world he went down. See Unit._fall.
+      down: 0,
+      wx: 0, wy: 0, wz: 0, wyaw: 0,
     });
     write(i, x + jx, z + jz);
   }

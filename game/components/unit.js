@@ -63,6 +63,10 @@ const THRUST_OUT = 0.30;
 // damage but the spear of the man opposite him reaching full extension; see
 // `struck`.
 const HIT_TIME = 0.18;
+// And how long he takes to go all the way down. Nothing clears him afterwards:
+// the dead stay on the field, which is why they are anchored in the world rather
+// than to the unit they belonged to. See `_writeMelee`.
+const DEATH_FALL = 0.32;
 
 let UNIT_ID = 0;
 
@@ -128,6 +132,7 @@ export class Unit extends Component {
     this._total = 0;        // and how long the route is in total
     this._facing = 0;       // where the formation is pointed, eased toward the leg
     this._clock = 0;        // seconds of fighting, for the thrusts
+    this._corpses = 0;      // men down and still lying there, at the tail of `spots`
 
     // Several things want to hear about a step - fog, the route preview, later
     // whatever spends the movement point - so it is a list rather than one slot.
@@ -193,11 +198,29 @@ export class Unit extends Component {
   // the man who takes the vacated instance keeps his own slot and his own eased
   // position, so nothing of his moves on screen.
   _fall(i, spots) {
-    const gap = spots[i].slot;
+    const sp = spots[i];
+    const gap = sp.slot;
+
+    // Where he went down, in the world. A body is drawn out of the unit's mesh
+    // and so sits in the unit's local space, which walks off with the unit -
+    // pinning him here and undoing that transform every frame is what keeps him
+    // lying where he fell. It is also the whole reason `_writeMelee` keeps
+    // running for a unit that is no longer fighting anything.
+    const p = this.gameObject.position;
+    const a = this.gameObject.rotation.y, ca = Math.cos(a), sa = Math.sin(a);
+    sp.wx = p.x + sp.cx * ca + sp.cz * sa;
+    sp.wz = p.z - sp.cx * sa + sp.cz * ca;
+    sp.wy = p.y;
+    sp.wyaw = sp.cyaw + a;
+    sp.down = 0;
+
     this.people--;
+    this._corpses++;
     const last = this.people;
     if (i !== last) { const t = spots[i]; spots[i] = spots[last]; spots[last] = t; }
-    for (const m of this._ranks) m.count = this.people;
+    // `count` is deliberately not touched. It stays at the full roster: every
+    // instance past `people` is a man on the ground, and the tail is exactly
+    // where the swap above put him.
     this._closeUp(gap, spots);
     if (this.people <= 0) this._die();
   }
@@ -445,6 +468,19 @@ export class Unit extends Component {
 
     for (let i = 0; i < n; i++) {
       const sp = g.spots[i];
+
+      // The dead, still lying where they went down. Their place is in the world,
+      // so it is turned back into the mesh's local space here - the unit may
+      // have marched off the tile they fell on, and they do not go with it.
+      if (i >= live) {
+        sp.down = Math.min(DEATH_FALL, sp.down + dt);
+        const dx = sp.wx - this.gameObject.position.x;
+        const dz = sp.wz - this.gameObject.position.z;
+        g.write(i, dx * ca - dz * sa, dx * sa + dz * ca, sp.wyaw - a,
+                0, 0, sp.down / DEATH_FALL, sp.wy - this.gameObject.position.y);
+        continue;
+      }
+
       let tx = sp.x, tz = sp.z, tyaw = sp.yaw, lunge = 0;
 
       // Anyone past `live` is not drawn and waits at their home spot.
@@ -523,7 +559,9 @@ export class Unit extends Component {
   }
 
   update(dt) {
-    if (this._fights || this._settling) this._writeMelee(dt);
+    // Corpses are pinned to the world, so they have to be rewritten for as long
+    // as they exist - the unit standing over them can still walk away.
+    if (this._fights || this._settling || this._corpses) this._writeMelee(dt);
     if (this._born < 1) {
       this._born = Math.min(1, this._born + this._emergeRate * dt);
       const s = this._born * this._born * (3 - 2 * this._born);
