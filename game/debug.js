@@ -130,6 +130,29 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     },
   };
 
+  // Speed slider, bottom right. Purely for watching a fight at 10% or skipping
+  // a walk at 100%.
+  {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;gap:8px;'
+      + 'align-items:center;padding:8px 11px;border-radius:7px;background:rgba(9,16,30,0.55);'
+      + 'border:1px solid rgba(143,216,232,0.14);color:#b9cfe0;font:12px system-ui;user-select:none';
+    const out = document.createElement('span');
+    out.style.cssText = 'min-width:34px;text-align:right';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = 0; slider.max = 100; slider.value = 100;
+    slider.style.cssText = 'width:120px;accent-color:#8fd8e8';
+    const apply = () => {
+      game.timeScale = slider.value / 100;
+      out.textContent = `${slider.value}%`;
+    };
+    slider.addEventListener('input', apply);
+    apply();
+    wrap.append(document.createTextNode('Speed'), slider, out);
+    document.body.append(wrap);
+  }
+
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.code === 'KeyF') api.toggleFog();

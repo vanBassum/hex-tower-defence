@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Component } from '../../engine/gameobject.js';
 import { UNIT_TYPES } from '../units.js';
+import { hashHex } from '../../engine/hex/hex_noise.js';
 
 // Something standing on a hex.
 //
@@ -36,6 +37,17 @@ import { UNIT_TYPES } from '../units.js';
 // `_strength` is fractional and `people` is what that rounds up to - otherwise
 // the smallest tick of damage either kills somebody or is thrown away, and at
 // fifteen people a thrown-away tick is most of the fight.
+//
+// ── How a fight is drawn ─────────────────────────────────────
+// A front line on the shared hex edge, and ranks behind it. Both numbers are
+// fractions of the formation's reach so they survive a change of hex size.
+const FRONT_WIDTH = 4;   // people abreast on the line - four fills the edge
+const FILE_GAP = 0.42;   // between two of them
+const RANK_GAP = 0.34;   // and between the line and the rank supporting it
+const STANDOFF = 0.16;   // how far short of the edge the line stops
+
+let UNIT_ID = 0;
+
 export class Unit extends Component {
   constructor({
     grid,
@@ -89,6 +101,7 @@ export class Unit extends Component {
     this._strength = this.people;
     this.dead = false;
     this._deathListeners = new Set();
+    this.id = ++UNIT_ID;
     if (onDied) this._deathListeners.add(onDied);
 
     this._leg = null;       // {from, to, len} - the tile being walked into
@@ -272,7 +285,90 @@ export class Unit extends Component {
     if (this._ring) this._ring.visible = on;
   }
 
+  // The fights this unit is in this frame, as Battle describes them, or null.
+  setMelee(fights) {
+    if (fights) this._settling = true;
+    this._fights = fights;
+  }
+
+  // A fight is a front line and the people behind it.
+  //
+  // The first few of a unit's people walk out to the edge it shares with the
+  // enemy and stand along it, so the two sides meet on one line instead of each
+  // milling about its own tile. Everyone else falls in behind them in loose,
+  // half-staggered ranks, and all of them - line and ranks alike - turn to face
+  // the enemy, which is what makes a crowd read as one body supporting its
+  // fighters rather than as fifteen people who happen to be nearby.
+  //
+  // Nobody paths anywhere. A person eases from their formation spot to the spot
+  // the fight hands them and eases back when it ends, so this is a layout the
+  // formation is bent into and not a second movement system. It is also why
+  // there is nothing to undo: `setMelee(null)` and the same easing walks them
+  // home.
+  _writeMelee(dt) {
+    const g = this._mesh.userData;
+    if (!g.write) return;
+    const f = this._fights;
+    const n = g.spots.length;
+    const reach = g.reach;
+    const k = 1 - Math.exp(-4 * dt);
+    // Battle describes the fight in world space; people are placed in the mesh's
+    // local space, which the unit's own facing has already turned. Without this
+    // the line forms on whichever edge the unit happened to walk in along.
+    const a = this.gameObject.rotation.y;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    let moved = 0;
+
+    for (let i = 0; i < n; i++) {
+      const sp = g.spots[i];
+      let tx = sp.x, tz = sp.z, tyaw = sp.yaw;
+
+      if (f && f.length) {
+        // Flanked units split their people between the fights they are in, so
+        // each front gets a thinner line rather than one front getting all of it.
+        const e = f[i % f.length];
+        const slot = (i / f.length) | 0;
+        const file = slot % FRONT_WIDTH;
+        const rank = (slot / FRONT_WIDTH) | 0;
+
+        const dx = e.dir.x * ca - e.dir.z * sa;
+        const dz = e.dir.x * sa + e.dir.z * ca;
+
+        // Along the edge. `side` is opposite for the two units in a pair, so
+        // both count the line from the same end and file 0 faces file 0.
+        // Odd ranks sit half a file over - a rank directly behind a rank is a
+        // grid, and a grid is a parade.
+        const along = ((file - (FRONT_WIDTH - 1) / 2) * FILE_GAP
+                      + (rank & 1 ? FILE_GAP * 0.5 : 0)) * reach * e.side
+                    + (hashHex(e.seed, slot, 3) - 0.5) * reach * 0.16;
+        // Toward it: the line stops just short of the edge and each rank behind
+        // falls back one more step into its own tile.
+        const out = e.mid - (STANDOFF + rank * RANK_GAP) * reach
+                  + (hashHex(e.seed, slot, 7) - 0.5) * reach * 0.12;
+
+        tx = dx * out - dz * along;
+        tz = dz * out + dx * along;
+        // Their own wobble is kept on top of it, because a rank machined to the
+        // degree is the fence the formation jitter exists to avoid.
+        tyaw = Math.atan2(dx, dz) + sp.yaw;
+      }
+
+      sp.cx += (tx - sp.cx) * k;
+      sp.cz += (tz - sp.cz) * k;
+      let dy = (tyaw - sp.cyaw) % (Math.PI * 2);
+      if (dy > Math.PI) dy -= Math.PI * 2;
+      if (dy < -Math.PI) dy += Math.PI * 2;
+      sp.cyaw += dy * k;
+      moved = Math.max(moved,
+        Math.abs(tx - sp.cx) + Math.abs(tz - sp.cz) + Math.abs(dy));
+      g.write(i, sp.cx, sp.cz, sp.cyaw);
+    }
+    g.flush();
+    if (!f && moved < 0.002) this._settling = false;
+  }
+
   update(dt) {
+    if (this._fights || this._settling) this._writeMelee(dt);
     if (this._born < 1) {
       this._born = Math.min(1, this._born + this._emergeRate * dt);
       const s = this._born * this._born * (3 - 2 * this._born);

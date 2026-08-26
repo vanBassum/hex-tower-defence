@@ -265,6 +265,32 @@ function buildSquad(type, colors = {}, tuning = {}) {
   const up = new THREE.Vector3(0, 1, 0);
   const tilt = new THREE.Euler();
 
+  // Each person's own yaw, size and spear tilt, kept so the melee can move them
+  // without rebuilding any of it. `x/z` is where they stand in formation and
+  // `cx/cz` is where they actually are.
+  const spots = [];
+  // `yaw` is passed rather than read off the spot because a fight turns people:
+  // in formation everyone points the way the unit does, and in a fight they
+  // point at whoever is opposite them. The spear follows it - a shouldered shaft
+  // that stayed pointed the old way is the tell that a man only slid sideways.
+  const write = (i, x, z, yaw = spots[i].yaw) => {
+    const sp = spots[i];
+    pos.set(x, 0, z);
+    quat.setFromAxisAngle(up, yaw);
+    scale.set(sp.s, sp.s, sp.s);
+    m.compose(pos, quat, scale);
+    bodies.setMatrixAt(i, m);
+    heads.setMatrixAt(i, m);
+    if (spears) {
+      pos.x += Math.cos(yaw) * h * 0.16;
+      pos.z -= Math.sin(yaw) * h * 0.16;
+      tilt.set(sp.tilt.x, yaw, sp.tilt.z);
+      quat.setFromEuler(tilt);
+      m.compose(pos, quat, scale);
+      spears.setMatrixAt(i, m);
+    }
+  };
+
   const spread = type.jitter ?? 0.22;
   for (let i = 0; i < n; i++) {
     // A formation with a leader in it leaves the middle spot for him rather than
@@ -284,26 +310,14 @@ function buildSquad(type, colors = {}, tuning = {}) {
     // colonnade.
     const s = 0.88 + hashHex(i, 0, 29) * 0.26;
 
-    pos.set(x + jx, 0, z + jz);
-    quat.setFromAxisAngle(up, yaw);
-    scale.set(s, s, s);
-    m.compose(pos, quat, scale);
-    bodies.setMatrixAt(i, m);
-    heads.setMatrixAt(i, m);
-
-    if (spears) {
-      // Shouldered rather than planted, and each at its own angle. Fifteen
-      // shafts at one angle is a comb; the spread is what makes it a crowd
-      // carrying spears. Held off the shoulder so the shaft does not grow out of
-      // the middle of anyone's head.
-      pos.x += Math.cos(yaw) * h * 0.16;
-      pos.z -= Math.sin(yaw) * h * 0.16;
-      const t = type.spearTilt ?? 0.26;
-      tilt.set((hashHex(i, 0, 31) - 0.5) * t, yaw, (hashHex(i, 0, 37) - 0.5) * t);
-      quat.setFromEuler(tilt);
-      m.compose(pos, quat, scale);
-      spears.setMatrixAt(i, m);
-    }
+    // Spears are shouldered rather than planted, each at its own angle: fifteen
+    // shafts at one angle is a comb.
+    const t = type.spearTilt ?? 0.26;
+    spots.push({
+      x: x + jx, z: z + jz, cx: x + jx, cz: z + jz, yaw, cyaw: yaw, s,
+      tilt: new THREE.Euler((hashHex(i, 0, 31) - 0.5) * t, yaw, (hashHex(i, 0, 37) - 0.5) * t),
+    });
+    write(i, x + jx, z + jz);
   }
   bodies.instanceMatrix.needsUpdate = true;
   heads.instanceMatrix.needsUpdate = true;
@@ -440,6 +454,14 @@ function buildSquad(type, colors = {}, tuning = {}) {
   // was for in the first place, written down long before there was anything on
   // this island that could take somebody out of a formation.
   group.userData.ranks = spears ? [bodies, heads, spears] : [bodies, heads];
+  group.userData.spots = spots;
+  group.userData.write = write;
+  group.userData.reach = reach;
+  group.userData.flush = () => {
+    bodies.instanceMatrix.needsUpdate = true;
+    heads.instanceMatrix.needsUpdate = true;
+    if (spears) spears.instanceMatrix.needsUpdate = true;
+  };
   return group;
 }
 

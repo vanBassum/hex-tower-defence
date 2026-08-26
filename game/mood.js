@@ -159,53 +159,43 @@ export const MOOD = {
   // steel - but colour is what stops them being the same *material* as well as
   // the same shape.
   units: {
-    cloak: 0x5a6b84,
-    trim:  0x323c4c,
+    cloak: 0x4a6a94,
+    trim:  0x2c3d55,
     skin:  0x8c8377,
     select: 0x8fd8e8,
     lampGlow: 0xffb45c,
 
+    // Blue is the player's. Everything they own is one family of it, told apart
+    // by silhouette rather than by hue, and the enemy is the only red on the
+    // board - which at blue hour means red is also the only *warm* thing that is
+    // not a lamp.
     scout: {
-      cloak: 0x5a6b84,
-      trim:  0x323c4c,
+      cloak: 0x4a6a94,
+      trim:  0x2b3f5c,
     },
 
-    // Deeper and colder than the Scout, so the retinue reads as a mass rather
-    // than as a crowd, with the gold kept for the two small things that are
-    // meant to catch light. The standard is a *pale* warm rather than a
-    // saturated one: the level spends amber on lamps and on what somebody left
-    // behind, and a crimson flag at blue hour is a black flag.
     king: {
-      cloak:  0x474156,
-      trim:   0x2b2836,
+      cloak:  0x2f4c80,
+      trim:   0x22314c,
       gold:   0xd8b268,
-      banner: 0xb98a4e,
+      banner: 0x4d7fbe,
       pole:   0x2a231d,
       lampGlow: 0xffa855,
     },
 
-    // The other side. Colder and darker than anything the player owns, with the
-    // one warm note kept for the heads - a dull red hood against the Footmen's
-    // pale steel helmet, which is the only place the two crowds differ in
-    // colour. The real difference is that this one stands in a mob and theirs
-    // stands in ranks; colour is what stops them being the same *material* as
-    // well as the same shape.
-    spearmen: {
-      cloak: 0x2c2b34,
-      trim:  0x7a3a34,
-      steel: 0x6f6a64,
+    footman: {
+      cloak: 0x3a5c8a,
+      trim:  0x9db4d0,
+      steel: 0x9db4d0,
     },
 
-    // Darker and browner than the Scout - leather rather than travelling cloth -
-    // with the two cool notes reserved for the parts that are meant to be metal.
-    // The helmets and the spears are the only thing on a Footman that catches
-    // light, which is exactly what should be true of them.
-    footman: {
-      cloak: 0x4a443c,
-      trim:  0x69717e,
-      steel: 0x8a93a1,
+    spearmen: {
+      cloak: 0x6e2b2b,
+      trim:  0xb0554a,
+      steel: 0x8a6f66,
     },
   },
+
 
   // The colours somebody left on the island. Warm, because on this board warm
   // means people: the lanterns already spent that meaning and a pickup is the

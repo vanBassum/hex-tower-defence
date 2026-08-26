@@ -34,11 +34,39 @@ export class Battle extends Component {
 
   update(dt) {
     if (dt <= 0) return;
+    this._fights = new Map();
     for (let a = 0; a < this._sides.length; a++) {
       for (let b = a + 1; b < this._sides.length; b++) {
         this._clash(this._sides[a].units, this._sides[b].units, dt);
       }
     }
+    for (const side of this._sides) {
+      for (const u of side.units) u.setMelee(this._fights.get(u) ?? null);
+    }
+  }
+
+  // Both sides of a pair get the same seed and opposite `side`, so the two
+  // front lines are counted from the same end of the shared edge and end up
+  // opposite each other rather than interleaved.
+  //
+  // This is a description of where the fight *is* - the direction of the enemy
+  // and how far it is to the edge between them - and nothing about who hits
+  // whom. Unit turns it into a front line and ranks behind it; the casualties
+  // above do not read any of it.
+  _engage(u, v) {
+    const a = this._grid.hexToWorld(u.q, u.r);
+    const b = this._grid.hexToWorld(v.q, v.r);
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const seed = Math.min(u.id, v.id) * 97 + Math.max(u.id, v.id);
+    const put = (who, dir, side) => {
+      const list = this._fights.get(who) ?? [];
+      list.push({ dir, side, seed, mid: d * 0.5 });
+      this._fights.set(who, list);
+    };
+    const first = u.id < v.id ? 1 : -1;
+    put(u, { x: dx / d, z: dz / d }, first);
+    put(v, { x: -dx / d, z: -dz / d }, -first);
   }
 
   _clash(ours, theirs, dt) {
@@ -47,9 +75,9 @@ export class Battle extends Component {
       for (const v of theirs) {
         if (v.dead) continue;
         if (this._grid.hexDistance(u.q, u.r, v.q, v.r) !== 1) continue;
-        // Both at once, and both from the strength they had at the start of the
-        // frame - so two units that would kill each other do, rather than the
-        // one this loop happens to reach first surviving on a technicality.
+        this._engage(u, v);
+        // Both at once, so two units that would kill each other do, rather than
+        // whichever this loop reaches first surviving on a technicality.
         const fromU = u.attack * dt;
         const fromV = v.attack * dt;
         v.damage(fromU);
