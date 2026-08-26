@@ -23,9 +23,10 @@ import { Deployment } from './components/deployment.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
-// The world, and what plays on it: a Scout, a hand of cards, and a map that has
-// to be walked to be seen. Everything the player finds is played onto a tile
-// beside the Scout, so where it is standing is where the army can arrive.
+// The world, and what plays on it: a King, a Scout, a hand of cards, and a map
+// that has to be walked to be seen. Everything the player finds is played onto a
+// tile beside the King, so where he is standing is the whole of the force's
+// reach - and he walks, so that reach is something the player pushes forward.
 //
 // The tower defence layer that used to live here is gone - towers, waves, an
 // economy, lives, a route across the island. What is on top of the world now is
@@ -188,8 +189,23 @@ const fog = fogGO.addComponent(new FogOfWar(map.grid, visibility, {
 }));
 game.add(fogGO);
 
-// The Scout. It is on the board from the first frame and a run cannot begin
-// without one, because it is what everything else arrives beside.
+// The two units a run always has, both on the board from the first frame.
+//
+// The King is the base: every card is played onto a tile beside him, so a run
+// without one can never field anything it finds. The Scout is how anything is
+// found in the first place. Neither is a card, because a card would have to be
+// played somewhere and these two are what "somewhere" means.
+const kingGO = new GameObject('King');
+const king = kingGO.addComponent(new Unit({
+  grid: map.grid,
+  ground: hexGround,
+  type: 'king',
+  q: DEBUG.kingStart.q, r: DEBUG.kingStart.r,
+  colors: MOOD.units,
+  tuning: { lamp: MOOD.kingFire },
+}));
+game.add(kingGO);
+
 const scoutGO = new GameObject('Scout');
 const scout = scoutGO.addComponent(new Unit({
   grid: map.grid,
@@ -275,7 +291,7 @@ const control = forceGO.addComponent(new UnitControl({
   grid: map.grid,
   ground: hexGround,
   visibility,
-  units: [scout],
+  units: [king, scout],
   // Collecting is the join between the roster and the board, and this is the one
   // component that holds both halves of it.
   pickups,
@@ -363,10 +379,10 @@ cursor.addComponent(new HexPicker({
 }));
 game.add(cursor);
 
-// Open looking at the Scout rather than at the middle of a board that is almost
-// entirely hidden.
+// Open looking at the King rather than at the middle of a board that is almost
+// entirely hidden. He is where the run starts from in every sense that matters.
 {
-  const { x, z } = map.grid.hexToWorld(scout.q, scout.r);
+  const { x, z } = map.grid.hexToWorld(king.q, king.r);
   rig.focusOn(x, z);
 }
 
@@ -412,7 +428,7 @@ game.add(motes);
 //
 // The fog is deliberately not in this list: it is the one thing in the scene that
 // is *about* the unknown rather than subject to it.
-for (const go of [groundGO, sea, propsGO, gridGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
+for (const go of [groundGO, sea, propsGO, gridGO, kingGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
 
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how

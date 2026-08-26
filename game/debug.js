@@ -10,10 +10,11 @@ import { GameObject } from '../engine/gameobject.js';
 // console. None of it is reachable from the game itself, so none of it needs to
 // survive into a build.
 export const DEBUG = {
-  // The Scout, before the game starts. It is always on the board: everything
-  // else is played onto a tile beside it, so a run without one is a run that can
-  // never field anything it finds.
-  scoutStart: { q: -3, r: 4 },
+  // Where the run begins. Both are always on the board - the King because every
+  // card is played onto a tile beside him, so a run without one can never field
+  // anything it finds, and the Scout because without one nothing is ever found.
+  kingStart:  { q: -3, r: 4 },
+  scoutStart: { q: -3, r: 5 },
   scoutViewDistance: 2,
 
   // What the run is dealt on top of it. Empty, because the first card is the one

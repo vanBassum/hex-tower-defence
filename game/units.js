@@ -54,14 +54,54 @@ export const UNIT_TYPES = {
     formation: 'rings',
     jitter: 0.22,
     lamp: true,
-    // Reinforcements arrive next to it, and this one field is the whole of that
-    // rule. It is what turns the Scout from the unit that sees furthest into the
-    // unit the rest of the force depends on: where you have walked it is where
-    // anything you find can be brought in, so its position is a *commitment*
-    // rather than a viewpoint. Fielding a second one is fielding a second place
-    // the army can appear.
-    deployAnchor: true,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.scout, colors, tuning),
+  },
+
+  // The one the army arrives around, and the one thing on the board that is
+  // always there. A run begins with a King and a Scout and nothing else.
+  //
+  // He is a *base*, and a base that walks. Every card is played onto a tile next
+  // to him, so where he is standing is the whole of the force's reach - and
+  // because he can be walked, that reach is a thing the player pushes forward
+  // and has to defend rather than a corner of the map they return to. The rule
+  // used to live on a camp (a place, so the far shore was tedious) and then on
+  // the Scout (a viewpoint, so the one unit that had to survive was the one sent
+  // ahead to look). On the King it is neither: the Scout goes back to seeing
+  // things and the King goes where the army needs to be able to appear.
+  //
+  // He is worth nothing else yet. Losing him will one day lose the run, and that
+  // is a rule to write when there is something on this island that could kill
+  // him - today it would be a sentence nobody could test.
+  king: {
+    key: 'king',
+    name: 'King',
+    // One ring, like the Footmen. He is not here to see; he is here to be
+    // somewhere, and a base that scouted as well as a Scout would make the Scout
+    // a card nobody plays.
+    viewDistance: 1,
+    // A retinue rather than a company - nine guards and the man himself, which
+    // reads as fewer people than a unit and is exactly the point.
+    people: 9,
+    formation: 'rings',
+    jitter: 0.18,
+    // The two things that make him readable at ten pixels, and both are
+    // silhouette rather than colour: a figure half again as tall as anyone else
+    // at the middle of the group, and a standard flying over the whole tile. The
+    // standard is the taller of the two and is what actually finds him on a dark
+    // board - a Scout is found by its lamp, Footmen by their spears, and the
+    // King by the flag.
+    leader: true,
+    standard: true,
+    // And a torch, which is the one place the palette rule gets bent on purpose.
+    // The King replaced a camp, and a camp was the warm thing on this board -
+    // so the warm pocket did not disappear when the camp did, it started
+    // walking. It is wider and deeper-orange than the Scout's lamp and does the
+    // same job for the opposite reason: the Scout carries a light because it is
+    // out alone in the dark, and the King carries one because he is the place
+    // everything comes back to.
+    lamp: true,
+    deployAnchor: true,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.king, colors, tuning),
   },
 
   // The first thing the player finds, and the first unit that is not a Scout.
@@ -95,6 +135,9 @@ const DEFAULT_COLORS = {
   trim:  0x323c4c,
   skin:  0x8c8377,
   steel: 0x99a3b3,
+  gold:  0xc9a55e,
+  banner: 0xb8894a,
+  pole:  0x2f2721,
   lampGlow: 0xffb45c,
   select:   0x8fd8e8,
 };
@@ -165,7 +208,10 @@ function buildSquad(type, colors = {}, tuning = {}) {
 
   const spread = type.jitter ?? 0.22;
   for (let i = 0; i < n; i++) {
-    const { x, z } = formationSpot(i, n, reach, type.formation);
+    // A formation with a leader in it leaves the middle spot for him rather than
+    // standing somebody where he goes, so the ranks are filled from one place
+    // further along.
+    const { x, z } = formationSpot(type.leader ? i + 1 : i, n, reach, type.formation);
     // A rank that is exactly a rank reads as a fence. Jitter is keyed to the
     // index so a squad looks the same every time it is drawn, and how much of it
     // a unit gets is the type's business: a scouting party stands about, and a
@@ -208,6 +254,79 @@ function buildSquad(type, colors = {}, tuning = {}) {
   // grass tufts already made.
   bodies.castShadow = heads.castShadow = false;
   if (spears) spears.castShadow = false;
+
+  // The man himself: the same shapes as everyone else and half again as big,
+  // because a leader drawn from a different kit reads as a different game. The
+  // crown is three facets of gold and is not really visible at the game's
+  // camera - it is there for the one moment somebody zooms in, and the height is
+  // what does the work the rest of the time.
+  if (type.leader) {
+    const scale = 1.45;
+    const kingBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(h * 0.13, h * 0.24, h * 0.66, 5),
+      new THREE.MeshLambertMaterial({ color: c.cloak, flatShading: true }),
+    );
+    kingBody.position.y = h * 0.33 * scale;
+    kingBody.scale.setScalar(scale);
+
+    const kingHead = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(h * 0.15, 0),
+      new THREE.MeshLambertMaterial({ color: c.skin, flatShading: true }),
+    );
+    kingHead.position.y = h * 0.80 * scale;
+    kingHead.scale.setScalar(scale);
+
+    const crown = new THREE.Mesh(
+      new THREE.CylinderGeometry(h * 0.15, h * 0.13, h * 0.09, 6, 1, true),
+      new THREE.MeshLambertMaterial({ color: c.gold, flatShading: true, side: THREE.DoubleSide }),
+    );
+    crown.position.y = h * 0.93 * scale;
+    group.add(kingBody, kingHead, crown);
+    own.push(kingBody, kingHead, crown);
+  }
+
+  // The standard. Tall enough to clear every head on the tile and then some,
+  // because it is the thing that has to be picked out from across a fogged
+  // board - the King is the one unit the player must always be able to find, on
+  // account of being the only place anything can be brought in.
+  //
+  // The cloth is furled in the geometry rather than animated. Everything else
+  // that flies on this island waves on the shared wind, and a Unit has no wind
+  // plumbing; a flat rectangle would read as dead where a curved one reads as
+  // caught, and that is the whole of what the curve is buying.
+  if (type.standard) {
+    const H = h * 2.4;
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(h * 0.022, h * 0.032, H, 5),
+      new THREE.MeshLambertMaterial({ color: c.pole, flatShading: true }),
+    );
+    pole.position.set(-reach * 0.12, H * 0.5, -reach * 0.24);
+    group.add(pole);
+
+    const cw = h * 0.62, ch = h * 0.78;
+    const clothGeo = new THREE.PlaneGeometry(cw, ch, 6, 2);
+    const pos = clothGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const bx = pos.getX(i) + cw * 0.5;          // 0 at the pole, cw at the fly
+      pos.setZ(i, Math.sin((bx / cw) * Math.PI * 1.4) * cw * 0.16 * (bx / cw));
+    }
+    clothGeo.translate(cw * 0.5 + h * 0.03, -ch * 0.5, 0);
+    const cloth = new THREE.Mesh(
+      clothGeo,
+      new THREE.MeshLambertMaterial({ color: c.banner, flatShading: true, side: THREE.DoubleSide }),
+    );
+    cloth.position.set(pole.position.x, H * 0.96, pole.position.z);
+    group.add(cloth);
+
+    const finial = new THREE.Mesh(
+      new THREE.OctahedronGeometry(h * 0.055, 0),
+      new THREE.MeshLambertMaterial({ color: c.gold, flatShading: true }),
+    );
+    finial.position.set(pole.position.x, H * 1.03, pole.position.z);
+    group.add(finial);
+
+    own.push(pole, cloth, finial);
+  }
 
   // The lamp-bearer stands at the front of the formation. An unlit bead plus a
   // real point light, for the reason the lanterns have one each: a glow with no

@@ -160,6 +160,20 @@ export const MOOD = {
       trim:  0x323c4c,
     },
 
+    // Deeper and colder than the Scout, so the retinue reads as a mass rather
+    // than as a crowd, with the gold kept for the two small things that are
+    // meant to catch light. The standard is a *pale* warm rather than a
+    // saturated one: the level spends amber on lamps and on what somebody left
+    // behind, and a crimson flag at blue hour is a black flag.
+    king: {
+      cloak:  0x474156,
+      trim:   0x2b2836,
+      gold:   0xd8b268,
+      banner: 0xb98a4e,
+      pole:   0x2a231d,
+      lampGlow: 0xffa855,
+    },
+
     // Darker and browner than the Scout - leather rather than travelling cloth -
     // with the two cool notes reserved for the parts that are meant to be metal.
     // The helmets and the spears are the only thing on a Footman that catches
@@ -190,6 +204,18 @@ export const MOOD = {
   pickupLight: {
     color: 0xff9a3c,
     intensity: 6.5,
+    distance: 5.0,
+    decay: 2,
+  },
+
+  // The King's torch: wider and deeper than the Scout's lamp, and still well
+  // under a lantern. It is the camp's warmth, walking - which is what he is now
+  // - so it wants to read as a pocket of light with people in it rather than as
+  // one person carrying a lamp. Judge it against the lantern pools it has to sit
+  // between without being mistaken for one.
+  kingFire: {
+    color: 0xff8a3a,
+    intensity: 4.2,
     distance: 5.0,
     decay: 2,
   },

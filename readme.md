@@ -11,7 +11,7 @@ on - a drawn island in the sea at blue hour, terrain with real elevation, animat
 water, vegetation that moves in a shared wind, lanterns that light the ground -
 and the loop that plays on it: **one Scout, walking an island it cannot see**,
 **a cache to find out there**, and **a hand of cards that can only be played
-beside the Scout**. The tower defence
+beside the King**. The tower defence
 prototype this grew out of has been removed - towers, waves, an economy, lives, a
 fixed route - because none of it was going to survive the change of genre and
 leaving it in would have made every later decision harder to see.
@@ -20,8 +20,8 @@ There are no enemies, no turns and no combat, on purpose. Exploration was built
 alone so it could be judged alone, against one question: is moving a scout
 through an unknown hex world and revealing the map already worth doing? The
 pickup and the hand are the second question laid on top of the first: does
-finding something out there, and having to have walked a Scout somewhere before
-it can be used, make the walk worth more than the walk was?
+finding something out there, and having to have walked the King within reach of
+it before it can be used, make the walk worth more than the walk was?
 
 The engine underneath is the component/GameObject engine carried over from the
 `armymen` project. Plain ES modules, no build step. Serve the folder and open it,
@@ -40,7 +40,7 @@ or use the VS Code Live Server extension:
 | Right-click | Walk that route |
 | Right-drag | Rotate, and lean off the dive curve |
 | Click a card | Pick it up, ready to place |
-| Left-click a lit tile, holding one | Deploy it there |
+| Left-click a lit tile, holding one | Deploy it beside the King |
 | `Esc`, or right-click | Put the card back down |
 | `WASD` / arrows | Pan |
 | Middle-drag | Pan, holding the grabbed ground point under the cursor |
@@ -115,7 +115,7 @@ you turn twice and then stop turning.
     game/components/unit.js            something standing on a hex
     game/components/pickup.js          something on a hex worth walking to
     game/components/unit_control.js    the force: selection, movement, vision, pickups
-    game/components/deployment.js      the hand, and the ground beside the Scout
+    game/components/deployment.js      the hand, and the ground beside the King
     game/ui/card_bar.js                that hand, along the bottom of the screen
     game/debug.js                      developer knobs for the exploration pass
     game/main.js                       scene setup
@@ -137,7 +137,7 @@ reason it prints everything else: how far it sits from where a run begins is a
 number being tuned, and it cannot be judged from a pair of axial coordinates.
 
 There is deliberately no deployment zone in the map any more. Where the player
-may bring units in is a fact about where their Scout is standing, not about the
+may bring units in is a fact about where their King is standing, not about the
 level, so a map has no say in it.
 
 `buildMap` expands the definition into what the scene needs - the grid, per-hex
@@ -715,7 +715,7 @@ grass, not the sphere.
 
 **What it grants is a card, not a unit.** Nothing appears where the cache stood.
 The Footmen it names go into the hand at the bottom of the screen and can only be
-played beside a Scout - see below. `UnitControl` reports the grant and stops
+played beside the King - see below. `UnitControl` reports the grant and stops
 there: it has never heard of a card, and the pickup has never heard of where one
 can be played.
 
@@ -754,33 +754,57 @@ has - raised ground, and a light in the dark.
 ## Where reinforcements arrive
 
 A card is *where* as much as it is *what*, and getting that "where" wrong twice
-is what taught the rule.
+is what settled it.
 
 A reinforcement that can appear anywhere costs nothing, so the cache on the far
 shore would be a reward collected by touching it. The first fix was a **camp**:
 four hexes on the south-west shore, and everything played there. It worked, and
-it was wrong - it made a rule about a *place*, and the consequence was that the
-far end of the island became tedious rather than dangerous. The cost of finding
-something over there was a walk home.
+it was still wrong - it made a rule about a *place*, and the consequence was that
+the far end of the island became tedious rather than dangerous. The cost of
+finding something over there was a walk home.
 
-**The rule is about a unit instead.** A card is played onto a free tile next to a
-**Scout**, and that single change turns the Scout from the thing that sees
-furthest into the thing the army arrives behind. Everything else falls out of it
-in the direction you want:
+The second was the **Scout**, which was better and still not right: it made the
+one unit that must survive the same one you send ahead to look at things, so the
+rule pulled against itself.
 
-- Where you have walked a Scout is where you can reinforce, so its position is a
-  commitment rather than a viewpoint.
-- Pushing it forward extends your reach and puts the one unit that can do that in
-  front, which is exactly the tension the concept doc wants between the Scout and
-  the escort.
-- The Footmen cannot bring anyone in. An escort that has marched off on its own
-  is an escort with nothing behind it.
-- A second Scout is a second place the army can appear - which is what makes a
-  second Scout card worth finding, without anybody having to write that down.
+**The rule lives on the King.** He is always on the board, he walks, and every
+card is played onto a free tile next to him - so where he is standing is the
+whole of the force's reach, and that reach is something the player pushes
+forward and has to defend rather than a corner of the map they return to. He is
+a base, and the base moves.
 
-None of that is enforced anywhere. It is `deployAnchor: true` on one unit type,
-and `Deployment.anchors()` filtering the roster by it - so a second kind of
-anchor later is one field and no change here at all.
+Everything else falls out of it without being written down anywhere:
+
+- Walking the King forward extends where the army can appear, and walks the one
+  thing you cannot lose toward whatever is out there.
+- The Scout goes back to being what it is for: it sees two hexes and finds
+  things, and it does not have to survive for the force to keep functioning.
+- Footmen cannot bring anyone in either. The King is the only anchor, so an army
+  that has marched away from him is an army that cannot be reinforced.
+- Which unit anchors is `deployAnchor: true` on its type and `Deployment.anchors()`
+  filtering the roster by it - so a second kind of anchor later is one field and
+  no change here at all.
+
+He is worth nothing else yet. Losing him will one day lose the run, and that is
+a rule to write when there is something on this island that could kill him -
+today it would be a sentence nobody could test.
+
+**A King is read by his standard.** Every unit on this board is ten pixels of
+dark shape at the game's camera, so each one gets a silhouette rather than a
+colour: the Scout is a hooded crowd around a lamp, the Footmen a helmeted block
+under a bristle of spears, and the King a small retinue with a flag flying over
+it. The flag is the tallest thing any unit has, because the King is the one the
+player must always be able to find. Inside the ring stands one figure half again
+as tall as anyone else, built from exactly the same shapes as the rest - a
+leader drawn from a different kit reads as a different game - and the crown on
+him is for the moment somebody zooms in, not for the moment they are playing.
+
+He also carries a **torch**, and that is the one place the palette rule is bent
+on purpose. The King replaced a camp; a camp was the warm thing on this board; so
+the warm pocket did not disappear when the camp did, it started walking. It is
+wider and deeper-orange than the Scout's lamp and it is there for the opposite
+reason - the Scout carries a light because it is out alone in the dark, and the
+King carries one because he is the place everything comes back to.
 
 **The zone is computed, never stored.** It moves every time anything takes a
 step, and a cached copy would be one more thing to remember to invalidate on a
@@ -789,8 +813,8 @@ while a card is held: the route preview's treatment at slightly higher strength 
 additive, so a tile catches more light rather than having a hexagon painted onto
 it - because "where may this go" is not a question anybody is asking until they
 are holding something. The camp's always-on rim went with the camp; a ring drawn
-permanently around a unit that already has a lamp and a selection ring is a third
-thing competing to describe one tile.
+permanently around a unit that already has a torch and a selection ring is a
+third thing competing to describe one tile.
 
 **The hand is the first piece of the game that is not the world**, and it is DOM.
 That is a decision rather than a shortcut: a card is a menu, not an object on the
@@ -814,10 +838,10 @@ Footmen and not a better one - the arithmetic the whole progression loop in the
 concept doc rests on - so the hand is a list of cards rather than a table of
 counts, and two entries naming the same unit need no special case.
 
-**Everything that can go wrong is a state that says so.** A Scout boxed in lights
+**Everything that can go wrong is a state that says so.** A King boxed in lights
 up as nothing, which looks exactly like a highlight that has not arrived yet, so
-the hint says there is no room beside it instead - and stops saying it the moment
-it moves. That needed a subscription this component would not obviously have
+the hint says there is no room beside him instead - and stops saying it the
+moment something moves. That needed a subscription this component would not obviously have
 reached for: a unit stepping aside frees a tile without changing what anybody has
 *discovered*, so watching visibility alone leaves both the highlight and the hint
 a step behind the board. Occupancy is already a grid fact with a listener on it,
