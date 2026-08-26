@@ -55,6 +55,10 @@ const FILE_ORDER = [1, 2, 0, 3];
 const FILE_GAP = 0.42;   // between two of them
 const RANK_GAP = 0.34;   // and between the line and the rank supporting it
 const STANDOFF = 0.16;   // how far short of the edge the line stops
+// How much of a man's beat is the thrust, and how much of the thrust is the way
+// out. Quick in and a slower recovery, then he stands there until his next one.
+const THRUST_SPAN = 0.34;
+const THRUST_OUT = 0.30;
 
 let UNIT_ID = 0;
 
@@ -119,6 +123,7 @@ export class Unit extends Component {
     this._walked = 0;       // distance covered on this route, for the ramps
     this._total = 0;        // and how long the route is in total
     this._facing = 0;       // where the formation is pointed, eased toward the leg
+    this._clock = 0;        // seconds of fighting, for the thrusts
 
     // Several things want to hear about a step - fog, the route preview, later
     // whatever spends the movement point - so it is a list rather than one slot.
@@ -404,11 +409,12 @@ export class Unit extends Component {
     // the line forms on whichever edge the unit happened to walk in along.
     const a = this.gameObject.rotation.y;
     const ca = Math.cos(a), sa = Math.sin(a);
+    this._clock += dt;
     let moved = 0;
 
     for (let i = 0; i < n; i++) {
       const sp = g.spots[i];
-      let tx = sp.x, tz = sp.z, tyaw = sp.yaw;
+      let tx = sp.x, tz = sp.z, tyaw = sp.yaw, lunge = 0;
 
       // Anyone past `live` is not drawn and waits at their home spot.
       if (f && f.length && i < live) {
@@ -442,6 +448,19 @@ export class Unit extends Component {
         // Their own wobble is kept on top of it, because a rank machined to the
         // degree is the fence the formation jitter exists to avoid.
         tyaw = Math.atan2(dx, dz) + sp.yaw;
+
+        // Only the men who can reach anybody. Each runs his own beat off a
+        // shared clock, so the line goes in raggedly and stays ragged - which is
+        // the whole point of it, and the reason the beat is his and not a
+        // constant. Nothing here touches damage: this is what a fight looks
+        // like, not what it costs.
+        if (rank === 0) {
+          const t = ((this._clock + sp.phase) % sp.beat) / sp.beat;
+          const out = THRUST_SPAN * THRUST_OUT;
+          lunge = t >= THRUST_SPAN ? 0
+                : t < out ? t / out
+                : 1 - (t - out) / (THRUST_SPAN - out);
+        }
       }
 
       sp.cx += (tx - sp.cx) * k;
@@ -452,7 +471,7 @@ export class Unit extends Component {
       sp.cyaw += dy * k;
       moved = Math.max(moved,
         Math.abs(tx - sp.cx) + Math.abs(tz - sp.cz) + Math.abs(dy));
-      g.write(i, sp.cx, sp.cz, sp.cyaw);
+      g.write(i, sp.cx, sp.cz, sp.cyaw, lunge);
     }
     g.flush();
     if (!f && moved < 0.002) this._settling = false;

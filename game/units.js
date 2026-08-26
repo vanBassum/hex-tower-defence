@@ -47,6 +47,14 @@ import { hashHex } from '../engine/hex/hex_noise.js';
 const SOLDIER = 0.26;        // a person, in world units, per unit of hex size
 const FOOTPRINT = 0.72;      // how much of the tile's inradius the formation fills
 
+// A thrust, in soldier heights and radians. The man goes in a little way behind
+// the point; almost all of what reads is the shaft dropping from shouldered to
+// level, which is why the pitch is the big number here and the lean is not.
+const GRIP = 0.55;           // where up the shaft he holds it - his pivot
+const THRUST_PITCH = 1.35;   // how far the shaft drops as it goes in
+const THRUST_REACH = 0.42;   // and how far the whole shaft travels with it
+const LEAN = 0.16;           // how far the man himself leans in behind it
+
 export const UNIT_TYPES = {
   scout: {
     key: 'scout',
@@ -263,7 +271,11 @@ function buildSquad(type, colors = {}, tuning = {}) {
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
-  const tilt = new THREE.Euler();
+  const grip = new THREE.Vector3();
+  // YXZ, so the pitch happens inside the yaw. On the default XYZ the yaw is
+  // applied to a shaft that is still vertical, which it does nothing to, and a
+  // thrust then goes the same way whichever way the man is facing.
+  const tilt = new THREE.Euler(0, 0, 0, 'YXZ');
 
   // Each person's own yaw, size, spear tilt, constitution and place in the line,
   // kept so the melee can move them without rebuilding any of it. `x/z` is where
@@ -278,19 +290,28 @@ function buildSquad(type, colors = {}, tuning = {}) {
   // in formation everyone points the way the unit does, and in a fight they
   // point at whoever is opposite them. The spear follows it - a shouldered shaft
   // that stayed pointed the old way is the tell that a man only slid sideways.
-  const write = (i, x, z, yaw = spots[i].yaw) => {
+  const write = (i, x, z, yaw = spots[i].yaw, lunge = 0) => {
     const sp = spots[i];
-    pos.set(x, 0, z);
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);      // the way he is facing
+    pos.set(x + fx * lunge * LEAN * h, 0, z + fz * lunge * LEAN * h);
     quat.setFromAxisAngle(up, yaw);
     scale.set(sp.s, sp.s, sp.s);
     m.compose(pos, quat, scale);
     bodies.setMatrixAt(i, m);
     heads.setMatrixAt(i, m);
     if (spears) {
-      pos.x += Math.cos(yaw) * h * 0.16;
-      pos.z -= Math.sin(yaw) * h * 0.16;
-      tilt.set(sp.tilt.x, yaw, sp.tilt.z);
+      // The shaft goes further in than the man does, and drops as it goes.
+      pos.x = x + fx * lunge * THRUST_REACH * h + Math.cos(yaw) * h * 0.16;
+      pos.z = z + fz * lunge * THRUST_REACH * h - Math.sin(yaw) * h * 0.16;
+      tilt.set(sp.tilt.x + lunge * THRUST_PITCH, yaw, sp.tilt.z);
       quat.setFromEuler(tilt);
+      // Pivot at his grip. The shaft's geometry stands on the ground, so
+      // rotating it as composed swings it about his feet and lays it flat
+      // instead of levelling it at chest height.
+      grip.set(0, GRIP * h * sp.s, 0).applyQuaternion(quat);
+      pos.x -= grip.x;
+      pos.y = GRIP * h * sp.s - grip.y;
+      pos.z -= grip.z;
       m.compose(pos, quat, scale);
       spears.setMatrixAt(i, m);
     }
@@ -329,6 +350,11 @@ function buildSquad(type, colors = {}, tuning = {}) {
       // and the four men on the line do not run out at the same instant.
       hp: 0.62 + hashHex(i, 0, 41) * 0.76,
       bite: 0.70 + hashHex(i, 0, 43) * 0.60,
+      // His own rhythm, in seconds and in seconds. A line of men all going in on
+      // the same frame is a machine rather than a fight, and the periods are
+      // deliberately not multiples of each other so they do not drift into step.
+      beat: 0.82 + hashHex(i, 0, 47) * 0.71,
+      phase: hashHex(i, 0, 53) * 2.4,
     });
     write(i, x + jx, z + jz);
   }
