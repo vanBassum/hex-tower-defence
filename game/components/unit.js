@@ -42,6 +42,11 @@ import { hashHex } from '../../engine/hex/hex_noise.js';
 // A front line on the shared hex edge, and ranks behind it. Both numbers are
 // fractions of the formation's reach so they survive a change of hex size.
 const FRONT_WIDTH = 4;   // people abreast on the line - four fills the edge
+// Which file the n-th person of a rank takes. Middle out rather than left to
+// right, for two reasons: the slot a casualty frees is always the first one, and
+// the middle of a line is where it should be - and a rank down to two people is
+// then a pair standing together instead of a pair off to one side.
+const FILE_ORDER = [1, 2, 0, 3];
 const FILE_GAP = 0.42;   // between two of them
 const RANK_GAP = 0.34;   // and between the line and the rank supporting it
 const STANDOFF = 0.16;   // how far short of the edge the line stops
@@ -310,18 +315,26 @@ export class Unit extends Component {
   // there is nothing to undo: `setMelee(null)` and the same easing walks them
   // home.
   //
-  // ── The line is filled from the back ────────────────────────────────────
+  // ── The line is filled from the back, and only the gap moves ───────────
   // Casualties are a `count` on an InstancedMesh, and a count draws instances
   // 0..count-1 - so the person a casualty takes off the board is always the
   // *highest* live index, and there is no choosing otherwise short of a second
-  // index buffer nobody needs. The people doing the dying are supposed to be the
-  // people doing the fighting, so the slots are handed out backwards: the
-  // highest live index stands on the front line and index 0 stands at the back.
+  // index buffer nobody needs. The people doing the dying have to be the people
+  // doing the fighting, so the highest live index is handed the front of the
+  // line and everybody else falls in behind in order:
   //
-  // The replacement falls out of that and costs nothing. `live` drops by one, so
-  // every remaining person's slot drops by one, so the whole body steps up a
-  // place - and because a slot is a target eased toward rather than a position
-  // written, that step reads as the ranks closing over the gap.
+  //     slot = i === live - 1 ? 0 : i + 1
+  //
+  // Small, and it does the whole job. Slot 0 is the front of the line and the
+  // highest index holds it, so a casualty is always a front-line one. When that
+  // person goes `live` drops by one and *exactly one* other slot changes - the
+  // new highest index, which was standing at the very back on slot `live - 1`,
+  // takes the empty slot 0. Every other person's `i + 1` is what it already was.
+  //
+  // The first version numbered the slots backwards (`live - 1 - i`), which put
+  // the front line at the high indices just as well but renumbered every slot on
+  // every casualty, so the whole body shuffled a place sideways each time
+  // somebody fell. One person walks up from the back. The line stands still.
   _writeMelee(dt) {
     const g = this._mesh.userData;
     if (!g.write) return;
@@ -341,17 +354,17 @@ export class Unit extends Component {
       const sp = g.spots[i];
       let tx = sp.x, tz = sp.z, tyaw = sp.yaw;
 
-      // Counted from the back, so the front line sits at the high indices - see
-      // above. Anyone past `live` is not drawn; they wait at their home spot so
-      // there is somewhere sane to come back from if the unit is ever refilled.
-      const j = live - 1 - i;
+      // See above: the highest live index takes the front of the line, everyone
+      // else keeps the place they already had. Anyone past `live` is not drawn
+      // and waits at their home spot.
+      const j = i === live - 1 ? 0 : i + 1;
 
-      if (f && f.length && j >= 0) {
+      if (f && f.length && i < live) {
         // Flanked units split their people between the fights they are in, so
         // each front gets a thinner line rather than one front getting all of it.
         const e = f[j % f.length];
         const slot = (j / f.length) | 0;
-        const file = slot % FRONT_WIDTH;
+        const file = FILE_ORDER[slot % FRONT_WIDTH];
         const rank = (slot / FRONT_WIDTH) | 0;
 
         const dx = e.dir.x * ca - e.dir.z * sa;
