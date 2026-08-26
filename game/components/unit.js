@@ -59,6 +59,13 @@ const STANDOFF = 0.16;   // how far short of the edge the line stops
 // out. Quick in and a slower recovery, then he stands there until his next one.
 const THRUST_SPAN = 0.34;
 const THRUST_OUT = 0.30;
+// A hit reaction. Damage lands as a rate against a frame, so a man shows it once
+// he has taken `HIT_BLOW` of it - anything smaller and he twitches every frame
+// at whatever rate the renderer happens to be running. At the attack rates in
+// units.js that is a little under one a second each, which is about the rhythm
+// of the thrusts coming the other way.
+const HIT_BLOW = 0.30;   // people's worth of damage that reads as one blow
+const HIT_TIME = 0.18;   // and how long he wears it - a jerk, not a stumble
 
 let UNIT_ID = 0;
 
@@ -164,7 +171,17 @@ export class Unit extends Component {
         const takes = spots[i].hp * weight / spots[i].bite;
         if (takes < step) { step = takes; victim = i; }
       }
-      for (const i of line) spots[i].hp -= step * spots[i].bite / weight;
+      for (const i of line) {
+        const share = step * spots[i].bite / weight;
+        spots[i].hp -= share;
+        // He wears it the moment he has taken enough of it to have been hit by
+        // something. The onset is instant and the recovery is the decay of
+        // `flinch` - that is the whole reaction, and `_writeMelee` reads it.
+        if ((spots[i].sting += share) >= HIT_BLOW) {
+          spots[i].sting = 0;
+          spots[i].flinch = HIT_TIME;
+        }
+      }
       pending -= step;
       if (victim >= 0) this._fall(victim, spots);
     }
@@ -471,7 +488,11 @@ export class Unit extends Component {
       sp.cyaw += dy * k;
       moved = Math.max(moved,
         Math.abs(tx - sp.cx) + Math.abs(tz - sp.cz) + Math.abs(dy));
-      g.write(i, sp.cx, sp.cz, sp.cyaw, lunge);
+      // Straight off the clock rather than eased with the rest: a blow lands
+      // between two frames and a man knocked back over a quarter of a second
+      // has been leaned on, not hit.
+      if (sp.flinch > 0) sp.flinch = Math.max(0, sp.flinch - dt);
+      g.write(i, sp.cx, sp.cz, sp.cyaw, lunge, sp.flinch / HIT_TIME);
     }
     g.flush();
     if (!f && moved < 0.002) this._settling = false;
