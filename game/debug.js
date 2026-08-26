@@ -20,7 +20,7 @@ export const DEBUG = {
 
 const VISION_COLOR = 0xffc07a;
 
-export function installDebug({ game, grid, ground, rig, fog, field, control, visibility, spawn = null }) {
+export function installDebug({ game, grid, ground, rig, fog, field, control, visibility, spawn = null, pickups = [] }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -52,6 +52,10 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
   const api = {
     DEBUG,
     game, grid, fog, field, control, visibility,
+    // What is on the board to be found, so a reward can be taken without walking
+    // to it: `hex.pickups[0].collect()`. It grants exactly what standing on it
+    // would, because the pickup calls the same hook either way.
+    pickups,
 
     // Both halves at once. The mist is only the visible half now - the world
     // hides itself off the same field - so a switch that lifted the sheet and
@@ -88,11 +92,11 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
 
     revealAll() { return visibility.revealAll(); },
 
-    // Puts a second unit on the board. Only a debug hook - there is no way to
-    // recruit anything yet - but it is the one claim this milestone makes that is
-    // worth being able to check: fog is the union over the force, so a second
-    // scout should widen what is known and stepping one of them away should not
-    // close the other one's window.
+    // Puts a unit on the board without finding it first. The force can be
+    // recruited properly now - walk onto the cache - so this is for the two
+    // things that are still worth checking by hand: that fog is the union over
+    // the force, and what a unit type looks like without walking to the tile it
+    // is granted on. `hex.spawn(q, r, 'footman')`.
     spawn(q, r, type = 'scout') {
       if (!spawn) return null;
       const u = spawn(type, q, r);

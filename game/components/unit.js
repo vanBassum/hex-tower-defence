@@ -38,6 +38,13 @@ export class Unit extends Component {
     gait = 0.10,            // how far the formation rises and falls as it walks
     stride = 0.55,          // and how far it travels between two of those
     turnRate = 7.0,         // radians per second the formation may swing round
+    // Scale up out of nothing instead of being there. Off for the units a run
+    // starts with - they were always there - and on for one that joins partway
+    // through, because fifteen people appearing between two frames is the kind
+    // of thing the rest of this board goes out of its way not to do. It is the
+    // same easing the props use when their tile is found, for the same reason.
+    emerge = false,
+    emergeRate = 2.2,
     onMoved = null,         // (unit) => void, fired the instant the hex changes
   } = {}) {
     super();
@@ -57,6 +64,8 @@ export class Unit extends Component {
     this._gait = gait;
     this._stride = stride;
     this._turnRate = turnRate;
+    this._emergeRate = emergeRate;
+    this._born = emerge ? 0 : 1;   // 0..1, how much of the formation has arrived
 
     this._leg = null;       // {from, to, len} - the tile being walked into
     this._along = 0;        // how far along that leg
@@ -99,6 +108,7 @@ export class Unit extends Component {
     this._grid.occupy(this.q, this.r);
     this._snap();
     this._facing = this.gameObject.rotation.y;
+    if (this._born < 1) this._mesh.scale.setScalar(0.0001);
   }
 
   // Where this unit stands, in world space.
@@ -206,6 +216,11 @@ export class Unit extends Component {
   }
 
   update(dt) {
+    if (this._born < 1) {
+      this._born = Math.min(1, this._born + this._emergeRate * dt);
+      const s = this._born * this._born * (3 - 2 * this._born);
+      this._mesh.scale.setScalar(Math.max(0.0001, s));
+    }
     if (!this._leg) return;
 
     // Spend the frame's distance across as many tiles as it reaches, so a tile

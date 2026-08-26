@@ -14,6 +14,11 @@ const key = (q, r) => `${q},${r}`;
 // reason: what the player can see is the union over the whole force, and a unit
 // that owned its own fog would erase a hex two units were both standing next to.
 //
+// Pickups are here too, and that is not scope creep: collecting one is the join
+// between the two lists this already owns - what the player has, and where it is
+// standing. Nothing else in the scene knows both, and a component that did would
+// be a third list to keep in step with these two.
+//
 // ── The two buttons ─────────────────────────────────────────────────────────
 // Left selects and deselects. Right orders a move. They are separate because
 // they answer different questions, and one button doing both is what forces the
@@ -36,6 +41,8 @@ export class UnitControl extends Component {
     ground = null,
     visibility,
     units = [],
+    pickups = [],          // what is out there to be found
+    deploy = null,         // (type, q, r) => Unit, how a card becomes a unit
     pathOverlay  = null,   // the route it would take to the hovered hex
   } = {}) {
     super();
@@ -43,17 +50,22 @@ export class UnitControl extends Component {
     this._ground = ground;
     this._visibility = visibility;
     this.units = [];
+    this.pickups = [];
     this.selected = null;
     this._path = [];              // the previewed route, start hex included
     this._unknown = null;         // lazily built set of "q,r" nobody has seen
     this._hover = null;
     this._pathOverlay = pathOverlay;
+    this._deploy = deploy;
     this._pending = units;
+    this._pendingPickups = pickups;
   }
 
   start() {
     for (const u of this._pending) this.add(u);
     this._pending = [];
+    for (const p of this._pendingPickups) this.addPickup(p);
+    this._pendingPickups = [];
     // What is known changes what can be walked to, so the cached set of unseen
     // hexes has to go when it does.
     this._unsub = this._visibility.onChange(() => {
@@ -75,6 +87,17 @@ export class UnitControl extends Component {
 
   unitAt(q, r) {
     return this.units.find(u => u.q === q && u.r === r) ?? null;
+  }
+
+  // Registers something on the board as findable. The pickup is told what to do
+  // when it has finished being taken rather than being handed the force - it
+  // knows how long it takes to be lifted off its pole and nothing else, and this
+  // knows what was in it and nothing about banners.
+  addPickup(pickup) {
+    if (this.pickups.includes(pickup)) return pickup;
+    this.pickups.push(pickup);
+    pickup.onCollected = () => this._claim(pickup);
+    return pickup;
   }
 
   // ── Input ────────────────────────────────────────────────────────────────
@@ -145,6 +168,66 @@ export class UnitControl extends Component {
   _afterMove() {
     this.refreshVision();
     this._refreshPath();
+    this._checkPickups();
+  }
+
+  // ── Finding things ───────────────────────────────────────────────────────
+  // A pickup is taken by standing on it, and this is asked the moment a unit's
+  // hex changes - which on a route is when the march *commits* to the tile
+  // rather than when it lands on it. That is the same rule the fog runs on, and
+  // it has to be: a unit's position is its hex, the walk is an animation over
+  // that, and a reward that waited for the animation would be the one thing on
+  // the board that disagreed about where the unit is. What it looks like is a
+  // cache that starts being packed up as you walk in, which is not wrong.
+  _checkPickups() {
+    for (const p of this.pickups) {
+      if (p.collected) continue;
+      if (!this.units.some(u => u.q === p.q && u.r === p.r)) continue;
+      p.collect();
+    }
+  }
+
+  // What was in it. Today a card *is* a unit and it joins on the spot, because
+  // there is no run boundary yet for it to be kept across and a card put in a
+  // collection nobody can deploy from is a card the player never sees. When
+  // deployment exists this becomes two steps - the collection gains a card, and
+  // the deployment screen spends it - and the only line that moves is this one.
+  _claim(pickup) {
+    const grants = pickup.type.grants;
+    if (!grants?.unit || !this._deploy) return;
+
+    const spot = this._freeHexNear(pickup.q, pickup.r);
+    if (!spot) return;   // nowhere to stand: the island is full, which it is not
+
+    const unit = this._deploy(grants.unit, spot.q, spot.r);
+    if (!unit) return;
+    this.add(unit);
+    this.refreshVision();
+    this._refreshPath();
+  }
+
+  // Somewhere for the new unit to stand: the nearest hex that is on the board,
+  // unoccupied and already discovered, searched outward from the pickup. The
+  // pickup's own tile is normally taken by whoever just walked onto it, and the
+  // reinforcement turning up on the tile *next* to the colours is the reading we
+  // want anyway - they came from somewhere.
+  _freeHexNear(q, r) {
+    const seen = new Set([key(q, r)]);
+    let frontier = [{ q, r }];
+    for (let ring = 0; ring < 6 && frontier.length; ring++) {
+      const next = [];
+      for (const h of frontier) {
+        if (this._grid.isWalkable(h.q, h.r) && this._visibility.isExplored(h.q, h.r)) return h;
+        for (const n of this._grid.neighbors(h.q, h.r)) {
+          const k = key(n.q, n.r);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          next.push(n);
+        }
+      }
+      frontier = next;
+    }
+    return null;
   }
 
   // The union of every unit's view. The fog never learns that a Scout exists.

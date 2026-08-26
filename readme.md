@@ -9,15 +9,17 @@ on the next one.
 **Almost none of that is built yet.** What exists is the world it will be played
 on - a drawn island in the sea at blue hour, terrain with real elevation, animated
 water, vegetation that moves in a shared wind, lanterns that light the ground -
-and the first thing that plays on it: **one Scout, walking an island it cannot
-see**. The tower defence prototype this grew out of has been removed - towers,
-waves, an economy, lives, a fixed route - because none of it was going to survive
-the change of genre and leaving it in would have made every later decision harder
-to see.
+and the first two things that play on it: **one Scout, walking an island it
+cannot see**, and **the first thing there is to find on it**. The tower defence
+prototype this grew out of has been removed - towers, waves, an economy, lives, a
+fixed route - because none of it was going to survive the change of genre and
+leaving it in would have made every later decision harder to see.
 
-There are no enemies, no cards, no turns and no combat, on purpose. Exploration
-was built alone so it could be judged alone, against one question: is moving a
-scout through an unknown hex world and revealing the map already worth doing?
+There are no enemies, no turns and no combat, on purpose. Exploration was built
+alone so it could be judged alone, against one question: is moving a scout
+through an unknown hex world and revealing the map already worth doing? The
+pickup is the second question laid on top of the first: does finding something
+out there make the walk worth more than the walk was?
 
 The engine underneath is the component/GameObject engine carried over from the
 `armymen` project. Plain ES modules, no build step. Serve the folder and open it,
@@ -45,10 +47,15 @@ camera never took it: it is the order button. Left selects, right moves, and the
 are split because they answer different questions - with one button, clicking a
 tile means "go there" or "never mind" depending on state the player cannot see.
 
+There is no third button for taking things. What is on the board is picked up
+by *standing on it*, which is the only interaction a tactical game already has
+room for and the only one that needs nothing explained.
+
 Developer keys, which are not game UI and are not meant to become it: `F` hides
 the fog layer, `V` rings what the force is currently lighting up, `R` reveals the
 whole board. `window.hex` in the console has the rest - `setViewDistance(n)`,
-`teleport(q, r)`, `spawn(q, r)`, `lookAt(q, r)`. How far a scout sees is a number
+`teleport(q, r)`, `spawn(q, r, type)`, `lookAt(q, r)`, and `pickups` for taking
+one without walking to it. How far a scout sees is a number
 that has to be *tried*, and a knob you have to reload the page to change is a knob
 you turn twice and then stop turning.
 
@@ -81,9 +88,11 @@ you turn twice and then stop turning.
     game/mood.js                       the palette and the wind, in one place
     game/props.js                      procedural trees, rocks, scrub, lanterns
     game/components/prop_layer.js      places a map's decoration + its wind
-    game/units.js                      unit types + the Scout's placeholder mesh
+    game/units.js                      unit types + their placeholder meshes
+    game/pickups.js                    what is left on the board to be found
     game/components/unit.js            something standing on a hex
-    game/components/unit_control.js    selection, movement, and the force's vision
+    game/components/pickup.js          something on a hex worth walking to
+    game/components/unit_control.js    the force: selection, movement, vision, pickups
     game/debug.js                      developer knobs for the exploration pass
     game/main.js                       scene setup
     tools/map.mjs                      prints the board as text, for authoring
@@ -91,15 +100,20 @@ you turn twice and then stop turning.
 ## Map
 
 `MAP_1` is a 75-hex island in 144 tiles of sea, drawn inside a radius-9 envelope.
-It is terrain and nothing else: no route through it, nothing scheduled to arrive,
-no positions marked as special. Where anything goes and when is the tactical
-layer's business, and a map with opinions about that is a level rather than a
-place.
+It is terrain plus one place that holds something: no route through it, nothing
+scheduled to arrive, no positions marked as special. Where anything *goes* and
+when is the tactical layer's business, and a map with opinions about that is a
+level rather than a place.
+
+The pickup is the one exception, and it is deliberate. Where a reward sits is a
+statement about the place - this corner is worth the walk, that one is worth the
+risk - in exactly the way a spawn timer is not, and it is the same kind of
+authoring as where the lanterns go.
 
 `buildMap` expands the definition into what the scene needs - the grid, per-hex
 elevation, the sea tiles, the crags (marked occupied, so impassable), the props
-and the scatter - and refuses outlines that are wrong: a prop off the board, or an
-island accidentally drawn as two.
+and the scatter - and refuses outlines that are wrong: a prop off the board, a
+pickup somewhere nothing can walk to, or an island accidentally drawn as two.
 
 ## The island
 
@@ -616,6 +630,99 @@ tile's* height. One correction covers one step of elevation, which is all this
 board has, and it is still two plane intersections rather than a raycast against
 the merged ground mesh.
 
+## The first pickup
+
+The concept doc's whole loop rests on one sentence: a run is worth making even
+when it is lost, because something found on it is kept. The first thing that
+tests that is one cache, on the small hill three hexes east of where the Scout
+starts - somebody's colours planted in the ground, their spears stacked beside
+them, a shield propped at the foot - and what it holds is the Footmen who carried
+them.
+
+**Walking onto it is the whole interaction**: no key, no prompt, no button. It
+does not hold its hex in the grid's occupancy set, and that is the only reason it
+can be walked onto at all - crags and units do hold theirs, so not holding one is
+not a rule but the absence of one. It is taken the moment a unit's hex *becomes*
+its hex, which on a route is when the march commits to the tile rather than when
+it lands on it. That is the same instant the fog opens there, and it has to be: a
+unit's position is its hex, the walk is an animation over that, and a reward that
+waited for the animation would be the one thing on the board that disagreed about
+where the unit was standing.
+
+**It is somebody's kit, not a glowing box**, and that is what saves it from
+needing a label. An object with a story does not have to be explained: colours
+left standing, arms stacked, a shield nobody came back for. The one concession to
+game-ness is the light, and the lanterns already spent the meaning of a warm
+pocket on this board - somebody was here. A pickup is that sentence with nobody
+left standing in it, which is why it is lit at all and why it is lit *dimmer and
+shorter* than a lamp on a post: a lantern is a place somebody lives, and this is a
+place somebody stopped.
+
+**The banner is waved rather than posed**, and it is the water's trick and the
+vegetation's for the third time: a pure function of position and time, with the
+ripple growing along the cloth so the attached edge stays on the pole and the free
+edge does the moving, and that free edge pulled back in as it waves because cloth
+does not stretch. The amplitude rides the island's one gust, so the banner goes
+quiet when the trees do, and it streams downwind for the same reason - three
+effects with private weather look like three effects.
+
+**It is found before it is lit**, like a lantern, and for the harder of the two
+reasons rather than the flourish: a real `PointLight` burning on an undiscovered
+tile lights the *inside* of the fog bank standing over it. Everything else about
+hiding it is free, because `field.patch` sweeps its layer with the rest and a
+component that never hears about fog of war gets it right by default.
+
+**Taking it is a lift, not a fade.** A pickup that dissolves in place says the
+object was never really there; one that rises off its pole says somebody took it.
+It holds its shape for the first third of the take and then goes, so what the eye
+follows is the lift. The flare that goes with it is spent almost entirely on the
+*light* and hardly at all on the halo, which is the one thing here that had to be
+tuned twice: a small additive sphere reads as air around a flame, and the same
+sphere half again as large reads as a pale disc pasted over the scene - the exact
+mistake the fog's wisps were shrunk to fix. What should visibly brighten is the
+grass, not the sphere.
+
+**What it grants joins on the spot, and that is knowingly a stand-in.** In the
+concept a pickup puts a *card* in a collection and the card is spent at the next
+deployment. There is no run boundary yet for a card to be kept across, and a card
+sitting in a collection nobody can deploy from is a card the player never sees -
+so today the Footmen simply arrive, on the nearest discovered unoccupied tile,
+scaled up out of nothing rather than switched on. When deployment exists this
+becomes two steps - the collection gains a card, the deployment screen spends it -
+and the only thing that moves is `UnitControl._claim`.
+
+**The Footmen are a second unit type, and one stat is all they are allowed.** They
+see one ring where the Scout sees two, and that is the whole of their cost:
+walking with the escort in front is safer and slower to learn from, which is what
+keeps the Scout a job after the rescue arrives. What they hit and what they can
+take waits for combat, because a number written before there is anything to spend
+it on is a number nobody has had to defend.
+
+What they *look* like had to do more work than that. Two formations of fifteen
+people 0.26 units tall are the same ten pixels of dark shape at the game's camera,
+so colour alone was never going to separate them - what separates them is the
+outline: a hooded crowd standing in rings around a lamp, against a helmeted block
+in ranks with a bristle of spears above it. The spears are one more
+`InstancedMesh` pass, each at its own small angle because fifteen shafts at one
+angle is a comb, and they are the thing that actually reads at range. They and the
+helmets are also the only steel on a Footman, so the two parts that catch light
+are the two parts that should.
+
+**Collecting lives in `UnitControl`**, which is not scope creep: it is the join
+between the only two lists that component already owns - what the player has, and
+where it is standing. Nothing else in the scene knows both, and anything that did
+would be a third list to keep in step with those two. The pickup itself knows how
+long it takes to be lifted off its pole and nothing else; it is handed a callback
+rather than the force.
+
+Where it sits is a level decision, and `node tools/map.mjs` prints it as `P` -
+because judging "extremely difficult to miss" from a pair of axial coordinates is
+exactly what that tool exists to make unnecessary. Three hexes is close enough to
+find in the first minute and far enough that a step has to be taken to see it at
+all: a reward already visible from the start hex is a reward the player was given
+rather than one they found. The board does the rest with the only two things it
+has - raised ground, and a light in the dark.
+
 ## What is left to build
 
 The world is done enough to play on. Nothing on top of it exists yet, and the
@@ -624,19 +731,25 @@ order that matters first:
 - **Turns.** Whose turn it is, and what a unit has left to spend on this one.
   Movement is currently free and unlimited, which is the first thing a turn takes
   away.
-- **A route longer than one hex.** Clicking an adjacent tile is enough to prove
-  the loop, but not enough to play. `HexGrid.findPath` and `PathFollower` are both
-  sitting there for it, and a multi-hex move is the first thing that needs to know
-  what a step *costs*.
+- **What a step costs.** A move is a whole route already, and it is free: no
+  movement points, no terrain cost, no limit on how far a turn carries you. That
+  is the other half of the turn above, and the first thing that makes a route a
+  decision rather than a click.
 - **Combat.** `Health` and `HealthBar` survived the cull and are unused. This is
-  where the unit table in `game/units.js` stops being three fields.
-- **Cards, deployment and persistence.** The progression loop from the concept
-  doc, and the last thing to build rather than the first: it is meaningless until
-  a run can be lost.
+  where the unit table in `game/units.js` stops being four fields, and it is what
+  the Footmen were found for.
+- **An enemy on the causeway.** The concept's first map turns on a force the Scout
+  cannot beat and the Footmen can, standing where the island is narrowest. The
+  ground for it is drawn already and nothing stands on it.
+- **The run boundary, and cards across it.** Deployment and persistence, the last
+  thing to build rather than the first: a pickup grants a unit on the spot today
+  precisely because there is no run to keep a card across, and the whole idea is
+  meaningless until a run can be lost.
 
 Two things deliberately kept out of the way until they are needed: `engine/assets.js`
 (glTF loading with a clone cache) and `engine/components/ground_plane.js`.
 
-The Scout's mesh is a knowing placeholder - a hooded figure with a lamp, built
-from the same flat-shaded primitives the props are so it sits in the scene rather
-than on top of it. It is not worth art until it is worth art.
+Every mesh that walks, or is picked up, is a knowing placeholder - hooded figures
+with a lamp, a helmeted block with spears, a banner on a pole - all built from the
+same flat-shaded primitives the props are, so they sit in the scene rather than on
+top of it. None of it is worth art until it is worth art.

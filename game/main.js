@@ -18,6 +18,7 @@ import { MOOD, WIND } from './mood.js';
 import { PropLayer } from './components/prop_layer.js';
 import { Unit } from './components/unit.js';
 import { UnitControl } from './components/unit_control.js';
+import { Pickup } from './components/pickup.js';
 import { DEBUG, installDebug } from './debug.js';
 
 // The world, and the first thing that plays on it: a scout, and a map it has to
@@ -196,6 +197,54 @@ const scout = scoutGO.addComponent(new Unit({
 }));
 game.add(scoutGO);
 
+// What is out there to be found. One cache of somebody's colours on the small
+// hill east of the start, and the first thing on this board that is neither
+// terrain nor the player: walk onto it and the Footmen it belonged to join the
+// force.
+//
+// It gets its own GameObject each rather than a layer, which is the opposite of
+// what the props do and for the opposite reason - there are four hundred props
+// and none of them is ever asked a question, while a pickup is a thing the game
+// reasons about.
+const pickupGOs = [];
+const pickups = [];
+for (const p of map.pickups) {
+  const go = new GameObject(`Pickup:${p.type}`);
+  pickups.push(go.addComponent(new Pickup({
+    grid: map.grid,
+    ground: hexGround,
+    // Found before lit, the same as a lantern - and for the harder of the two
+    // reasons: an undiscovered light burns the inside of the cloud above it.
+    visibility,
+    type: p.type, q: p.q, r: p.r,
+    colors: MOOD.pickups,
+    tuning: { light: MOOD.pickupLight },
+    // The banner streams downwind, on the level's one breeze.
+    wind: WIND,
+  })));
+  game.add(go);
+  pickupGOs.push(go);
+}
+
+// How a card becomes a unit standing on the board. It is one function because
+// there are two callers that must not drift apart: the pickup that grants a
+// unit, and the debug console that spawns one to check a claim with. Whatever
+// deployment eventually looks like - a screen, a hand of cards, a starting
+// roster - it ends in this call.
+function deploy(type, q, r) {
+  const go = new GameObject(type);
+  const unit = go.addComponent(new Unit({
+    grid: map.grid, ground: hexGround, type, q, r,
+    colors: MOOD.units, tuning: { lamp: MOOD.scoutLamp },
+    // Scaled up rather than switched on: this one was not here a moment ago.
+    emerge: true,
+  }));
+  game.add(go);
+  // Built after the sweep at the bottom of this file, so it patches itself in.
+  field.patch(go.object3D);
+  return unit;
+}
+
 // Who the player owns, what is picked up, and what the force can see - one
 // component, because vision is the union over that same roster and splitting the
 // two would leave two lists to keep in step.
@@ -222,6 +271,10 @@ const control = forceGO.addComponent(new UnitControl({
   ground: hexGround,
   visibility,
   units: [scout],
+  // Collecting is the join between the roster and the board, and this is the one
+  // component that holds both halves of it.
+  pickups,
+  deploy,
   pathOverlay,
 }));
 game.add(forceGO);
@@ -293,25 +346,17 @@ game.add(motes);
 //
 // The fog is deliberately not in this list: it is the one thing in the scene that
 // is *about* the unknown rather than subject to it.
-for (const go of [groundGO, sea, propsGO, gridGO, scoutGO, motes]) field.patch(go.object3D);
+for (const go of [groundGO, sea, propsGO, gridGO, scoutGO, motes, ...pickupGOs]) field.patch(go.object3D);
 
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
 // far a scout sees is a number that has to be tried, not a feature.
 installDebug({
   game, grid: map.grid, ground: hexGround, rig, fog, field, control, visibility,
+  pickups,
   // How a unit gets built, handed over rather than rebuilt in the debug module -
-  // it is the same call the Scout above went through.
-  spawn: (type, q, r) => {
-    const go = new GameObject(type);
-    const u = go.addComponent(new Unit({
-      grid: map.grid, ground: hexGround, type, q, r,
-      colors: MOOD.units, tuning: { lamp: MOOD.scoutLamp },
-    }));
-    game.add(go);
-    field.patch(go.object3D);   // built after the sweep above, so it patches itself in
-    return u;
-  },
+  // it is the same call a collected pickup goes through.
+  spawn: deploy,
 });
 
 game.start();

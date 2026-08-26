@@ -9,6 +9,14 @@ import { hashHex } from '../engine/hex/hex_noise.js';
 // damage is a number nobody has ever had to defend. Combat stats arrive with
 // combat, in this table, without moving anything else.
 //
+// There are two entries now rather than one, and the second is the whole point
+// of the first pickup: the Scout finds a set of colours somebody left on the
+// island and the Footmen who follow them join the force. What separates them is
+// what a unit is *for* - the Scout sees two rings and the Footmen see one - and
+// that is the entire difference the game can express today. It is enough to make
+// the pair behave differently on the board, which is what a second unit type has
+// to earn before it is worth having.
+//
 // ── Scale ────────────────────────────────────────────────────────────────────
 // A hex holds an army unit - about fifteen people - and that single fact sets
 // the scale of everything on the board. It has to be stated somewhere, so it is
@@ -39,7 +47,38 @@ export const UNIT_TYPES = {
     // is nothing to spend it on - but it is the number that makes the board read
     // at the right size, so it belongs to the type rather than to the model.
     people: 15,
+    // How they stand, and what they carry. Both are silhouette rather than
+    // decoration: at this size a formation is read by its outline and by nothing
+    // else, so the shape of the crowd and whether anything sticks up out of it
+    // are the only two things that can tell one unit from another at a glance.
+    formation: 'rings',
+    jitter: 0.22,
+    lamp: true,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.scout, colors, tuning),
+  },
+
+  // The first thing the player finds, and the first unit that is not a Scout.
+  //
+  // It sees one ring rather than two, which is the whole of its cost: walking
+  // the island with the Footmen in front is safer and slower to learn from, and
+  // that trade is the reason the Scout keeps a job after the escort arrives.
+  // Everything else about them - what they hit, what they can take - waits for
+  // combat, because a number written before there is anything to spend it on is
+  // a number nobody has had to defend.
+  footman: {
+    key: 'footman',
+    name: 'Footmen',
+    viewDistance: 1,
+    people: 15,
+    // Ranks rather than rings, tighter jitter, and spears. A hooded crowd and a
+    // helmeted block are nearly the same shape at 0.26 units tall; the bristle
+    // of shafts standing above the heads is what actually reads from the game's
+    // camera, and it reads instantly.
+    formation: 'block',
+    jitter: 0.12,
+    spears: true,
+    lamp: false,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.footman, colors, tuning),
   },
 };
 
@@ -47,23 +86,31 @@ const DEFAULT_COLORS = {
   cloak: 0x5a6b84,
   trim:  0x323c4c,
   skin:  0x8c8377,
+  steel: 0x99a3b3,
   lampGlow: 0xffb45c,
   select:   0x8fd8e8,
 };
 
-// A formation, and knowingly a placeholder: fifteen hooded figures standing in
-// three rings, built out of the same low-segment flat-shaded primitives the props
-// are so they sit in the scene instead of on top of it.
+// A formation, and knowingly a placeholder: fifteen figures built out of the
+// same low-segment flat-shaded primitives the props are, so they sit in the
+// scene instead of on top of it.
 //
 // Two InstancedMeshes rather than thirty objects - a body pass and a head pass -
 // so a unit costs two draw calls whatever it is made of, and so the day a
-// formation has to lose people it is a `count`.
+// formation has to lose people it is a `count`. A type that carries spears adds
+// a third pass and nothing else.
 //
-// The lamp is not decoration. It is the one thing that makes a unit findable on a
-// board lit at blue hour, and a scout carrying its own light is also the reason
-// it is the thing that reveals the map.
+// The Scout's lamp is not decoration. It is the one thing that makes a unit
+// findable on a board lit at blue hour, and a scout carrying its own light is
+// also the reason it is the thing that reveals the map. The Footmen do not get
+// one: two lamps walking the island would say the two units do the same job, and
+// the thing that makes them findable instead is the steel above their heads.
+//
+// Colours come in per type as well as per scene - `colors[type.key]` wins over
+// `colors` - so the mood file can say what a Scout looks like and what Footmen
+// look like without a second palette being threaded through the constructor.
 function buildSquad(type, colors = {}, tuning = {}) {
-  const c = { ...DEFAULT_COLORS, ...colors };
+  const c = { ...DEFAULT_COLORS, ...colors, ...(colors[type.key] ?? {}) };
   const hexSize = tuning.hexSize ?? 1;
   const inradius = hexSize * Math.sqrt(3) / 2;
   const reach = inradius * FOOTPRINT;
@@ -85,19 +132,38 @@ function buildSquad(type, colors = {}, tuning = {}) {
   const headMat = new THREE.MeshLambertMaterial({ color: c.trim, flatShading: true });
   const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, n);
   const heads  = new THREE.InstancedMesh(headGeo, headMat, n);
+  group.add(bodies, heads);
+  own.push(bodies, heads);
+
+  // A spear is drawn as one tapered shaft with no head on it: a tip at this
+  // scale is a third of a pixel, and what carries is the line and the fact that
+  // it catches light the cloaks do not.
+  let spears = null;
+  if (type.spears) {
+    const spearGeo = new THREE.CylinderGeometry(h * 0.008, h * 0.022, h * 1.7, 3);
+    spearGeo.translate(0, h * 0.85, 0);
+    const spearMat = new THREE.MeshLambertMaterial({ color: c.steel, flatShading: true });
+    spears = new THREE.InstancedMesh(spearGeo, spearMat, n);
+    group.add(spears);
+    own.push(spears);
+  }
 
   const m = new THREE.Matrix4();
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
+  const tilt = new THREE.Euler();
 
+  const spread = type.jitter ?? 0.22;
   for (let i = 0; i < n; i++) {
-    const { x, z } = formationSpot(i, n, reach);
-    // A rank that is exactly a ring reads as a fence. Jitter is keyed to the
-    // index so a squad looks the same every time it is drawn.
-    const jx = (hashHex(i, 0, 11) - 0.5) * reach * 0.22;
-    const jz = (hashHex(i, 0, 17) - 0.5) * reach * 0.22;
+    const { x, z } = formationSpot(i, n, reach, type.formation);
+    // A rank that is exactly a rank reads as a fence. Jitter is keyed to the
+    // index so a squad looks the same every time it is drawn, and how much of it
+    // a unit gets is the type's business: a scouting party stands about, and a
+    // line of Footmen is supposed to look like it was told where to stand.
+    const jx = (hashHex(i, 0, 11) - 0.5) * reach * spread;
+    const jz = (hashHex(i, 0, 17) - 0.5) * reach * spread;
     // They face the way the unit does, but not to the degree - people in a
     // formation are pointed the same way, not machined into it.
     const yaw = (hashHex(i, 0, 23) - 0.5) * 0.7;
@@ -111,37 +177,53 @@ function buildSquad(type, colors = {}, tuning = {}) {
     m.compose(pos, quat, scale);
     bodies.setMatrixAt(i, m);
     heads.setMatrixAt(i, m);
+
+    if (spears) {
+      // Shouldered rather than planted, and each at its own angle. Fifteen
+      // shafts at one angle is a comb; the spread is what makes it a crowd
+      // carrying spears. Held off the shoulder so the shaft does not grow out of
+      // the middle of anyone's head.
+      pos.x += Math.cos(yaw) * h * 0.16;
+      pos.z -= Math.sin(yaw) * h * 0.16;
+      tilt.set((hashHex(i, 0, 31) - 0.5) * 0.26, yaw, (hashHex(i, 0, 37) - 0.5) * 0.26);
+      quat.setFromEuler(tilt);
+      m.compose(pos, quat, scale);
+      spears.setMatrixAt(i, m);
+    }
   }
   bodies.instanceMatrix.needsUpdate = true;
   heads.instanceMatrix.needsUpdate = true;
+  if (spears) spears.instanceMatrix.needsUpdate = true;
 
   // A figure this small is well under a shadow-map texel at this range, so
   // casting from it costs a draw call and buys a flicker - the same trade the
   // grass tufts already made.
   bodies.castShadow = heads.castShadow = false;
-  group.add(bodies, heads);
-  own.push(bodies, heads);
+  if (spears) spears.castShadow = false;
 
   // The lamp-bearer stands at the front of the formation. An unlit bead plus a
   // real point light, for the reason the lanterns have one each: a glow with no
   // source is a mystery and a source with no glow is a decoration.
-  const bead = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(h * 0.22, 0),
-    new THREE.MeshBasicMaterial({ color: c.lampGlow }),
-  );
-  bead.position.set(reach * 0.18, h * 1.05, reach * 0.92);
-  bead.userData.noShadow = true;
-  group.add(bead);
-  own.push(bead);
+  let light = null;
+  if (type.lamp) {
+    const bead = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(h * 0.22, 0),
+      new THREE.MeshBasicMaterial({ color: c.lampGlow }),
+    );
+    bead.position.set(reach * 0.18, h * 1.05, reach * 0.92);
+    bead.userData.noShadow = true;
+    group.add(bead);
+    own.push(bead);
 
-  const light = new THREE.PointLight(
-    tuning.lamp?.color ?? c.lampGlow,
-    tuning.lamp?.intensity ?? 2.6,
-    tuning.lamp?.distance ?? 3.4,
-    tuning.lamp?.decay ?? 2,
-  );
-  light.position.copy(bead.position);
-  group.add(light);
+    light = new THREE.PointLight(
+      tuning.lamp?.color ?? c.lampGlow,
+      tuning.lamp?.intensity ?? 2.6,
+      tuning.lamp?.distance ?? 3.4,
+      tuning.lamp?.decay ?? 2,
+    );
+    light.position.copy(bead.position);
+    group.add(light);
+  }
 
   // Selection is a ring on the ground rather than a tint on the people: they are
   // small and dark by design, and recolouring the one readable thing on the board
@@ -169,11 +251,18 @@ function buildSquad(type, colors = {}, tuning = {}) {
   return group;
 }
 
-// Where the i-th person stands: concentric rings, filled outward, so a formation
-// keeps its shape whatever it is counted at. Ring sizes are fractions of the
-// tile's reach rather than absolute, so the same layout survives a change of hex
-// size.
-function formationSpot(i, n, reach) {
+// Where the i-th person stands. Sizes are fractions of the tile's reach rather
+// than absolute, so a layout survives a change of hex size, and both layouts
+// keep their shape at any count - which is what lets a formation that has lost
+// people still be the same formation.
+function formationSpot(i, n, reach, layout = 'rings') {
+  return layout === 'block' ? blockSpot(i, n, reach) : ringSpot(i, n, reach);
+}
+
+// Concentric rings, filled outward: a party standing around rather than drawn
+// up. Local +Z is the way the unit faces, and a ring has no front, which is
+// exactly right for the people whose job is looking at things.
+function ringSpot(i, n, reach) {
   const RINGS = [
     { count: 1, radius: 0.00 },
     { count: 5, radius: 0.44 },
@@ -195,4 +284,20 @@ function formationSpot(i, n, reach) {
   const k = i - seen;
   const a = k * 2.399;
   return { x: Math.cos(a) * reach, z: Math.sin(a) * reach };
+}
+
+// Ranks abreast, front rank toward +Z, which is the direction the unit walks and
+// turns to face. A block has a front, and that is the point of it: the Footmen
+// are the thing you put between the Scout and whatever is out there, so which
+// way they are pointed has to be visible before there is any combat to prove it.
+function blockSpot(i, n, reach) {
+  const cols = 5;
+  const rows = Math.max(1, Math.ceil(n / cols));
+  const col = i % cols;
+  const row = Math.floor(i / cols);
+  return {
+    x: (col - (cols - 1) / 2) * (reach * 2 / cols),
+    // Rows run back from the front, and the whole block is centred on the tile.
+    z: ((rows - 1) / 2 - row) * (reach * 1.6 / rows),
+  };
 }

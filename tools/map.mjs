@@ -11,6 +11,10 @@ const { grid } = map;
 
 const key = (q, r) => `${q},${r}`;
 const propAt = new Map(map.props.map(p => [key(p.q, p.r), p.type]));
+// Pickups print too, and they have to: where the first one sits is a level
+// design decision about what the player finds and when, which is exactly the
+// kind of thing this tool exists so nobody has to judge from a coordinate.
+const pickupAt = new Set(map.pickups.map(p => key(p.q, p.r)));
 const GLYPH = { tree: ' T ', rock: ' r ', bush: ' b ', grass: ' , ', lantern: ' i ' };
 
 const cells = new Map();   // "row,q" -> glyph
@@ -31,7 +35,8 @@ for (const { q, r } of grid.allHexes()) {
   const lvl = map.levels.get(key(q, r)) ?? 0;
 
   let glyph;
-  if (propAt.has(key(q, r)))               glyph = GLYPH[propAt.get(key(q, r))] ?? ' * ';
+  if (pickupAt.has(key(q, r)))             glyph = ' P ';
+  else if (propAt.has(key(q, r)))          glyph = GLYPH[propAt.get(key(q, r))] ?? ' * ';
   else if (map.blockedKeys.has(key(q, r))) glyph = ' X ';
   else if (lvl >= 2)                       glyph = ' ^ ';
   else if (lvl === 1)                      glyph = ' n ';
@@ -68,5 +73,5 @@ for (let row = minRow; row <= maxRow; row++) {
 }
 console.log('');
 console.log('  ~ sea  X crag (solid)  n hill  ^ high hill  ' +
-            'T tree  b bush  r rock  i lantern  . grass');
+            'T tree  b bush  r rock  i lantern  P pickup  . grass');
 console.log('  columns are q; rows are 2r+q, so r = (row - q) / 2');

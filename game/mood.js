@@ -141,12 +141,57 @@ export const MOOD = {
   // A unit has to survive being the smallest thing in a dark frame. The cloak is
   // lifted off the grass rather than made bright - a figure that glows is a token
   // on a board - and the lamp below is what actually finds it.
+  //
+  // The shared keys are the level's; a block under a unit type's own name wins
+  // over them. Two units have to be told apart at a distance where each of them
+  // is about ten pixels tall, and colour alone will not do it - the Scout is a
+  // hooded crowd carrying a light and the Footmen are a helmeted block carrying
+  // steel - but colour is what stops them being the same *material* as well as
+  // the same shape.
   units: {
     cloak: 0x5a6b84,
     trim:  0x323c4c,
     skin:  0x8c8377,
-    lampGlow: 0xffb45c,
     select: 0x8fd8e8,
+    lampGlow: 0xffb45c,
+
+    scout: {
+      cloak: 0x5a6b84,
+      trim:  0x323c4c,
+    },
+
+    // Darker and browner than the Scout - leather rather than travelling cloth -
+    // with the two cool notes reserved for the parts that are meant to be metal.
+    // The helmets and the spears are the only thing on a Footman that catches
+    // light, which is exactly what should be true of them.
+    footman: {
+      cloak: 0x4a443c,
+      trim:  0x69717e,
+      steel: 0x8a93a1,
+    },
+  },
+
+  // The colours somebody left on the island. Warm, because on this board warm
+  // means people: the lanterns already spent that meaning and a pickup is the
+  // same sentence with nobody standing in it. The cloth is the lightest thing on
+  // the level after a flame, which is what makes it the thing you walk toward.
+  pickups: {
+    pole:    0x2f2721,
+    cloth:   0xc0763a,
+    steel:   0x8d97a6,
+    leather: 0x4a3b2c,
+    glow:    0xffb45c,
+  },
+
+  // Dimmer and shorter than a lantern, and that gap is the point: a lamp on a
+  // post is a place somebody lives, and this is a place somebody stopped. Bright
+  // enough to be seen from the next tile, not bright enough to be mistaken for
+  // the settlement the lantern chain describes.
+  pickupLight: {
+    color: 0xff9a3c,
+    intensity: 6.5,
+    distance: 5.0,
+    decay: 2,
   },
 
   // Much dimmer and shorter-reaching than a lantern, and the first pass had it

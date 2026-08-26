@@ -1,9 +1,15 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
 import { hashHex } from '../engine/hex/hex_noise.js';
 
-// A map is terrain and nothing else. There is no route through it and nothing
-// scheduled to arrive: where anything goes and when is the tactical layer's
-// business, and a map that has opinions about that is a level rather than a place.
+// A map is terrain, and the few places on it that hold something. There is still
+// no route through it and nothing scheduled to arrive: where anything goes and
+// when is the tactical layer's business, and a map with opinions about that is a
+// level rather than a place.
+//
+// A pickup is the one exception, and it is an exception on purpose. Where a
+// reward sits is a statement about the *place* - this corner is worth the walk,
+// that one is worth the risk - in exactly the way a spawn timer is not. It is
+// the same kind of authoring as where the lanterns go.
 export const MAP_1 = {
   name: 'First Island',
   hexSize: 1,
@@ -103,6 +109,21 @@ export const MAP_1 = {
     { type: 'lantern', q:  2, r:  3, spread: 0.2 },   // the southern headland
   ],
 
+  // What is out there to be found. One cache, and where it sits is the whole of
+  // the first map's teaching: three hexes east of where the Scout starts, on the
+  // small hill by the southern tree, which is a landmark from the moment it is
+  // discovered and is on the way to the causeway the map narrows into. The
+  // concept doc asks for a first pickup that is "extremely difficult to miss" -
+  // this board has no arrows and no signposting to do that with, so it does it
+  // with the two things it does have: raised ground, and a light in the dark.
+  //
+  // Close enough to be found in the first minute; far enough that a step has to
+  // be taken to see it at all, because a reward already visible from the start
+  // hex is a reward the player was given rather than one they found.
+  pickups: [
+    { type: 'cache', q: 0, r: 4 },
+  ],
+
   // Scattered detail, spread from the hex hash rather than placed by hand. `chance`
   // is per tile and `per` is how many draws each tile gets, so grass comes in
   // ones and twos and leaves gaps - a tuft on every tile reads as carpet. It skips
@@ -130,6 +151,16 @@ export function buildMap(def) {
   const blockedKeys = new Set(crags.map(c => `${c.q},${c.r}`));
   for (const c of crags) grid.occupy(c.q, c.r);
 
+  // A pickup has to be *reachable*, which is a stronger claim than a prop makes
+  // and worth checking: it is on the land, and it is not standing on a crag. A
+  // reward that cannot be walked onto is a reward that is never collected, and
+  // finding that out by ordering a move at it is finding it out late.
+  for (const p of def.pickups ?? []) {
+    if (!grid.inBounds(p.q, p.r) || blockedKeys.has(`${p.q},${p.r}`)) {
+      throw new Error(`Map "${def.name}": ${p.type} pickup cannot be reached at ${p.q},${p.r}`);
+    }
+  }
+
   checkConnected(def, grid, hexes?.[0] ?? { q: 0, r: 0 });
 
   return {
@@ -143,8 +174,14 @@ export function buildMap(def) {
     // step down from the lowest tile rather than a coincidence of two numbers.
     waterLevel: def.waterLevel ?? -1,
     props: def.props ?? [],
+    pickups: def.pickups ?? [],
     scatter: buildScatter(def, grid, new Set([
-      ...blockedKeys, ...(def.props ?? []).map(p => `${p.q},${p.r}`),
+      ...blockedKeys,
+      ...(def.props ?? []).map(p => `${p.q},${p.r}`),
+      // Nothing grows through the colours either: a pickup is the one thing on
+      // the board the player is meant to pick out of the dark, and a tuft of
+      // grass drawn over its foot is the composition arguing with itself.
+      ...(def.pickups ?? []).map(p => `${p.q},${p.r}`),
     ])),
   };
 }
