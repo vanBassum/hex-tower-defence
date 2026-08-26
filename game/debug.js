@@ -20,7 +20,7 @@ export const DEBUG = {
 
 const VISION_COLOR = 0xffc07a;
 
-export function installDebug({ game, grid, ground, rig, fog, control, visibility, spawn = null }) {
+export function installDebug({ game, grid, ground, rig, fog, field, control, visibility, spawn = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -46,15 +46,20 @@ export function installDebug({ game, grid, ground, rig, fog, control, visibility
   };
 
   fog.setShown(DEBUG.fog);
+  field?.setMasking(DEBUG.fog);
   visibility.onChange(refreshVision);
 
   const api = {
     DEBUG,
-    game, grid, fog, control, visibility,
+    game, grid, fog, field, control, visibility,
 
+    // Both halves at once. The mist is only the visible half now - the world
+    // hides itself off the same field - so a switch that lifted the sheet and
+    // left the terrain painted out would be a debug key that shows you nothing.
     toggleFog(on = !DEBUG.fog) {
       DEBUG.fog = on;
       fog.setShown(on);
+      field?.setMasking(on);
       return on;
     },
 

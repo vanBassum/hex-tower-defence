@@ -11,6 +11,7 @@ import { HexGround } from '../engine/components/hex_ground.js';
 import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { FogOfWar } from '../engine/components/fog_of_war.js';
+import { VisibilityField } from '../engine/components/visibility_field.js';
 import { VisibilityMap } from '../engine/hex/visibility.js';
 import { MAP_1, buildMap } from './maps.js';
 import { MOOD, WIND } from './mood.js';
@@ -40,6 +41,24 @@ game.hexGrid = map.grid;
 // for you. It is state, not drawing - FogOfWar below reads it and never writes.
 const visibility = new VisibilityMap(map.grid, [...map.grid.allHexes(), ...map.water]);
 game.visibility = visibility;
+
+// The same fact, in a form a shader can read: a blurred world-space texture of
+// what has been found. It goes in early because almost everything below reads it.
+//
+// Two very different things do. The mist reads it to know where to lie, and every
+// material in the world reads it to know whether it is allowed to be seen - and
+// the second of those is what actually hides the board. The mist used to do that
+// job and could not: a horizontal sheet occludes nothing when the camera drops to
+// its own level, so the whole unexplored half of the island was visible from a
+// low angle. Fog is the mood; hex visibility is the rule.
+const fieldGO = new GameObject('Visibility');
+const field = fieldGO.addComponent(new VisibilityField(map.grid, visibility, {
+  hexes: [...map.grid.allHexes(), ...map.water],
+  hexSize: map.grid.size,
+  ...MOOD.visibility,
+}));
+game.visibilityField = field;
+game.add(fieldGO);
 
 const camera = new GameObject('Camera');
 // Closer than the old sightseeing distance: at the start almost nothing is
@@ -146,6 +165,7 @@ game.add(gridGO);
 // of learning the island, and a sea drawn in full has already told you.
 const fogGO = new GameObject('Fog');
 const fog = fogGO.addComponent(new FogOfWar(map.grid, visibility, {
+  field,
   hexes: [...map.grid.allHexes(), ...map.water],
   // Sea level is nudged up past the tallest crest the swell can raise, because
   // the surface an explored water tile is capped at is a surface that moves - and
@@ -261,11 +281,25 @@ motes.addComponent(new AmbientMotes(map.grid, map.water, {
 }));
 game.add(motes);
 
+// And now the part that does the hiding. Every material in these layers learns to
+// paint itself out on ground nobody has found and to dim itself on ground nobody
+// is watching, straight off the field's texture.
+//
+// One call per layer rather than a `visibility` argument threaded through eight
+// constructors, because whether a thing obeys fog of war is a fact about the
+// *scene*, not about the thing. A tree, a wave crest, a grid seam and a unit all
+// want identical behaviour, and the next component to be added should get it
+// without having to remember to ask.
+//
+// The fog is deliberately not in this list: it is the one thing in the scene that
+// is *about* the unknown rather than subject to it.
+for (const go of [groundGO, sea, propsGO, gridGO, scoutGO, motes]) field.patch(go.object3D);
+
 // Developer knobs: F hides the fog, V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
 // far a scout sees is a number that has to be tried, not a feature.
 installDebug({
-  game, grid: map.grid, ground: hexGround, rig, fog, control, visibility,
+  game, grid: map.grid, ground: hexGround, rig, fog, field, control, visibility,
   // How a unit gets built, handed over rather than rebuilt in the debug module -
   // it is the same call the Scout above went through.
   spawn: (type, q, r) => {
@@ -275,6 +309,7 @@ installDebug({
       colors: MOOD.units, tuning: { lamp: MOOD.scoutLamp },
     }));
     game.add(go);
+    field.patch(go.object3D);   // built after the sweep above, so it patches itself in
     return u;
   },
 });

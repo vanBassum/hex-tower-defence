@@ -101,10 +101,6 @@ export const MOOD = {
     detail: [0.95, 0.13],    // how much the cloud field thins the alpha
     shade:  [1.00, 0.50],    // and how much it moves the colour
 
-    // Ground that has been walked and is not being watched: dimmed, not fogged.
-    exploredColor:   0x0d1a2b,
-    exploredOpacity: 0.34,
-
     // A few real lenses drifting near the reveal line. Decoration only - they
     // hide nothing - and the count is deliberately in the tens, not the hundreds.
     // Their whole job is parallax: the sheet is painted and does not move when
@@ -115,6 +111,31 @@ export const MOOD = {
     wisps:       14,
     wispColor:   0x4a5468,
     wispOpacity: 0.14,
+  },
+
+  // What the *world* does about fog of war, as opposed to what the mist does.
+  // Every material on the board reads the same visibility texture the mist does
+  // and answers for itself - see VisibilityField.patch - which is why this is a
+  // block of its own rather than more knobs under `fogOfWar`. The mist is
+  // atmosphere; this is the rule.
+  //
+  // `hiddenColor` is deliberately the mist's own body colour rather than black.
+  // Undiscovered terrain is painted flat in it, so from a low camera the ground
+  // and the bank standing on it read as one mass of weather instead of as a hole
+  // cut in the island. Black would say "nothing is there"; this says "you cannot
+  // see".
+  visibility: {
+    hiddenColor: 0x333d4d,
+    // The pair of mask values the painting fades between. Tight on purpose: this
+    // one decides what the player is *allowed* to see, and a blur wide enough to
+    // flatter the mist would dim the middle of the tile they are standing on.
+    hide: [0.30, 0.62],
+    // Remembered ground: how dark it goes, and how far it drifts toward the mist
+    // on the way. Nothing is hidden by this - the player has been told what is on
+    // that tile and taking it back would be a lie - it is the difference between
+    // remembering a place and looking at it.
+    dim:  0.50,
+    cool: 0.32,
   },
 
   // A unit has to survive being the smallest thing in a dark frame. The cloak is

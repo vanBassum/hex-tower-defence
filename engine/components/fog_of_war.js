@@ -29,19 +29,16 @@ const NEIGHBORS = [[+1, 0], [+1, -1], [0, -1], [-1, 0], [-1, +1], [0, +1]];
 //      board, and a flat plane at crag height would float a full step over the
 //      low ground, showing the coast from any camera below the top of the dive.
 //
-//   2. **The mask.** What the player has discovered, rasterised into a texture in
-//      world space and then blurred. Gameplay stays on hexes - the mask is read
-//      *out of* the VisibilityMap and never written back to it - but by the time
-//      the shader sees it the hexagons are gone and it is a smooth field. This is
-//      the whole trick behind an organic reveal over discrete rules:
-//      `hexes -> texture -> blur -> opacity`.
+//   2. **The mask**, which is not this component's. `VisibilityField` owns it -
+//      what the player has discovered, rasterised into a world-space texture and
+//      blurred - and the mist is only one of its readers. Every material in the
+//      world reads the same texture and paints itself out on undiscovered ground,
+//      which is what actually hides the board.
 //
-//      Three channels, because three different questions get asked of it:
-//        R  discovered - drives the fog itself
-//        G  in view right now - drives how far the dim veil over old ground lifts
-//        B  inside the fogged region at all - so the veil stops at the open sea
-//      Outside the region R is *1*, which is what feathers the blanket's outer
-//      rim into the ocean haze for free rather than ending it at a straight line.
+//      Of its four channels the mist uses two: R discovered (softly, so the
+//      reveal is organic) and B inside-the-region (so the bank knows where to
+//      stop). Outside the region R is 1, which is what feathers the blanket's
+//      outer rim into the ocean haze rather than ending it at a straight line.
 //
 //   3. **The shader.** Three noise fields at three scales drifting at three
 //      speeds along the level's one wind, over a slow domain warp that keeps them
@@ -60,14 +57,25 @@ const NEIGHBORS = [[+1, 0], [+1, -1], [0, -1], [-1, 0], [-1, +1], [0, +1]];
 // tearing, the holes, the wisping - is spent at the boundary, which is the only
 // place it says anything.
 //
-// ── Depth ───────────────────────────────────────────────────────────────────
-// The sheet writes depth *and* discards where it is clear, which sounds
-// contradictory and is the point: over the unknown it occludes the motes and
-// water sparkles that would otherwise draw on top of it, and over known ground it
-// leaves no trace at all, so the path overlay and the cursor still read through
-// where the sheet passes above them.
+// ── This hides nothing ──────────────────────────────────────────────────────
+// It used to, and that was the mistake. A horizontal sheet occludes nothing when
+// you look along it, so dropping the camera below the bank put the whole
+// unexplored half of the island in plain view - and no thickness, skirt or extra
+// geometry fixes that, because the problem is that a blanket is not a wall.
+//
+// Hiding now belongs to the objects. `VisibilityField.patch` makes terrain,
+// props, units and grid seams paint themselves out on undiscovered ground, which
+// is correct from every camera angle for free. What is left here is weather: if
+// this component were deleted the board would still be unreadable where it should
+// be, it would just stop being atmospheric about it.
+//
+// The sheet does still write depth and discard where it is clear, which is worth
+// keeping - over the unknown it swallows the motes and water sparkles that would
+// otherwise draw on top of it, and over known ground it leaves no trace at all,
+// so the path overlay and the cursor read through where it passes above them.
 export class FogOfWar extends Component {
   constructor(grid, visibility, {
+    field,                    // the shared VisibilityField - see visibility_field.js
     hexes    = null,          // every hex that can be fogged - land and sea both
     surfaceY = () => 0,       // top of the tile at (q, r)
     hexSize  = 1,
@@ -77,7 +85,6 @@ export class FogOfWar extends Component {
     minCover   = 0.10,        // and the least it may ever clear a tile's own top
     roll       = 0.06,        // a broad noise field lifting and dropping the drape
     patchScale = 5.0,         // how wide that field's features are
-    margin     = 8.0,         // how far past the fogged hexes it reaches, in hexes
     resolution = 0.42,        // lattice spacing, in hex circumradii
     // Rings of neighbourhood *maximum* taken before the drape is smoothed. This
     // is what makes a crag mound over rather than terrace: smoothing alone drags
@@ -88,32 +95,17 @@ export class FogOfWar extends Component {
     drapeSmooth   = 2,        // passes of neighbour averaging after that
     latticeSmooth = 2,        // and passes over the lattice, killing the last of the hex
 
-    // ── The mask ───────────────────────────────────────────────────────────
-    maskTexel  = 0.30,        // texel size, in hex circumradii
-    softness   = 1.15,        // how far the reveal blur reaches, in hex circumradii
-    maskPasses = 2,
-    revealRate = 1.6,         // how fast the mask eases toward what is known
-    // The *outer* rim gets its own, much wider blur. The fogged region ends
-    // somewhere out at sea, and where it ends is not a fact about the world - it
-    // is where the level's hex list stops. Faded over the same distance as the
-    // reveal it reads as the edge of a painted continent; faded over three hexes
-    // and torn by the same noise as everything else, it is the bank simply
-    // running out into the ocean haze.
-    // The region is *grown* by `rimReach` before it is blurred, and that is not a
-    // tuning detail - it is what makes the whole outer fade safe. The boundary is
-    // pushed about by noise, and a fade that started at the hex list's own edge
-    // could be pushed back *inland* and take the mist off a tile nobody has
-    // walked to. Grown a couple of hexes out to sea first, the noise has nothing
-    // to uncover however hard it swings.
-    rimReach    = 4.0,        // in hex circumradii
-    rimSoftness = 1.8,        // and how far the blur past that reaches
-    rimFade     = [0.14, 0.58],
-    rimTear     = 0.30,       // the most the noise may push that fade *inward*
-
     // ── The boundary ───────────────────────────────────────────────────────
     edge      = [0.34, 0.78], // the mask values the fog fades out between
     edgeWarp  = 0.20,         // how far noise pushes that threshold about
     edgeScale = 0.17,         // and how fine the wobble it puts in it is
+    // Where the *outer* rim of the bank goes. The fogged region ends somewhere
+    // out at sea, and where it ends is not a fact about the world - it is where
+    // the level's hex list stops, so it is drawn as the bank simply running out
+    // into the ocean haze. The field hands that boundary over already grown
+    // seaward and widely blurred; these two only decide how it is painted.
+    rimFade   = [0.14, 0.58],
+    rimTear   = 0.30,         // the most the noise may push that fade *inward*
 
     // ── The cloud field ────────────────────────────────────────────────────
     warp    = { scale: 0.030, amount: 4.2 },
@@ -134,9 +126,6 @@ export class FogOfWar extends Component {
     opacity     = 1.0,
     detail = [0.95, 0.13],    // alpha contrast at the boundary / deep in the unknown
     shade  = [1.00, 0.50],    // colour contrast, likewise
-
-    exploredColor   = 0x0d1a2b,
-    exploredOpacity = 0.34,
 
     // ── Wisps ──────────────────────────────────────────────────────────────
     // Decoration, and nothing rests on them: they hide nothing, they carry no
@@ -160,8 +149,10 @@ export class FogOfWar extends Component {
     wispRate      = 2.2,          // how fast one fades when it moves to a new post
   } = {}) {
     super();
+    if (!field) throw new Error('FogOfWar draws a VisibilityField, it does not own one - pass `field`');
     this._grid = grid;
     this._vis  = visibility;
+    this._field = field;
     this._hexes = hexes ? [...hexes] : [...grid.allHexes()];
     this._surfaceY = surfaceY;
     this._hexSize = hexSize;
@@ -170,20 +161,13 @@ export class FogOfWar extends Component {
     this._minCover = minCover;
     this._roll = roll;
     this._patchScale = patchScale;
-    this._margin = margin;
     this._resolution = resolution;
     this._drapeRings = drapeRings;
     this._drapeSmooth = drapeSmooth;
     this._latticeSmooth = latticeSmooth;
 
-    this._maskTexel = maskTexel;
-    this._softness = softness;
-    this._rimReach = rimReach;
-    this._rimSoftness = rimSoftness;
-    this._rimTear = rimTear;
     this._rimFade = rimFade;
-    this._maskPasses = maskPasses;
-    this._revealRate = revealRate;
+    this._rimTear = rimTear;
 
     this._edge = edge;
     this._edgeWarp = edgeWarp;
@@ -202,8 +186,6 @@ export class FogOfWar extends Component {
     this._opacity = opacity;
     this._detail = detail;
     this._shade = shade;
-    this._exploredColor = exploredColor;
-    this._exploredOpacity = exploredOpacity;
 
     this._wispCount = wisps;
     this._wispColor = wispColor;
@@ -217,14 +199,12 @@ export class FogOfWar extends Component {
     this._time  = 0;
     this._cells = new Map();     // "q,r" -> where the sheet stands over that hex
     this._wispData = [];
-    this._settling = false;
   }
 
   start() {
     for (const { q, r } of this._hexes) this._addCell(q, r);
     this._drapeSurfaces();
 
-    this._buildMask();
     this._buildSheet();
     this._buildWisps();
 
@@ -232,7 +212,7 @@ export class FogOfWar extends Component {
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
 
-    this._retarget(true);
+    this._retarget();
     this._unsub = this._vis.onChange(() => this._retarget());
   }
 
@@ -251,7 +231,6 @@ export class FogOfWar extends Component {
     if (!this._shown) return;
     this._time += rawDt;
     this._uniforms.uTime.value = this._time;
-    if (this._settling) this._advanceMask(rawDt);
     this._writeWisps(rawDt);
   }
 
@@ -307,144 +286,14 @@ export class FogOfWar extends Component {
     }
   }
 
-  // The world-space box everything in this layer is laid out in: the fogged
-  // hexes, plus a margin for the blanket to thin away into.
-  _bounds() {
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const cell of this._cells.values()) {
-      if (cell.x < minX) minX = cell.x;
-      if (cell.x > maxX) maxX = cell.x;
-      if (cell.z < minZ) minZ = cell.z;
-      if (cell.z > maxZ) maxZ = cell.z;
-    }
-    const pad = (this._margin + 1) * this._hexSize;
-    return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
-  }
-
-  // ── The mask ──────────────────────────────────────────────────────────────
-
-  _buildMask() {
-    const b = this._bounds();
-    const texel = this._maskTexel * this._hexSize;
-    this._mw = Math.max(8, Math.ceil((b.maxX - b.minX) / texel));
-    this._mh = Math.max(8, Math.ceil((b.maxZ - b.minZ) / texel));
-    // The box is grown out to a whole number of texels rather than the texels
-    // stretched, so a texel stays square and the blur below stays isotropic.
-    this._maskMin  = new THREE.Vector2(b.minX, b.minZ);
-    this._maskSpan = new THREE.Vector2(this._mw * texel, this._mh * texel);
-
-    const n = this._mw * this._mh;
-    this._goalRev = new Float32Array(n);   // discovered, blurred
-    this._goalVis = new Float32Array(n);   // in view now, blurred
-    this._curRev  = new Float32Array(n);   // and where the two currently stand
-    this._curVis  = new Float32Array(n);
-    this._inBoard = new Float32Array(n);   // static: what is fogged at all
-    this._tmp     = new Float32Array(n);
-    // Which cell each texel sits in, resolved once - the same lookup runs on
-    // every visibility change and hex rounding is not free.
-    this._texelCell = new Array(n);
-
-    for (let j = 0; j < this._mh; j++) {
-      for (let i = 0; i < this._mw; i++) {
-        const x = this._maskMin.x + ((i + 0.5) / this._mw) * this._maskSpan.x;
-        const z = this._maskMin.y + ((j + 0.5) / this._mh) * this._maskSpan.y;
-        const { q, r } = this._grid.worldToHex(x, z);
-        const idx = j * this._mw + i;
-        const cell = this._cells.get(`${q},${r}`) ?? null;
-        this._texelCell[idx] = cell;
-        this._inBoard[idx] = cell ? 1 : 0;
-      }
-    }
-    this._dilate(this._inBoard, this._rimReach);
-    this._blur(this._inBoard, this._rimSoftness);
-
-    this._data = new Uint8Array(n * 4);
-    this._mask = new THREE.DataTexture(this._data, this._mw, this._mh, THREE.RGBAFormat);
-    this._mask.minFilter = this._mask.magFilter = THREE.LinearFilter;
-    this._mask.wrapS = this._mask.wrapT = THREE.ClampToEdgeWrapping;
-    this._mask.needsUpdate = true;
-  }
-
-  // Separable box blur, in place. Edges clamp, which is exactly what is wanted:
-  // outside the box the world is undiscovered ocean and the border value is
-  // already the right answer.
-  _blur(field, softness = this._softness) {
-    const w = this._mw, h = this._mh, tmp = this._tmp;
-    const r = Math.max(1, Math.round(softness / this._maskTexel));
-    const inv = 1 / (2 * r + 1);
-    for (let pass = 0; pass < this._maskPasses; pass++) {
-      for (let y = 0; y < h; y++) {
-        const row = y * w;
-        for (let x = 0; x < w; x++) {
-          let s = 0;
-          for (let k = -r; k <= r; k++) {
-            const xx = x + k < 0 ? 0 : x + k >= w ? w - 1 : x + k;
-            s += field[row + xx];
-          }
-          tmp[row + x] = s * inv;
-        }
-      }
-      for (let x = 0; x < w; x++) {
-        for (let y = 0; y < h; y++) {
-          let s = 0;
-          for (let k = -r; k <= r; k++) {
-            const yy = y + k < 0 ? 0 : y + k >= h ? h - 1 : y + k;
-            s += tmp[yy * w + x];
-          }
-          field[y * w + x] = s * inv;
-        }
-      }
-    }
-  }
-
-  // Separable maximum filter - the region channel's head start out to sea.
-  _dilate(field, reach) {
-    const w = this._mw, h = this._mh, tmp = this._tmp;
-    const r = Math.max(1, Math.round(reach / this._maskTexel));
-    for (let y = 0; y < h; y++) {
-      const row = y * w;
-      for (let x = 0; x < w; x++) {
-        let m = 0;
-        for (let k = -r; k <= r; k++) {
-          const xx = x + k < 0 ? 0 : x + k >= w ? w - 1 : x + k;
-          if (field[row + xx] > m) m = field[row + xx];
-        }
-        tmp[row + x] = m;
-      }
-    }
-    for (let x = 0; x < w; x++) {
-      for (let y = 0; y < h; y++) {
-        let m = 0;
-        for (let k = -r; k <= r; k++) {
-          const yy = y + k < 0 ? 0 : y + k >= h ? h - 1 : y + k;
-          const v = tmp[yy * w + x];
-          if (v > m) m = v;
-        }
-        field[y * w + x] = m;
-      }
-    }
-  }
-
-  _uploadMask() {
-    const n = this._mw * this._mh;
-    for (let i = 0; i < n; i++) {
-      const o = i * 4;
-      this._data[o]     = this._curRev[i] * 255;
-      this._data[o + 1] = this._curVis[i] * 255;
-      this._data[o + 2] = this._inBoard[i] * 255;
-      this._data[o + 3] = 255;
-    }
-    this._mask.needsUpdate = true;
-  }
-
-  // Re-read the VisibilityMap. This is the *only* place the two systems touch,
-  // and it is one-way: hexes in, a texture out.
-  _retarget(instant = false) {
+  // Where the reveal boundary currently runs, which since the mask moved out to
+  // VisibilityField is the only thing this component still asks the map. A hex is
+  // on the line if it is still unknown and something known touches it - and the
+  // line is only ever used to decide where the wisps hang about.
+  _retarget() {
     for (const cell of this._cells.values()) {
       cell.known = this._vis.stateAt(cell.q, cell.r) !== HEX_VISIBILITY.UNEXPLORED;
     }
-    // A hex is on the boundary if it is still unknown and something known touches
-    // it - the line the wisps hang about on.
     for (const cell of this._cells.values()) {
       let edge = false;
       if (!cell.known) {
@@ -455,52 +304,17 @@ export class FogOfWar extends Component {
       }
       cell.edge = edge;
     }
-
-    const n = this._mw * this._mh;
-    for (let i = 0; i < n; i++) {
-      const cell = this._texelCell[i];
-      // Outside the fogged region counts as *discovered*, so the blur below
-      // feathers the blanket's outer rim away into the open sea.
-      this._goalRev[i] = cell ? (cell.known ? 1 : 0) : 1;
-      this._goalVis[i] = cell ? (this._vis.isVisible(cell.q, cell.r) ? 1 : 0) : 1;
-    }
-    this._blur(this._goalRev);
-    this._blur(this._goalVis);
-
-    if (instant) {
-      this._curRev.set(this._goalRev);
-      this._curVis.set(this._goalVis);
-      this._settling = false;
-      this._uploadMask();
-    } else {
-      this._settling = true;
-    }
     this._placeWisps();
-  }
-
-  // The mist receding. Easing the *blurred* field rather than the hex one keeps
-  // it blurred - the whole operation is linear - and costs one pass a frame
-  // instead of three.
-  _advanceMask(dt) {
-    const k = 1 - Math.exp(-this._revealRate * dt);
-    const n = this._mw * this._mh;
-    let settling = false;
-    for (let i = 0; i < n; i++) {
-      const dr = this._goalRev[i] - this._curRev[i];
-      if (Math.abs(dr) > 0.002) { this._curRev[i] += dr * k; settling = true; }
-      else this._curRev[i] = this._goalRev[i];
-      const dv = this._goalVis[i] - this._curVis[i];
-      if (Math.abs(dv) > 0.002) { this._curVis[i] += dv * k; settling = true; }
-      else this._curVis[i] = this._goalVis[i];
-    }
-    this._settling = settling;
-    this._uploadMask();
   }
 
   // ── The sheet ─────────────────────────────────────────────────────────────
 
   _buildSheet() {
-    const b = this._bounds();
+    // The same box the mask is laid out in, because the two are read together:
+    // a sheet that stopped short of the field would end while the mist it is
+    // painted with was still saying "fogged".
+    const min = this._field.min, span = this._field.span;
+    const b = { minX: min.x, maxX: min.x + span.x, minZ: min.y, maxZ: min.y + span.y };
     const step = this._resolution * this._hexSize;
     const nx = Math.max(2, Math.ceil((b.maxX - b.minX) / step) + 1);
     const nz = Math.max(2, Math.ceil((b.maxZ - b.minZ) / step) + 1);
@@ -593,14 +407,12 @@ export class FogOfWar extends Component {
         uRim:        { value: new THREE.Color() },
         uRimStrength:{ value: 0 },
         uOpacity:    { value: 1 },
-        uVeilColor:  { value: new THREE.Color() },
-        uVeil:       { value: 0 },
       },
     ]);
     const u = this._uniforms;
-    u.uMask.value = this._mask;
-    u.uMaskMin.value.copy(this._maskMin);
-    u.uMaskSpan.value.copy(this._maskSpan);
+    u.uMask.value = this._field.texture;
+    u.uMaskMin.value.copy(this._field.min);
+    u.uMaskSpan.value.copy(this._field.span);
     u.uWind.value.copy(wind);
     u.uWarp.value.set(this._warp.scale, this._warp.amount);
     u.uScales.value.set(...this._scales);
@@ -617,8 +429,6 @@ export class FogOfWar extends Component {
     u.uRim.value.setHex(this._rimColor);
     u.uRimStrength.value = this._rimStrength;
     u.uOpacity.value = this._opacity;
-    u.uVeilColor.value.setHex(this._exploredColor);
-    u.uVeil.value = this._exploredOpacity;
 
     this._mat = new THREE.ShaderMaterial({
       uniforms: u,
@@ -779,7 +589,6 @@ export class FogOfWar extends Component {
     this._unsub?.();
     this._sheet?.geometry.dispose();
     this._mat?.dispose();
-    this._mask?.dispose();
     this._wispMesh?.geometry.dispose();
     this._wispMesh?.dispose();
     this._wispMat?.dispose();
@@ -819,8 +628,6 @@ uniform vec3  uColorLight;
 uniform vec3  uRim;
 uniform float uRimStrength;
 uniform float uOpacity;
-uniform vec3  uVeilColor;
-uniform float uVeil;
 
 varying vec3 vWorld;
 
@@ -921,11 +728,12 @@ void main() {
              * ( 1.0 - detail * clamp( 0.65 - density, 0.0, 1.0 ) * 1.6 );
   aFog = clamp( aFog, 0.0, 1.0 );
 
-  // The dim veil over ground that has been walked and is not being watched.
-  // Gated on the region mask so it stops at the open sea rather than greying it.
-  float veil = ( 1.0 - cover ) * region * uVeil * ( 1.0 - mask.g );
-
-  float a = aFog + veil * ( 1.0 - aFog );
+  // Ground that has been walked and is not being watched used to get a dim veil
+  // painted here. It is gone: dimming is a statement about *visibility*, and it
+  // belongs on the objects themselves rather than on a sheet floating above them
+  // - which is also the only way it reaches a tree, a lamp or a unit standing on
+  // the tile rather than just the tile.
+  float a = aFog;
   if ( a < 0.02 ) discard;
 
   vec3 body = mix( uColor, uColorLight,
@@ -940,9 +748,7 @@ void main() {
   float lip = cover * ( 1.0 - cover ) * 4.0 * smoothstep( 0.80, 0.97, mask.b );
   body = mix( body, uRim, lip * uRimStrength );
 
-  vec3 col = ( body * aFog + uVeilColor * veil * ( 1.0 - aFog ) ) / a;
-
-  gl_FragColor = vec4( col, a );
+  gl_FragColor = vec4( body, a );
 
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

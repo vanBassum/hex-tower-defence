@@ -72,7 +72,8 @@ you turn twice and then stop turning.
     engine/components/hex_grid_renderer.js  hex outlines
     engine/components/hex_overlay.js   filled hex tiles (cursor, ranges)
     engine/components/hex_picker.js    mouse to hex, plus the cursor on it
-    engine/components/fog_of_war.js    the unknown, drawn over the board
+    engine/components/visibility_field.js  what is known, as a texture the world reads
+    engine/components/fog_of_war.js    the mist over the unknown - mood, not occlusion
     engine/components/health.js        hit points, hit descriptors, death hook
     engine/components/health_bar.js    camera-facing bar above the owner
     engine/components/path_follower.js constant-speed walk along world points
@@ -365,10 +366,64 @@ It yields hexes inside the *envelope* rather than inside the board, because the
 sea has to be discoverable: an island whose coastline is drawn for you from the
 first frame is an island you have already been told the shape of.
 
+**Fog controls the mood; hex visibility controls what the player may see.** These
+are two systems and it took getting it wrong to see why. The mist is a horizontal
+sheet, and a horizontal sheet occludes nothing when you look along it - so the
+first version was correct from the intended top-down camera and showed the entire
+unexplored island the moment you zoomed in and rotated low. No thickness, skirt or
+extra geometry fixes that, because the problem is that a blanket is not a wall.
+
+So the hiding moved into the objects. `VisibilityField` rasterises the
+`VisibilityMap` into a blurred world-space texture, and `field.patch(root)` makes
+every material under an object read it and answer for itself:
+
+- **unexplored** - painted flat in the mist's own colour, alpha dropped to nothing
+  if it was transparent
+- **explored** - dimmed and drifted a little toward the mist
+- **visible** - untouched
+
+That is correct from every camera angle for free, because an object that paints
+itself out has no silhouette to peer past. The fog sheet went back to being
+weather: if `FogOfWar` were deleted the board would still be unreadable where it
+should be, it would just stop being atmospheric about it.
+
+The colour matters. Undiscovered ground is painted in the *mist's* colour rather
+than black, so from a low camera the ground and the bank standing on it read as
+one mass of weather. Black would say "nothing is there"; this says "you cannot
+see".
+
+**One call per layer, not an argument threaded through every constructor.**
+Whether a thing obeys fog of war is a fact about the scene, not about the thing. A
+tree, a wave crest, a grid seam and a unit all want identical behaviour, so
+`main.js` sweeps the layers once and no component ever hears about it - which is
+also what makes the next thing added (a pickup, an enemy) correct by default
+rather than by remembering. The patch injects into a stock material through
+`onBeforeCompile`, so everything keeps the scene's own lighting.
+
+One wrinkle worth knowing: three keys its program cache on the *source text* of
+`onBeforeCompile`, and one closure written once has the same text for every
+material it lands on. The per-material flags have to be pushed into
+`customProgramCacheKey` by hand, or the first material compiled wins and the rest
+quietly share its shader.
+
+**The field is one texture with four channels**, and two of them are the same fact
+at two different softnesses:
+
+- `R` discovered, blurred over about a hex - the mist's boundary
+- `G` in view right now - drives the dimming of remembered ground
+- `B` inside the fogged region at all - so nothing dims the open sea
+- `A` discovered, blurred only just enough to take the corners off
+
+`R` has to be soft, because a hard reveal edge on mist is a hexagon. `A` has to be
+tight, because it decides what the player is *allowed* to see, and a blur wide
+enough to flatter the mist would dim the middle of the tile they are standing on.
+Softness is a matter of taste on one and a bug on the other.
+
 **Fog is drawn over the terrain, never cut out of it.** `HexGround` is one merged
 mesh, so hiding part of it would mean rebuilding the world every time a unit takes
 a step - and rebuilding the world to describe what is *known* about it is the
-wrong way round. The ground mesh is built once and never touched.
+wrong way round. The ground mesh is built once and never touched; what changes is
+a texture it reads.
 
 The layer is **one sheet with a shader on it**, and that is the whole design. An
 earlier version built the mist out of a thousand overlapping translucent lenses -
@@ -387,14 +442,14 @@ So there are three parts, and only the first is geometry:
   Draping matters for exactly one reason: the sheet is the only thing hiding the
   board, and a flat plane at crag height would float a full step over the low
   ground and show the coast from any camera below the top of the dive.
-- **The mask.** What the player has discovered, rasterised into a world-space
-  texture and blurred. Three channels: discovered, in-view-right-now, and
-  inside-the-fogged-region-at-all.
+- **The mask.** Not the fog's own - it is `VisibilityField`'s, above, and the
+  mist is only one of its readers. Of the four channels it uses two: discovered
+  (softly) and inside-the-region.
 - **The shader.** Three noise fields at three scales drifting at three speeds
   along the level's one wind, over a slow domain warp so they knead each other
   instead of scrolling past. The mask decides how much survives.
 
-**Gameplay stays on hexes; the mask is where the hexagon is thrown away.** The
+**Gameplay stays on hexes; the field is where the hexagon is thrown away.** The
 pipeline is `hexes -> texture -> blur -> opacity`. `VisibilityMap` is read and
 never written, so the rules stay exactly as discrete as they were - a hex is
 unexplored, explored or visible and nothing in between - while what is drawn has
@@ -407,16 +462,16 @@ mist visibly recedes rather than stepping.
 **Depth into the unknown removes detail rather than adding it.** Both the alpha
 variation and the colour variation are scaled by a factor that falls to almost
 nothing well inside the unexplored, leaving a near-opaque sheet with a slow swell
-in it. This is not an aesthetic preference: unexplored ground has to reveal
-nothing, and structure out there is structure the terrain can be read through. All
-the tearing, holing and wisping is spent at the boundary, which is the only place
-it says anything.
+in it. Not because the sheet has to hide anything any more - the ground below it
+has already painted itself out - but because structure in the deep field is
+structure that invites reading, and there is nothing out there to read. All the
+tearing, holing and wisping is spent at the boundary, which is the only place it
+says anything.
 
 **The sheet writes depth and discards where it is clear**, which sounds
-contradictory and is the point. Over the unknown it occludes the motes and water
-sparkles that would otherwise draw on top of it; over known ground it leaves no
-trace, so the path overlay and the cursor still read through where it passes above
-them.
+contradictory and is the point. Over the unknown it swallows anything that would
+otherwise draw on top of it; over known ground it leaves no trace, so the path
+overlay and the cursor still read through where it passes above them.
 
 **Two boundaries, and the outer one is an artefact.** The reveal boundary is the
 player's doing and gets all the noise it can take. The *region* boundary is just
@@ -459,10 +514,14 @@ and twice the opacity and put the bubbles straight back: a pale disc seen from a
 camera that is mostly looking *down* is a disc, however soft its edge. Small, dim
 and thin is the whole of what keeps them readable as air.
 
-Explored-but-unseen ground is dimmed and nothing else, straight out of the mask's
-second channel. Nothing is hidden there - the player has been told what is on that
-tile and taking it back would be a lie - it is only darker, which is the
-difference between remembering a place and looking at it.
+Explored-but-unseen ground is dimmed and nothing else. That dimming used to be a
+translucent veil painted by the fog sheet and is now done by the objects
+themselves, which is both more honest and more useful: a statement about
+*visibility* belongs on the thing being seen, and a veil floating above the
+terrain never reached the tree, the lamp or the unit standing on the tile. Nothing
+is hidden by it - the player has been told what is on that tile and taking it back
+would be a lie - it is only darker, which is the difference between remembering a
+place and looking at it.
 
 **Nothing is drawn *on* a tile.** There was a pale wash over every hex the
 selection could reach and a brighter one along the previewed route, and filling
