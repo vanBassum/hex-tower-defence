@@ -17,6 +17,7 @@ minute of clicking is one line here.
     python tools/check.py --eval "hex.card(); hex.teleport(-1,4)" --shot hand.png
     python tools/check.py --click=-3,5 --shot placed.png
     python tools/check.py --print --eval "return hex.control.units.length"
+    python tools/check.py --page editor/index.html --shot editor.png
 
 Negative coordinates need the `=` form - `--at=-3,4`, not `--at -3,4` - or argparse
 reads the leading minus as another flag. `--eval` is a function body, so anything
@@ -101,6 +102,8 @@ class Step(argparse.Action):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--page', default='index.html',
+                    help='which page to load - editor/index.html for the level editor')
     ap.add_argument('--shot', help='write a screenshot here')
     ap.add_argument('--eval', dest='eval', action=Step,
                     help='JS body to run once loaded; repeatable')
@@ -146,13 +149,13 @@ def main():
             and not any(skip in m.text for skip in IGNORE)
             and problems.append(f'{m.type}: {m.text}')))
 
-        page.goto(f'http://127.0.0.1:{port}/index.html')
+        page.goto(f'http://127.0.0.1:{port}/{args.page}')
         page.wait_for_timeout(args.wait * 1000)
 
         # The debug API is the contract this whole script rests on. If it is not
         # there the page did not finish building, whatever the console said.
         if not page.evaluate('() => !!window.hex'):
-            problems.append('window.hex missing - main.js did not finish')
+            problems.append('window.hex missing - the page did not finish building')
 
         if not problems:
             if args.reveal:
