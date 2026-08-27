@@ -72,7 +72,7 @@ export class VisibilityMask extends Component {
       uMaskStrength: { value: 1 },
       ...airUniforms(air, drift),
       ...cloudUniforms(cloud, drift),
-      ...revealUniforms(reveal),
+      ...revealUniforms(reveal, hexSize),
     };
 
     // Seconds for the dark to cross one hex, as a rate. Instant if a level asks
@@ -291,10 +291,13 @@ function cloudUniforms(cloud, drift) {
 
 // How the front that crosses a revealing hex is shaped. `soft` is its width as a
 // fraction of the hex, and it must never be zero: it divides.
-function revealUniforms(reveal) {
+function revealUniforms(reveal, hexSize) {
   const r = { soft: 0.45, jitter: 0.30, grain: 2.6, ...(reveal || {}) };
   return {
-    uMaskRevealSoft:   { value: Math.max(r.soft, 1e-3) },
+    // How far a hex's own progress reaches past its own edge, in world units. It
+    // is what stitches the region together: inside a hex the reach is saturated,
+    // so two hexes always agree at the edge between them.
+    uMaskReach:        { value: Math.max(r.soft * 2 * hexSize, 1e-3) },
     uMaskRevealJitter: { value: r.jitter },
     uMaskRevealGrain:  { value: Math.max(r.grain, 1e-3) },
   };
@@ -336,7 +339,7 @@ uniform vec2  uMaskCloudBand;
 uniform float uMaskCloudWarp;
 uniform float uMaskCloudHold;
 uniform vec2  uMaskCloudDrift;
-uniform float uMaskRevealSoft;
+uniform float uMaskReach;
 uniform float uMaskRevealJitter;
 uniform float uMaskRevealGrain;
 uniform float uMaskAirSpeed;
@@ -481,6 +484,53 @@ vec2 maskCenter( vec2 ax ) {
   return uMaskHexSize * vec2( 1.5 * ax.x, 1.73205081 * ( ax.y + 0.5 * ax.x ) );
 }
 
+// ── One field, not one per hex ───────────────────────────────────────────────
+// How deep inside a hex a point is: positive within it, negative outside, in
+// world units. Three axes rather than six, because opposite edges of a hex share
+// a normal.
+float maskDepthIn( vec2 ax, vec2 xz ) {
+  vec2 off = xz - maskCenter( ax );
+  float a = abs( dot( off, vec2( 0.8660254,  0.5 ) ) );
+  float b = abs( dot( off, vec2( 0.8660254, -0.5 ) ) );
+  return uMaskInradius - max( abs( off.y ), max( a, b ) );
+}
+
+// What one hex claims of a point: all of its own progress anywhere inside itself,
+// falling away to nothing over uMaskReach past its own edge. A hex still fully
+// night claims nothing at all.
+float maskClaim( vec2 ax, vec2 xz ) {
+  float shown = maskShown( ax );
+  if ( shown <= 0.0 ) return 0.0;
+  return shown * clamp( ( maskDepthIn( ax, xz ) + uMaskReach ) / uMaskReach, 0.0, 1.0 );
+}
+
+// How open the world is at this point: the largest claim any hex around here
+// makes on it.
+//
+// This replaces a front that each hex worked out for itself, from its own centre
+// and its own idea of which neighbours were lit - and *that* is where the black
+// cracks came from. Two hexes opening together built two different fields and
+// disagreed along the edge between them, which drew a dark wedge into each of
+// them; three of them disagreed at the corner where they met.
+//
+// A maximum over per-hex claims cannot do that. Whichever hex asks, the same
+// claims are in the running, so both sides of every shared edge and all three
+// sides of every corner arrive at the same number - and the brighter side wins,
+// so a hex that is further along its reveal lifts its neighbour's edge to meet it
+// rather than a crack opening between them. Inside a hex its own claim is
+// saturated, which is what keeps open ground at full brightness right up to its
+// edge no matter what is happening beyond it.
+float maskOpenness( vec2 ax, vec2 xz ) {
+  float o =        maskClaim( ax,                       xz );
+  o = max( o, maskClaim( ax + vec2(  1.0,  0.0 ), xz ) );
+  o = max( o, maskClaim( ax + vec2(  1.0, -1.0 ), xz ) );
+  o = max( o, maskClaim( ax + vec2(  0.0, -1.0 ), xz ) );
+  o = max( o, maskClaim( ax + vec2( -1.0,  0.0 ), xz ) );
+  o = max( o, maskClaim( ax + vec2( -1.0,  1.0 ), xz ) );
+  o = max( o, maskClaim( ax + vec2(  0.0,  1.0 ), xz ) );
+  return o;
+}
+
 // The banks standing in that air, and a field of their own end to end. Three
 // things make them banks rather than more haze:
 //
@@ -579,31 +629,28 @@ ${cull ? `
   // nor stops abruptly. 0 and 1 are left exactly alone, which is what makes the
   // two ends of the animation identical to the two static looks.
   float maskSelf = maskShown( maskAx );
-  float maskP = maskSelf * maskSelf * ( 3.0 - 2.0 * maskSelf );
 
   float maskLocal = 1.0;
   float maskAir = 0.0;
   float maskCloud = 0.0;
 
-  if ( maskP < 1.0 ) {
+  if ( maskSelf < 1.0 ) {
     float maskToLight = maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0, maskSelf );
 
-    // The front crosses the hex from the edge the light is already on rather than
-    // the whole tile fading at once - which is the difference between the dark
-    // *retreating* and the dark being turned down. A hex with no lit neighbour to
-    // come in from - the first hex of a run, a unit put down out of nowhere - has
-    // no direction to offer, and fades evenly instead.
-    float maskU = maskToLight > 999.0
-      ? 0.0
-      : clamp( maskToLight / ( 2.0 * uMaskInradius ), 0.0, 1.0 );
-    // And a wobble on it, so the edge is a tide line rather than a wipe. Static
-    // and in world space: the raggedness belongs to the ground it crosses, not to
-    // the clock. Clamped back into the tile because the front must still be
-    // nowhere at zero and everywhere at one.
-    maskU = clamp( maskU + ( maskNoise( vMaskWorld.xz / uMaskRevealGrain, vec2( 13.7, 82.1 ) ) - 0.5 )
-                          * uMaskRevealJitter, 0.0, 1.0 );
-    float maskFront = maskP * ( 1.0 + uMaskRevealSoft );
-    maskLocal = clamp( ( maskFront - maskU ) / uMaskRevealSoft, 0.0, 1.0 );
+    // How open it is here, from the one field the whole region shares.
+    float maskOpen = maskOpenness( maskAx, vMaskWorld.xz );
+    // A wobble on the way, so the edge of the dark is a tide line rather than a
+    // contour. Static and in world space - the raggedness belongs to the ground
+    // it crosses, not to the clock - and pinched off at both ends, so night is
+    // exactly night and open ground exactly open however ragged the middle is.
+    maskOpen = clamp( maskOpen
+      + ( maskNoise( vMaskWorld.xz / uMaskRevealGrain, vec2( 13.7, 82.1 ) ) - 0.5 )
+        * uMaskRevealJitter * 4.0 * maskOpen * ( 1.0 - maskOpen ), 0.0, 1.0 );
+    // Nothing may lift a hex that is night and staying night: a neighbour's claim
+    // reaches over the edge, and on unwatched ground that would be terrain the
+    // player has not earned. Watched, or still on its way out, and it is fair.
+    maskOpen *= max( maskRule( maskAx ), step( 0.0001, maskSelf ) );
+    maskLocal = maskOpen * maskOpen * ( 3.0 - 2.0 * maskOpen );
 
     if ( maskLocal < 1.0 ) {
       // Still night here, and the night has weather in it. Both are held off the
