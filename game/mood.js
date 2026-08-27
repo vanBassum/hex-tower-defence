@@ -72,6 +72,25 @@ export const MOOD = {
     cliffColor: 0x4f4433,
   },
 
+  // Ground nobody is looking at. Not a fog colour and not a wash over the tile -
+  // the tile is simply *unlit*, and what is left is the night the rest of the
+  // frame is already made of. It sits between the sky and the distance haze, and
+  // dark enough that the horizon is where the island stops rather than where the
+  // black square around it stops.
+  //
+  // `keep` is the only reason it is not a hole cut in the board: a trace
+  // of the surface's own shading survives, so a cliff and a tile top out there
+  // are still just separable and the land reads as continuing into the dark.
+  // Raise it and the unknown turns into dim terrain you can read; drop it to zero
+  // and the island ends in a flat silhouette.
+  hidden: {
+    color: 0x070c16,
+    // Tiny, and it has to be: this is added on top of the night in *linear*
+    // light, where a hundredth is already a shape you can read. At 0.02 the
+    // unknown stops being dark and becomes dim terrain with trees in it.
+    keep:  0.006,
+  },
+
   // A unit has to survive being the smallest thing in a dark frame. The cloak is
   // lifted off the grass rather than made bright - a figure that glows is a token
   // on a board - and the lamp below is what actually finds it.

@@ -10,6 +10,7 @@ import { HexGridRenderer } from '../engine/components/hex_grid_renderer.js';
 import { HexGround } from '../engine/components/hex_ground.js';
 import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
+import { VisibilityMask } from '../engine/components/visibility_mask.js';
 import { VisibilityMap } from '../engine/hex/visibility.js';
 import { MAP_1, buildMap } from './maps.js';
 import { MOOD, WIND } from './mood.js';
@@ -43,11 +44,27 @@ game.hexGrid = map.grid;
 
 // What is known about the board. Land and sea both: the shape of a coastline is
 // worth discovering, and a sea that starts visible has already drawn the island
-// for you. It is state, not drawing - and nothing draws it at the moment: the
-// old mist and its masking pass have been taken out, and what replaces them is
-// being built from here.
+// for you. It is state, not drawing - VisibilityMask below reads it and never
+// writes.
 const visibility = new VisibilityMap(map.grid, [...map.grid.allHexes(), ...map.water]);
 game.visibility = visibility;
+
+// And the drawing of it, such as it is: a tile the force is looking at renders
+// normally and every other tile goes out. It goes in early because the sweep at
+// the bottom of this file hands it every layer in the scene.
+//
+// Deliberately the plainest thing that can be built on the visibility state -
+// hard hex edges, one colour, no reveal - so that whatever the unknown ends up
+// looking like is a decision taken against something honest rather than against
+// a bank of mist that was already hiding the answer.
+const maskGO = new GameObject('Visibility');
+const mask = maskGO.addComponent(new VisibilityMask(map.grid, visibility, {
+  hexes: [...map.grid.allHexes(), ...map.water],
+  hexSize: map.grid.size,
+  ...MOOD.hidden,
+}));
+game.visibilityMask = mask;
+game.add(maskGO);
 
 const camera = new GameObject('Camera');
 // Closer again than the last time this was pulled in. A run opens on nothing but
@@ -207,6 +224,8 @@ function deploy(type, q, r, { emerge = true } = {}) {
     emerge,
   }));
   game.add(go);
+  // Built after the sweep at the bottom of this file, so it patches itself in.
+  mask.patch(go.object3D);
   return unit;
 }
 
@@ -375,6 +394,16 @@ motes.addComponent(new AmbientMotes(map.grid, map.water, {
   size: 0.05, color: MOOD.motes.sparkle, salt: 900,
 }));
 game.add(motes);
+
+// And now the part that does the hiding. Every material in these layers learns
+// to go out on a hex nobody is watching, straight off the mask's table.
+//
+// One call per layer rather than a `visibility` argument threaded through eight
+// constructors, because whether a thing obeys fog of war is a fact about the
+// *scene*, not about the thing. A tree, a wave crest, a grid seam and a unit all
+// want identical behaviour, and the next component to be added should get it
+// without having to remember to ask.
+for (const go of [groundGO, sea, propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask.patch(go.object3D);
 
 // Developer knobs: V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how

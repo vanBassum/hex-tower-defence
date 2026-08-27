@@ -43,7 +43,8 @@ thing being changed - reach for them then, not by default.
       hex/hex_grid.js       axial grid, ranges, lines, occupancy, A*
       hex/visibility.js     what the player has seen - state only, no drawing
       hex/hex_noise.js      deterministic per-hex hash
-      components/           camera, atmosphere, lights, terrain, water, overlays
+      components/           camera, atmosphere, lights, terrain, water, overlays,
+                            visibility_mask (what the unknown looks like)
     game/                   this game: what is on the island and what plays on it
       main.js               composition root - every wire between components is here
       maps.js               the level: outline, elevation, props, pickups
@@ -65,11 +66,19 @@ Break one of these and something three files away goes subtly wrong.
 - **Visibility is state; drawing it is a separate job.** `VisibilityMap` is hexes
   and states. Nothing writes `UNEXPLORED` after construction: seen once is seen
   forever. Whatever draws it reads it and never writes.
-- **Nothing draws the unknown right now.** The mist sheet and the material
-  masking pass are both gone; the board is drawn in full and `visibility` is pure
-  state that units, lanterns, pickups and deployment still read. A replacement is
-  being built step by step - whatever it is, it reads the map and stays out of
-  the rules.
+- **Hidden ground is unlit, not covered.** `VisibilityMask` is the only drawing
+  of visibility and it hides nothing with geometry: a hex the force is not
+  watching *right now* collapses to `MOOD.hidden`, keeping a trace of its own
+  brightness so the land still reads as continuing into the dark. Deliberately
+  the plainest thing there is - hard hex edges, no reveal, no mist - and it is
+  being built up from here.
+- **The hex edge is rebuilt in the shader.** The fragment turns its own world
+  position back into axial coordinates and reads a one-texel-per-hex table, so
+  the boundary is the real hex boundary. `maskHexAt` in `visibility_mask.js` is
+  `HexGrid.worldToHex` written twice - change one and change the other.
+- **`mask.patch` is one call per layer in `main.js`**, never an argument threaded
+  through a constructor. Anything new added to the scene obeys fog of war by
+  being in that sweep.
 - **Occupancy lives in the grid.** Crags and units hold a key; `isWalkable` and
   A* already ask. Making something impassable is `grid.occupy`, and making
   something walkable-onto (a pickup) is simply not calling it.

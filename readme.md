@@ -98,6 +98,7 @@ you turn twice and then stop turning.
     engine/components/hex_ground.js    tile tops + cliff faces, grass tones
     engine/components/hex_region_outline.js  border around a hex region (unused)
     engine/components/hex_grid_renderer.js  hex outlines
+    engine/components/visibility_mask.js  unwatched hexes, unlit
     engine/components/hex_overlay.js   filled hex tiles (cursor, ranges)
     engine/components/hex_picker.js    mouse to hex, plus the cursor on it
     engine/components/health.js        hit points, hit descriptors, death hook
