@@ -116,7 +116,9 @@ export const MOOD = {
       // even rather than make it a different colour.
       tint:   0x8fb8e8,
       scale:  6.0,       // world units across one shape - eight or nine over the board
-      speed:  0.17,      // world units a second, so a hex takes most of a minute
+      // World units a second, before WIND.strength scales it. TEMPORARY: twice
+      // the intended 0.45, so the drift is unmistakable while it is being judged.
+      speed:  0.90,
       // Which part of the noise becomes air. Narrow, and only the extreme peaks
       // come through and the region reads as flat black between them; wide, and
       // the whole dark lifts evenly and stops having shapes in it at all. This is
@@ -140,7 +142,9 @@ export const MOOD = {
       // a place the dark is *thicker*, not a thing painted over it.
       tint:   0x9aacc0,
       scale:  12.0,      // world units across a bank - four or five over the board
-      speed:  0.06,      // a third of the haze's, and across it rather than with it
+      // Half the haze's, and across it rather than with it - a bank is higher up
+      // and further off. TEMPORARY: twice the intended 0.22, as the haze is.
+      speed:  0.44,
       band:   [0.62, 0.74],
       warp:   0.70,      // how far the shapes are pushed off the lattice
       hold:   2.5,       // held off the reveal edge harder than the haze is
