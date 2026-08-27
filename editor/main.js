@@ -13,7 +13,7 @@ import {
   defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt,
   addTile, removeTile, raiseTile,
 } from './level.js';
-import { HEX_DIRECTIONS } from '../engine/hex/hex_grid.js';
+import { HexGrid, HEX_DIRECTIONS } from '../engine/hex/hex_grid.js';
 import { downloadLevel, readFile } from './files.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
@@ -55,6 +55,12 @@ import { LevelLibrary } from './ui/levels.js';
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level, as in the game
 
+// How many rings of empty hexes are drawn beyond the board. Two is enough to
+// have somewhere to point at in every direction without the lattice running off
+// to the horizon - and it moves outward as the board grows, so there is always
+// room to keep going.
+const MARGIN = 2;
+
 const game = new Game();
 
 // ── The parts that are not the level ─────────────────────────────────────────
@@ -94,6 +100,7 @@ game.add(sun);
 
 let level = null;            // set by the boot block at the bottom of this file
 let world = null;            // grid, elevation and crags, derived from `level`
+let envelope = null;         // every hex that can be pointed at, board or not
 let board = [];              // the GameObjects that belong to this level
 let hexGround = null;
 let selectionOverlay = null;
@@ -102,6 +109,16 @@ let selected = null;         // {q, r} or null - the whole of the editor's state
 function buildBoard() {
   world = buildLevel(level);
   game.hexGrid = world.grid;
+
+  // The board is `world.grid` - what exists, what a unit stands on, what the
+  // ground mesh draws. The envelope is the lattice around it: the same hexes
+  // continuing past the coast, with no shape, so everything in it is in bounds
+  // and the picker will report it. Two grids rather than one because the two
+  // answer different questions, and the board must keep answering "is there a
+  // tile here" honestly - that is what draws the cliffs at the coast.
+  const outer = level.tiles.reduce(
+    (m, t) => Math.max(m, Math.abs(t.q), Math.abs(t.r), Math.abs(t.q + t.r)), 0);
+  envelope = new HexGrid({ size: level.hexSize, radius: Math.max(level.radius, outer) + MARGIN });
 
   const groundGO = new GameObject('HexGround');
   hexGround = groundGO.addComponent(new HexGround(world.grid, {
@@ -113,6 +130,17 @@ function buildBoard() {
 
   const gridGO = new GameObject('HexGrid');
   gridGO.addComponent(new HexGridRenderer(world.grid, { color: MOOD.gridColor, opacity: 0.14 }));
+
+  // And the ground that is not ground yet. Cool and faint rather than the
+  // board's own seam colour: MOOD's grid is a dark green because it is drawn
+  // *into* grass, and the same line over open water would be invisible. This one
+  // is the editor talking rather than the world - the hexes it draws do not
+  // exist - so it is in the panel's blue, like the cursor and the selection.
+  const emptyGO = new GameObject('EmptyHexes');
+  emptyGO.addComponent(new HexGridRenderer(envelope, {
+    color: 0x7fa8c0, opacity: 0.15, y: 0.02,
+    hexes: [...envelope.allHexes()].filter(h => !world.grid.inBounds(h.q, h.r)),
+  }));
 
   // The King, and the one thing on the board that is not terrain. He is placed
   // from `level.king` like everything else here is placed from the level - the
@@ -143,8 +171,11 @@ function buildBoard() {
   // much more light - a flat pale hexagon stuck on the ground is the thing
   // MOOD's overlays exist to avoid.
   const selectionGO = new GameObject('Selection');
-  selectionOverlay = selectionGO.addComponent(new HexOverlay(world.grid, [], {
+  selectionOverlay = selectionGO.addComponent(new HexOverlay(envelope, [], {
     color: 0xbfe8ff, opacity: 0.5, y: 0.045, additive: true,
+    // Off the board there is no surface, and `topY` says zero - which is the
+    // height an empty hex would be added at, so the highlight sits exactly where
+    // the tile would appear.
     heightAt: (q, r) => hexGround.topY(q, r),
   }));
 
@@ -152,16 +183,16 @@ function buildBoard() {
   // plane solve that makes a click on a hillside land on the tile you were
   // aiming at.
   const cursorGO = new GameObject('Cursor');
-  cursorGO.addComponent(new HexOverlay(world.grid, [], {
+  cursorGO.addComponent(new HexOverlay(envelope, [], {
     color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
   }));
   cursorGO.addComponent(new HexPicker({
-    grid: world.grid,
+    grid: envelope,
     ground: hexGround,
     onPick: (hex) => select(hex),
   }));
 
-  board = [groundGO, gridGO, kingGO, selectionGO, cursorGO];
+  board = [groundGO, gridGO, emptyGO, kingGO, selectionGO, cursorGO];
   for (const go of board) game.add(go);
 }
 
@@ -205,7 +236,10 @@ function loadLevel(next) {
 function rebuild(keep = selected) {
   clearBoard();
   buildBoard();
-  selected = keep && tileAt(level, keep.q, keep.r) ? { q: keep.q, r: keep.r } : null;
+  // Any hex inside the envelope, not only one with a tile on it: an empty hex is
+  // a place the board can be extended to, and losing the selection after every
+  // add would undo the point of being able to point at one.
+  selected = keep && envelope.inBounds(keep.q, keep.r) ? { q: keep.q, r: keep.r } : null;
   selectionOverlay.setHexes(selected ? [selected] : []);
   commit();
 }
@@ -311,9 +345,18 @@ const panel = new EditorPanel({
     return null;
   }),
 
-  onDelete: act(() => {
+  // One button, two jobs, because they are the same job seen from either side:
+  // the selected hex either has a tile on it or is somewhere one could go. This
+  // is what makes the lattice outside the board worth drawing - point at an empty
+  // hex and it can be filled, without counting directions from a tile.
+  onPlace: act(() => {
     if (!selected) return null;
     const { q, r } = selected;
+    if (!tileAt(level, q, r)) {
+      addTile(level, q, r);
+      rebuild(selected);
+      return null;
+    }
     if (level.king.q === q && level.king.r === r) {
       throw new Error('the King is standing there');
     }
@@ -464,6 +507,7 @@ window.hex = {
   get level()    { return level; },
   get world()    { return world; },
   get grid()     { return world.grid; },
+  get envelope() { return envelope; },
   get ground()   { return hexGround; },
   get selected() { return selected; },
   select,

@@ -31,7 +31,7 @@ const ROSE = [
 ];
 
 export class EditorPanel {
-  constructor({ root, onLevels, onAdd, onDelete, onRaise }) {
+  constructor({ root, onLevels, onAdd, onPlace, onRaise }) {
     this._root = root;
     root.innerHTML = `
       <div class="rows"></div>
@@ -46,7 +46,7 @@ export class EditorPanel {
           <button type="button" data-act="raise" title="Raise the selected tile">Raise</button>
         </div>
         <div class="bar">
-          <button type="button" data-act="delete" class="is-danger">Delete tile</button>
+          <button type="button" data-act="place">Delete tile</button>
         </div>
       </div>
       <div class="bar">
@@ -65,7 +65,7 @@ export class EditorPanel {
     const act = {
       raise:  () => onRaise(+1),
       lower:  () => onRaise(-1),
-      delete: () => onDelete(),
+      place:  () => onPlace(),
       levels: () => onLevels(),
     };
     for (const [name, fn] of Object.entries(act)) {
@@ -90,9 +90,12 @@ export class EditorPanel {
       .map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`)
       .join('');
 
-    // With nothing selected there is nothing to shape, so the whole block goes
-    // quiet rather than offering six buttons that would do nothing.
-    const live = !!tile;
+    // Two kinds of live. A hex can be pointed at whether or not there is a tile
+    // on it, and the two states want different things: an empty hex can be filled
+    // and its neighbours grown, and only a hex with a tile on it has a height to
+    // push around.
+    const live = !!hex;
+    const onBoard = !!tile;
     this._tools.classList.toggle('is-idle', !live);
     // A direction whose hex already has a tile on it is spent - saying so on the
     // button is what makes the rose readable as "where the board can still grow"
@@ -108,9 +111,16 @@ export class EditorPanel {
       b.disabled = !live || here;
       b.classList.toggle('is-there', live && here);
     }
-    this._tools.querySelector('[data-act=raise]').disabled = !live;
-    this._tools.querySelector('[data-act=lower]').disabled = !live;
-    this._tools.querySelector('[data-act=delete]').disabled = !live || !canDelete;
+    this._tools.querySelector('[data-act=raise]').disabled = !onBoard;
+    this._tools.querySelector('[data-act=lower]').disabled = !onBoard;
+
+    // The same button either way, because it is the same question: this hex
+    // either is board or could be. Two buttons with one of them always dead
+    // would be a permanent hole in the panel.
+    const place = this._tools.querySelector('[data-act=place]');
+    place.textContent = onBoard ? 'Delete tile' : 'Add tile';
+    place.classList.toggle('is-danger', onBoard);
+    place.disabled = !live || (onBoard && !canDelete);
   }
 
   // One line at the bottom: what the last thing that happened was, or why

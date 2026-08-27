@@ -3,9 +3,13 @@ import { Component } from '../gameobject.js';
 
 // Draws hex tile outlines on the ground (one merged LineSegments mesh).
 export class HexGridRenderer extends Component {
-  constructor(grid, { color = 0xffffff, opacity = 0.30, y = 0.02 } = {}) {
+  // `hexes`, when given, is drawn instead of the grid's own board. The grid is
+  // then only geometry - which is what lets the editor outline the hexes that are
+  // *not* board yet, on the same lattice as the ones that are.
+  constructor(grid, { color = 0xffffff, opacity = 0.30, y = 0.02, hexes = null } = {}) {
     super();
     this._grid    = grid;
+    this._hexes   = hexes;
     this._color   = color;
     this._opacity = opacity;
     this._y       = y;
@@ -13,7 +17,7 @@ export class HexGridRenderer extends Component {
 
   start() {
     const positions = [];
-    for (const { q, r } of this._grid.allHexes()) {
+    for (const { q, r } of this._hexes ?? this._grid.allHexes()) {
       const corners = this._grid.hexCorners(q, r);
       for (let i = 0; i < 6; i++) {
         const a = corners[i], b = corners[(i + 1) % 6];
