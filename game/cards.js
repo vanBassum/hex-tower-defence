@@ -23,6 +23,13 @@ import { UNIT_TYPES } from './units.js';
 // front. Numbers are for comparing two of something you already understand, and
 // they will get their own place on the card when there are enough of them to
 // compare - a row of figures, not prose pretending to be a description.
+// How many cards a run may open with, unless a level says otherwise. It is
+// stated here rather than wherever a hand is dealt because it is a rule about the
+// hand and not about any one way of filling it - the player choosing six at the
+// start of a run and the editor assembling six to test against are the same limit
+// seen twice.
+export const HAND_LIMIT = 6;
+
 export const CARD_TYPES = {
   // The one card that is never played. The King is on the board before the first
   // frame and no hand ever holds him unspent - but every other unit the player
@@ -55,6 +62,12 @@ export const CARD_TYPES = {
     role: 'Holds the ground the King takes.',
   },
 };
+
+// Which cards a hand can be *dealt*. The King is never among them: he is on the
+// board before the first frame and his card is bound to the man standing there.
+export function dealable() {
+  return Object.values(CARD_TYPES).filter(c => c.key !== 'king');
+}
 
 // The name shown on a card is the unit's own. A card called anything else would
 // be a second name for the same thing, and the player has to match what is in

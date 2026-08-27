@@ -46,9 +46,19 @@ const UNIT = (key) => {
   };
 };
 
+// The King, and the other side. Deliberately not the player's own units: what the
+// player brings is a hand they choose - six cards, played beside the King wherever
+// he happens to be standing - and a level that stood Footmen on the board would be
+// answering that for them. A level says where the player *starts* and what is
+// waiting for them; the army is theirs.
+//
+// The editor tests against a deck instead, which is the same arrangement a run
+// has. See the level's `deck` and the Level panel that fills it.
 export const PLACEABLES = [
   KING,
-  ...Object.keys(UNIT_TYPES).filter(k => k !== 'king').map(UNIT),
+  ...Object.keys(UNIT_TYPES)
+    .filter(k => k !== 'king' && UNIT_TYPES[k].hostile)
+    .map(UNIT),
 ];
 
 export const PLACEABLE_BY_ID = Object.fromEntries(PLACEABLES.map(p => [p.id, p]));

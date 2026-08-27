@@ -254,7 +254,10 @@
        taking clicks without any of that being written here. Its own surface is a
        shade lighter than the panels and it carries a shadow, because it is the
        one thing on screen that is *over* the world rather than beside it. */
-    #levels {
+    /* The two modals share a frame - both are things done *between* pieces of
+       work, and a second visual language for the second one would be a second
+       thing to learn. */
+    #levels, #settings {
       margin: auto;
       width: min(880px, calc(100vw - 32px));
       max-height: calc(100vh - 64px);
@@ -267,23 +270,23 @@
       box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
       overflow: hidden;
     }
-    #levels::backdrop { background: rgba(4, 8, 16, 0.62); }
-    #levels .sheet { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
+    #levels::backdrop, #settings::backdrop { background: rgba(4, 8, 16, 0.62); }
+    #levels .sheet, #settings .sheet { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
 
-    #levels header {
+    #levels header, #settings header {
       display: flex;
       align-items: baseline;
       gap: 12px;
       padding: 15px 18px 13px;
       border-bottom: 1px solid rgba(143, 216, 232, 0.14);
     }
-    #levels h2 {
+    #levels h2, #settings h2 {
       font-size: 14px;
       font-weight: 600;
       letter-spacing: 0.02em;
       color: #f0dcc0;
     }
-    #levels .hint { color: #6d8195; }
+    #levels .hint, #settings .hint { color: #6d8195; }
 
     /* Cards, and they wrap: a library of three is three across and a library of
        twenty scrolls, without either case needing a different layout. */
@@ -371,13 +374,13 @@
     #levels .card .acts button:disabled { color: #55697c; cursor: default; }
     #levels .card .acts [data-act=delete] { color: #d99184; }
 
-    #levels footer {
+    #levels footer, #settings footer {
       display: flex;
       gap: 8px;
       padding: 12px 18px 14px;
       border-top: 1px solid rgba(143, 216, 232, 0.14);
     }
-    #levels footer button {
+    #levels footer button, #settings footer button {
       font: inherit;
       color: #dcecf6;
       padding: 7px 12px;
@@ -387,11 +390,11 @@
       cursor: pointer;
       transition: background 160ms ease;
     }
-    #levels footer button:hover { background: rgba(143, 216, 232, 0.20); }
+    #levels footer button:hover, #settings footer button:hover { background: rgba(143, 216, 232, 0.20); }
     #levels footer [data-act=new] { color: #f0dcc0; border-color: rgba(224, 160, 92, 0.35); }
     /* Close is pushed to the far end and given no fill: it is the way out, not
        one of the things to do in here. */
-    #levels footer .is-plain {
+    #levels footer .is-plain, #settings footer .is-plain {
       margin-left: auto;
       background: none;
       border-color: transparent;
@@ -405,6 +408,94 @@
     }
     #levels .status:empty { display: none; }
     #levels .status.is-error { color: #e08a7a; }
+
+    /* Narrower than the library: a name, a number and a dozen chips do not need
+       the width four cards do. */
+    #settings { width: min(420px, calc(100vw - 32px)); }
+    #settings .body { padding: 14px 18px 4px; }
+    #settings .field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 5px 0;
+    }
+    #settings .k { color: #7f93a4; }
+    #settings input[type=text] {
+      flex: 1;
+      font: inherit;
+      color: #f0dcc0;
+      text-align: right;
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: rgba(8, 12, 20, 0.55);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+    }
+    #settings input[type=text]:focus { outline: none; border-color: rgba(143, 216, 232, 0.45); }
+    #settings .stepper { display: flex; align-items: center; gap: 3px; }
+    #settings .stepper b {
+      min-width: 18px;
+      text-align: center;
+      color: #dcecf6;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    #settings .stepper button {
+      width: 22px; height: 22px;
+      padding: 0;
+      font: inherit;
+      color: #9fd8ee;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+      cursor: pointer;
+    }
+    #settings .stepper button:hover { background: rgba(143, 216, 232, 0.22); }
+
+    /* The deck, with a rule above it: the two fields are what the level *is* and
+       this is what it is being tried against. */
+    #settings .deck {
+      margin-top: 11px;
+      padding-top: 11px;
+      border-top: 1px solid rgba(143, 216, 232, 0.14);
+    }
+    #settings .dhead {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding-bottom: 9px;
+    }
+    #settings .count { color: #dcecf6; font-variant-numeric: tabular-nums; }
+    /* Full is a statement rather than a warning - six of six is the deck being
+       finished, not a problem. */
+    #settings .count.is-full { color: #e0a05c; }
+    #settings .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    #settings .chips .empty { color: #6d8195; padding: 2px 0 4px; }
+    #settings .chips button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font: inherit;
+      color: #9fd8ee;
+      padding: 5px 9px;
+      border-radius: 5px;
+      background: rgba(143, 216, 232, 0.08);
+      border: 1px solid rgba(143, 216, 232, 0.16);
+      cursor: pointer;
+      transition: background 140ms ease;
+    }
+    #settings .chips button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.20); }
+    #settings .chips button:disabled { opacity: 0.35; cursor: default; }
+    /* A card in the deck is warm, because it is one of the six that are live. The
+       cross is the only affordance it needs. */
+    #settings .chips .held {
+      color: #f0dcc0;
+      background: rgba(224, 160, 92, 0.14);
+      border-color: rgba(224, 160, 92, 0.4);
+    }
+    #settings .chips .held:hover { background: rgba(224, 160, 92, 0.26); }
+    #settings .chips .held i { font-style: normal; color: #b98f5f; }
+    #settings .dhint { color: #6d8195; line-height: 1.4; padding: 9px 0; }
 
     #controls {
       left: 16px; bottom: 16px;
@@ -441,6 +532,7 @@
   <div id="hand" class="is-empty"></div>
   <div id="panel"></div>
   <dialog id="levels"></dialog>
+  <dialog id="settings"></dialog>
   <div id="controls">
     <kbd>Left-drag</kbd><span>Use the tool</span>
     <kbd>Wheel</kbd><span>Sculpt or zoom</span>

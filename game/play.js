@@ -47,6 +47,8 @@ import { DEBUG, installDebug } from './debug.js';
 //   map       a built map, out of buildMap
 //   rig       the camera to look through
 //   fog       false to play with the whole board visible - see the note below
+//   deck      the cards the run opens with, as card keys - a list rather than a
+//             table of counts, because two Footmen cards are two bodies
 //   hand      the element the card bar draws into
 //   debug     whether to install `window.hex` and the developer keys
 //   focus     whether to point the camera at the King on the way in
@@ -65,6 +67,7 @@ export function startPlay({
   map,
   rig,
   fog = true,
+  deck = DEBUG.startingHand,
   hand = null,
   debug = true,
   focus = true,
@@ -370,10 +373,11 @@ export function startPlay({
   // unit that can.
   deployment.addPlacedCard('king', king);
 
-  // And whatever else the run is dealt, which is currently nothing - every card
-  // the player gets is one they find. When a run can be lost this is where a
-  // collection is spent instead, and it is still this call.
-  for (const card of DEBUG.startingHand) deployment.addCard(card);
+  // And whatever else the run opens with. On the game page that is nothing -
+  // every card the player gets is one they find - and from the editor it is the
+  // deck the level is being tested against. When a run can be lost this is where
+  // a collection is spent instead, and it is still this call.
+  for (const card of deck) deployment.addCard(card);
 
 
   // The other side. It goes on after the force because it watches it, and its

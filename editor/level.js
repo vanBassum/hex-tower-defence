@@ -1,6 +1,7 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
 import { UNIT_TYPES } from '../game/units.js';
 import { PROP_TYPES } from '../game/props.js';
+import { CARD_TYPES, HAND_LIMIT } from '../game/cards.js';
 
 // What a level *is*, as data, and how that data becomes the pieces the scene
 // needs.
@@ -24,7 +25,7 @@ import { PROP_TYPES } from '../game/props.js';
 // in the middle of building a scene; the version is here so the day the shape
 // changes, a file written before it can say so.
 export const LEVEL_FORMAT = 'hex-tower-defence.level';
-export const LEVEL_VERSION = 4;
+export const LEVEL_VERSION = 5;
 
 // A level's identity, and the reason it is not the name: a name is a label a
 // person changes their mind about, and everything that has to keep pointing at
@@ -69,6 +70,15 @@ export function defaultLevel(name = 'Untitled') {
     // so growing the patch later is a tile the editor adds rather than a number
     // here that has to be found first.
     radius: 4,
+    // How many cards a run on this level may open with. A level setting, because
+    // it is the size of the problem the board is posing.
+    deckLimit: HAND_LIMIT,
+    // And the army it is being tested against, which is testing metadata rather
+    // than a rule: the game is handed it, the player's real hand is their own
+    // choice. `null` means nobody has chosen yet, which is different from an
+    // empty deck somebody chose on purpose - Play refuses the first and allows
+    // the second.
+    deck: null,
     king: { q: 0, r: 0 },
     units: [],
     props: [],
@@ -112,6 +122,8 @@ export function stringifyLevel(level) {
     `  "name": ${JSON.stringify(level.name)},`,
     `  "hexSize": ${level.hexSize},`,
     `  "radius": ${level.radius},`,
+    `  "deckLimit": ${level.deckLimit ?? HAND_LIMIT},`,
+    `  "deck": ${level.deck ? JSON.stringify(level.deck) : 'null'},`,
     `  "king": { "q": ${level.king.q}, "r": ${level.king.r} },`,
     ...block('units', units, ','),
     ...block('props', props, ','),
@@ -164,7 +176,7 @@ export function parseLevel(text) {
   // the version number doing harm rather than work. Anything newer was written by
   // an editor that knows something this one does not, so that is refused rather
   // than guessed at.
-  if (![1, 2, 3, LEVEL_VERSION].includes(raw.version)) {
+  if (![1, 2, 3, 4, LEVEL_VERSION].includes(raw.version)) {
     throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
                     `(this editor reads version ${LEVEL_VERSION})`);
   }
@@ -176,6 +188,24 @@ export function parseLevel(text) {
   if (typeof hexSize !== 'number' || !(hexSize > 0)) throw new Error('"hexSize" must be a positive number');
   const radius = raw.radius;
   if (!Number.isInteger(radius) || radius < 0) throw new Error('"radius" must be a whole number ≥ 0');
+
+  const deckLimit = raw.deckLimit ?? HAND_LIMIT;
+  if (!Number.isInteger(deckLimit) || deckLimit < 0 || deckLimit > 12) {
+    throw new Error('"deckLimit" must be a whole number between 0 and 12');
+  }
+  let deck = null;
+  if (raw.deck !== undefined && raw.deck !== null) {
+    if (!Array.isArray(raw.deck)) throw new Error('"deck" must be an array or null');
+    for (const key of raw.deck) {
+      if (!CARD_TYPES[key] || key === 'king') {
+        throw new Error(`the deck holds ${JSON.stringify(key)}, which is not a card that can be dealt`);
+      }
+    }
+    if (raw.deck.length > deckLimit) {
+      throw new Error(`the deck holds ${raw.deck.length} cards and the limit is ${deckLimit}`);
+    }
+    deck = [...raw.deck];
+  }
 
   if (!Array.isArray(raw.tiles) || !raw.tiles.length) throw new Error('"tiles" must be a non-empty array');
   const seen = new Set();
@@ -273,7 +303,7 @@ export function parseLevel(text) {
   return {
     format: LEVEL_FORMAT,
     version: LEVEL_VERSION,
-    id, name, hexSize, radius,
+    id, name, hexSize, radius, deckLimit, deck,
     king: { q: king.q, r: king.r },
     units, props, tiles,
   };
@@ -361,6 +391,44 @@ export function raiseTile(level, q, r, by) {
   const [lo, hi] = ELEVATION_RANGE;
   tile.level = Math.min(hi, Math.max(lo, (tile.level ?? 0) + by));
   return tile.level;
+}
+
+// ── The deck it is tested against ───────────────────────────────────────────
+// A list of card keys rather than a table of counts, because two Footmen cards
+// are two bodies of Footmen - see the note at the top of cards.js. Duplicates are
+// the point.
+
+export function deckLimit(level) {
+  return level.deckLimit ?? HAND_LIMIT;
+}
+
+// Adds one, up to the limit. Returns whether it fit - a deck that is full has to
+// say so rather than quietly staying the same size.
+export function addCard(level, key) {
+  level.deck ??= [];
+  if (level.deck.length >= deckLimit(level)) return false;
+  level.deck.push(key);
+  return true;
+}
+
+// Removes one of that kind - the last, so clicking a chip takes the chip you
+// clicked rather than reshuffling the row.
+export function removeCard(level, key) {
+  const i = (level.deck ?? []).lastIndexOf(key);
+  if (i < 0) return false;
+  level.deck.splice(i, 1);
+  return true;
+}
+
+// The limit, and the deck trimmed to fit it. Lowering the limit under a deck that
+// is already bigger has to do something, and dropping the newest cards is the one
+// answer nobody has to think about.
+export function setDeckLimit(level, limit) {
+  level.deckLimit = Math.max(0, Math.min(12, limit));
+  if (level.deck && level.deck.length > level.deckLimit) {
+    level.deck.length = level.deckLimit;
+  }
+  return level.deckLimit;
 }
 
 // ── What stands on it ───────────────────────────────────────────────────────

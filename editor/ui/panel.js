@@ -12,7 +12,7 @@ import { esc } from './dom.js';
 // The readout follows the *cursor* rather than a selection, for the same reason:
 // while painting, the interesting hex is the one under the brush.
 export class EditorPanel {
-  constructor({ root, onLevels, onPlay, onFog }) {
+  constructor({ root, onLevels, onSettings, onPlay, onFog }) {
     this._root = root;
     root.innerHTML = `
       <div class="rows"></div>
@@ -24,6 +24,7 @@ export class EditorPanel {
         <span>Fog of war</span>
       </label>
       <div class="bar">
+        <button type="button" data-act="settings">Level</button>
         <button type="button" data-act="levels">Levels</button>
       </div>
       <div class="status"></div>
@@ -31,6 +32,7 @@ export class EditorPanel {
     this._rows   = root.querySelector('.rows');
     this._status = root.querySelector('.status');
     root.querySelector('[data-act=levels]').onclick = () => onLevels();
+    root.querySelector('[data-act=settings]').onclick = () => onSettings();
     root.querySelector('[data-act=play]').onclick = () => onPlay();
     this._fog = root.querySelector('[data-act=fog]');
     this._fog.onchange = () => onFog(this._fog.checked);
@@ -51,13 +53,19 @@ export class EditorPanel {
     this._play.querySelector('b').textContent = playing ? 'Stop' : 'Play';
     this._play.querySelector('kbd').textContent = playing ? 'Esc' : 'P';
     this._levels.disabled = playing;
+    this._root.querySelector('[data-act=settings]').disabled = playing;
     this._root.classList.toggle('is-playing', playing);
     const rows = playing
       ? [['Level', esc(level.name)], ['Playing', 'a copy - edits are safe']]
       : [
           ['Level', esc(level.name)],
           ['Tiles', String(level.tiles.length)],
-          ['On it', `${level.units.length} units · ${(level.props ?? []).length} props`],
+          ['On it', `${level.units.length} ${level.units.length === 1 ? 'enemy' : 'enemies'}` +
+                    ` · ${(level.props ?? []).length} props`],
+          // What Play will deal. It is in the readout rather than only in the
+          // modal because it is the one thing about a playtest you want to know
+          // without opening anything.
+          ['Deck', level.deck ? `${level.deck.length} / ${level.deckLimit ?? 6}` : 'not chosen'],
           ['Hex', hex ? `${hex.q}, ${hex.r}` : '—'],
           ['Height', tile ? String(tile.level ?? 0) : hex ? 'no ground' : '—'],
         ];

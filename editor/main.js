@@ -11,7 +11,10 @@ import { HexGrid } from '../engine/hex/hex_grid.js';
 import { MOOD, WIND } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
 import { PropLayer } from '../game/components/prop_layer.js';
-import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
+import {
+  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt,
+  addCard, removeCard, setDeckLimit, deckLimit,
+} from './level.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
 import { startPlay } from '../game/play.js';
@@ -21,6 +24,7 @@ import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
 import { ToolBar } from './ui/toolbar.js';
 import { LevelLibrary } from './ui/levels.js';
+import { LevelSettings } from './ui/settings.js';
 
 // The level editor: the game's world with the game taken out of it.
 //
@@ -300,7 +304,7 @@ function tool() {
 // own settings. Rebuilt per call because `level` and `envelope` are both replaced
 // out from under it.
 function ctx() {
-  return { level, envelope, s: settings[activeTool] };
+  return { level, envelope, s: toolSettings[activeTool] };
 }
 
 function brushHexes() {
@@ -382,7 +386,7 @@ function commit() {
 // ── The tools, the panel and the library ─────────────────────────────────────
 
 let activeTool = TOOLS[0].id;
-const settings = defaultSettings();
+const toolSettings = defaultSettings();
 
 function levelList() {
   try { return storage.list(); } catch { return []; }
@@ -397,10 +401,11 @@ function refreshPanel() {
     playing: !!session,
   });
   document.getElementById('tools').classList.toggle('is-hidden', !!session);
-  toolbar.update(tool(), settings[activeTool]);
+  toolbar.update(tool(), toolSettings[activeTool]);
   // The library is repainted out of storage rather than told what changed, so a
   // rename, a duplicate and an import all land the same way.
   if (library.isOpen) library.render(levelList(), level.id);
+  if (settings.isOpen) settings.render(level);
 }
 
 // Every library action is the same three lines - do the thing, say what
@@ -453,10 +458,10 @@ const toolbar = new ToolBar({
     if (change.value !== undefined) {
       const known = (spec.groups ?? []).some(g => g.options.some(o => o.id === change.value));
       if (!known) return;
-      settings[activeTool][key] = change.value;
+      toolSettings[activeTool][key] = change.value;
     } else {
-      const at = settings[activeTool][key] ?? spec.min;
-      settings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + change.by));
+      const at = toolSettings[activeTool][key] ?? spec.min;
+      toolSettings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + change.by));
     }
     refreshBrush();
     refreshPanel();
@@ -466,6 +471,7 @@ const toolbar = new ToolBar({
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
   onLevels: () => { if (!session) library.open(levelList(), level.id); },
+  onSettings: () => { if (!session) settings.open(level); },
   onPlay: act(() => { start(); return null; }),
   // Whether the board is hidden is decided when a session starts, so flipping it
   // mid-fight starts one again rather than doing nothing until the next Play -
@@ -476,6 +482,24 @@ const panel = new EditorPanel({
     else refreshPanel();
   },
 });
+
+// The level's own settings and the deck it is tested against. Every one of these
+// is an edit like any other - it changes the level and ends in `commit()` - so
+// there is no Save here either, and the readout in the panel follows along.
+const settings = new LevelSettings({
+  root: document.getElementById('settings'),
+  onName: (name) => { level.name = name; commit(); refreshSettings(); },
+  onLimit: (by) => { setDeckLimit(level, deckLimit(level) + by); commit(); refreshSettings(); },
+  onAdd: (key) => { if (addCard(level, key)) { commit(); refreshSettings(); } },
+  onRemove: (key) => { if (removeCard(level, key)) { commit(); refreshSettings(); } },
+  // Empty is a choice, and a different one from never having chosen: it means the
+  // King goes in alone, and Play allows it.
+  onClear: () => { level.deck = []; commit(); refreshSettings(); },
+});
+
+function refreshSettings() {
+  if (settings.isOpen) settings.render(level);
+}
 
 // Off to the game with whatever is on screen. The level is already stored - every
 // edit ends in `commit()` - so this stores it once more only to be certain the
@@ -502,6 +526,14 @@ let session = null;
 
 function start() {
   if (session) return stop();
+  // An army nobody has chosen is not an empty army. Rather than dealing something
+  // it made up - or nothing, and letting the King walk into a fight alone by
+  // accident - Play opens the panel where the choice is made and says so.
+  if (!Array.isArray(level.deck)) {
+    settings.open(level);
+    say('Choose an army to test this level with.');
+    return;
+  }
   commit();
   clearTerrain();
   editorMouse(false);
@@ -533,6 +565,9 @@ function begin() {
   session = startPlay({
     game, map: buildMap(parseLevel(stringifyLevel(level))), rig,
     fog: fogWanted(),
+    // What the run opens with. The level's deck, played through the same hand the
+    // game deals - see the note in play.js.
+    deck: level.deck ?? [],
     hand: document.getElementById('hand'),
     // `window.hex` is the editor's here, and the developer keys are the game
     // page's business - R and V would fight the tools for the keyboard.
@@ -669,7 +704,8 @@ window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (session && e.code === 'Escape') { stop(); return; }
   if (e.code !== 'KeyP') return;
-  if (library.isOpen || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
+  if (library.isOpen || settings.isOpen) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
   start();
 });
 
@@ -687,7 +723,7 @@ window.hex = {
   get ground()   { return hexGround; },
   get hovered()  { return hovered; },
   get tool()     { return activeTool; },
-  settings,
+  settings: toolSettings,
   loadLevel,
   commit,
   play: start,
@@ -695,6 +731,8 @@ window.hex = {
   get session() { return session; },
   storage,
   panel, toolbar, library,
+  // The level panel, under its own name: `settings` above is the tools' own.
+  levelSettings: settings,
   // The tools, driven the way the mouse drives them, so a shape can be sketched
   // from the console or the check script without a drag: point at a hex and use
   // whatever is active.
