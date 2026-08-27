@@ -156,14 +156,25 @@
    still has to be legible - what it is telling them is that the thing they found
    is not on the board any more - so it is desaturated rather than faded away. */
 .card.is-lost {
-  opacity: 0.5;
-  filter: grayscale(0.6);
-  border-color: rgba(217, 145, 132, 0.3);
+  /* Reddish rather than grey. Draining the colour out was the obvious way to say
+     "gone" and it said something slightly wrong: a grey card reads as disabled -
+     as a thing the interface has switched off - where these men were killed. So
+     the card goes the colour of the loss instead, which is also the one colour on
+     this board that already means the enemy, and only enough grey is left to take
+     the blue out of the silhouette.
+
+     It is less faded than it was, for the same reason a card on the board is:
+     colour is doing the work now, so contrast does not have to. */
+  opacity: 0.62;
+  filter: grayscale(0.25);
+  background: linear-gradient(180deg, rgba(44, 23, 23, 0.88), rgba(26, 16, 20, 0.92));
+  border-color: rgba(217, 145, 132, 0.38);
 }
-.card.is-lost .card-art { color: #8a7f7c; }
-.card.is-lost .card-name { color: #bdaca7; }
-.card.is-lost .card-state { color: #d99184; }
-.card.is-lost .card-fill { background: rgba(217, 145, 132, 0.18); }
+.card.is-lost .card-art { color: #a4726a; }
+.card.is-lost .card-name { color: #c9a49b; }
+.card.is-lost .card-role { color: #8b6a66; }
+.card.is-lost .card-state { color: #e09a8c; }
+.card.is-lost .card-fill { background: rgba(217, 145, 132, 0.2); }
 /* The line. It is the one signal that needs no colour vision and no reading, and
    it is drawn over the whole card rather than through the name because what is
    struck out is the card, not its title. */
@@ -174,7 +185,7 @@
   right: 7%;
   top: 50%;
   height: 1px;
-  background: rgba(217, 145, 132, 0.5);
+  background: rgba(224, 154, 140, 0.6);
   transform: rotate(-7deg);
   pointer-events: none;
 }
