@@ -105,13 +105,16 @@ export const MOOD = {
     // have watched it for a few seconds. If it reads as fog on sight, amount is
     // too high; if it reads as a texture sliding past, scale is too small.
     air: {
-      // Deliberately on the strong side of right, so it can be judged and dialled
-      // back. Small numbers here still go a long way: this lands on a near-black
-      // colour in linear light and then through the tone curve, where a fortieth
-      // is already a shape you can point at on a still frame.
-      amount: 0.08,
-      // Blue-weighted rather than grey: the night gets deeper, never smokier.
-      tint:   0x4d80ff,
+      // A base layer, not weather you look at. At 0.08 the region read as blue fog
+      // with the island in it; this is the amount that leaves it reading as
+      // darkness first, with the variation arriving a moment later.
+      amount: 0.03,
+      // Close to the night's own hue rather than a blue laid over it. The old
+      // 0x4d80ff put five times as much into blue as into red, so every patch
+      // announced itself as *blue*; this is roughly the ratio `color` above
+      // already has, nudged cool - so what the air does is make the dark less
+      // even rather than make it a different colour.
+      tint:   0x8fb8e8,
       scale:  6.0,       // world units across one shape - eight or nine over the board
       speed:  0.17,      // world units a second, so a hex takes most of a minute
       // Which part of the noise becomes air. Narrow, and only the extreme peaks
