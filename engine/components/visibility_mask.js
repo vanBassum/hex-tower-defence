@@ -40,6 +40,8 @@ export class VisibilityMask extends Component {
     fade  = 0.18,
     // The weather in the dark - see `maskAirAt`. Off unless a level asks for it.
     air   = null,          // { amount, tint, scale, speed, hold }
+    // And the banks standing in it - a second field entirely. See maskCloudAt.
+    cloud = null,          // { amount, tint, scale, speed, band, warp, hold }
     // Which way it drifts, and how hard. The level's one wind, handed in rather
     // than picked here: three effects with private weather look like three
     // effects.
@@ -66,6 +68,7 @@ export class VisibilityMask extends Component {
       uMaskKeep:     { value: keep },
       uMaskStrength: { value: 1 },
       ...airUniforms(air, drift),
+      ...cloudUniforms(cloud, drift),
     };
 
     this._refresh();
@@ -75,10 +78,11 @@ export class VisibilityMask extends Component {
   // Debug: stop the world hiding itself, without touching what has been explored.
   setStrength(v) { this._u.uMaskStrength.value = v; }
 
-  // Where the air actually lands, and on what. 1 paints the raw noise in cyan at
-  // full strength with the band and the boundary hold both bypassed; 2 paints
-  // every fragment whose own hex is night flat magenta, which is a map of what
-  // geometry exists under the dark at all. Both go through the rest of the frame
+  // Where the air actually lands, and on what. 1 paints the raw haze noise in
+  // cyan at full strength with its band and hold bypassed; 2 paints every
+  // fragment whose own hex is night flat magenta, which is a map of what geometry
+  // is under the dark at all; 3 paints the cloud field, banded and held back
+  // exactly as it really is, so its coverage can be read off. All go through
   // untouched - tone curve, distance haze - so what reaches the screen is what
   // the real term would have had done to it.
   setAirDebug(v) { this._u.uMaskAirDebug.value = v; }
@@ -205,6 +209,29 @@ function airUniforms(air, drift) {
   };
 }
 
+// The banks. Everything here is their own - scale, drift, seeds - because two
+// layers sharing any of it move together, and two things moving together are one
+// thing. The direction is off the same wind by a fixed angle rather than picked
+// freely: a bank crossing the board *against* the haze it sits in would be two
+// weathers, where a bank crossing it at a slant is one sky with height in it.
+function cloudUniforms(cloud, drift) {
+  const c = { amount: 0, tint: 0x93aecc, scale: 13, speed: 0.06, band: [0.64, 0.92],
+              warp: 0.55, hold: 2.5, ...(cloud || {}) };
+  const angle = (drift?.angle ?? 0) + 1.1;
+  const flow  = drift?.flow ?? 1;
+  return {
+    uMaskCloudAmount: { value: c.amount },
+    uMaskCloudTint:   { value: new THREE.Color(c.tint) },
+    uMaskCloudScale:  { value: c.scale },
+    uMaskCloudSpeed:  { value: c.speed * flow },
+    uMaskCloudBand:   { value: new THREE.Vector2(c.band[0], c.band[1]) },
+    uMaskCloudWarp:   { value: c.warp },
+    // Never zero: it divides a smoothstep.
+    uMaskCloudHold:   { value: Math.max(c.hold, 1e-4) },
+    uMaskCloudDrift:  { value: new THREE.Vector2(Math.cos(angle), Math.sin(angle)) },
+  };
+}
+
 // World position, taken the same way three takes it, instancing included - the
 // hex is worked out from it, so every reader has to agree where it is.
 const MASK_VERTEX = /* glsl */`
@@ -233,6 +260,14 @@ uniform vec3  uMaskAirTint;
 uniform float uMaskAirScale;
 uniform vec2  uMaskAirBand;
 uniform float uMaskAirDebug;
+uniform float uMaskCloudAmount;
+uniform vec3  uMaskCloudTint;
+uniform float uMaskCloudScale;
+uniform float uMaskCloudSpeed;
+uniform vec2  uMaskCloudBand;
+uniform float uMaskCloudWarp;
+uniform float uMaskCloudHold;
+uniform vec2  uMaskCloudDrift;
 uniform float uMaskAirSpeed;
 uniform float uMaskAirHold;
 uniform vec2  uMaskAirDriftA;
@@ -245,13 +280,15 @@ varying vec3  vMaskWorld;
 // land keeps going, not to read what is standing on it - monochrome and
 // compressive is what makes that true of every material at once, where keeping a
 // flat fraction of the colour left bright things showing as bright pinpricks.
-vec3 maskNight( vec3 rgb, float air ) {
+vec3 maskNight( vec3 rgb, float air, float cloud ) {
+  if ( uMaskAirDebug > 2.5 ) return vec3( cloud, cloud * 0.15, cloud );
   if ( uMaskAirDebug > 1.5 ) return vec3( 1.0, 0.0, 1.0 );
   if ( uMaskAirDebug > 0.5 ) return vec3( 0.0, air, air );
   float lum = dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
   return uMaskColor
     + uMaskKeep * ( 1.0 - exp( -10.0 * lum ) )
-    + uMaskAirAmount * air * uMaskAirTint;
+    + uMaskAirAmount * air * uMaskAirTint
+    + uMaskCloudAmount * cloud * uMaskCloudTint;
 }
 
 // No sine in here, and the lattice is offset off the integers, because both of
@@ -332,6 +369,28 @@ vec2 maskCenter( vec2 ax ) {
   return uMaskHexSize * vec2( 1.5 * ax.x, 1.73205081 * ( ax.y + 0.5 * ax.x ) );
 }
 
+// The banks standing in that air, and a field of their own end to end. Three
+// things make them banks rather than more haze:
+//
+//   - a *threshold* rather than a level, so most of the dark has no cloud in it
+//     at all and what there is has an edge - soft, but findable;
+//   - a **domain warp**, which is the whole reason they are not blobs. The sample
+//     point is pushed about by a slower field before the noise is read, so the
+//     shapes come off the lattice they are built on. Without it a sparse
+//     threshold cuts evenly spaced lumps and the eye finds the grid in a second;
+//   - a second octave at twice the frequency, which is what makes an edge ragged
+//     instead of a smooth contour line.
+float maskCloudAt( vec2 xz ) {
+  vec2 p = ( xz + uMaskCloudDrift * ( uMaskTime * uMaskCloudSpeed ) ) / uMaskCloudScale;
+  vec2 w = vec2( maskNoise( p * 0.5 + vec2( 5.2, 1.3 ), vec2( 63.4, 12.8 ) ),
+                 maskNoise( p * 0.5 + vec2( 9.1, 7.7 ), vec2( 24.6, 88.1 ) ) ) - 0.5;
+  p += w * uMaskCloudWarp;
+  float n = 0.65 * maskNoise( p,       vec2( 71.9, 19.4 ) )
+          + 0.35 * maskNoise( p * 2.1, vec2( 44.2, 66.5 ) );
+  n = clamp( 0.5 + ( n - 0.5 ) * 1.7, 0.0, 1.0 );
+  return smoothstep( uMaskCloudBand.x, uMaskCloudBand.y, n );
+}
+
 // How far inside the edge shared with this neighbour the fragment sits - but only
 // when the neighbour is on the far side of the boundary being measured - 'want' is
 // what that side is worth - and out of reach otherwise. A neighbour on our own
@@ -395,20 +454,27 @@ ${cull ? `
   if ( maskHide > 0.5 ) discard;
 ` : ''}
   float maskAir = 0.0;
+  float maskCloud = 0.0;
   if ( maskHide > 0.5 ) {
     // Weather, held out of the boundary. The air builds up over 'uMaskAirHold'
     // as the night gets further from the light, so the edge of the lit region is
     // plain dark on both sides of itself - the fade on one side and nothing on
     // the other - and no drifting shape can put a lip on it.
+    float maskToLight = maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0 );
     float maskRaw = maskAirAt( vMaskWorld.xz );
     maskAir = smoothstep( uMaskAirBand.x, uMaskAirBand.y, maskRaw )
-      * smoothstep( 0.0, uMaskAirHold, maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0 ) );
-    if ( uMaskAirDebug > 0.5 ) maskAir = maskRaw;
+      * smoothstep( 0.0, uMaskAirHold, maskToLight );
+    // The banks are held off the reveal edge harder than the haze is: a dense
+    // shape landing on the boundary is what would read as a wall standing around
+    // the ground the player can see.
+    maskCloud = maskCloudAt( vMaskWorld.xz )
+      * smoothstep( 0.0, uMaskCloudHold, maskToLight );
+    if ( uMaskAirDebug > 0.5 && uMaskAirDebug < 1.5 ) maskAir = maskRaw;
   } else {
     maskHide = 1.0 - smoothstep( 0.0, uMaskFade, maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0 ) );
   }
   maskHide *= uMaskStrength;
-  gl_FragColor.rgb = mix( gl_FragColor.rgb, maskNight( gl_FragColor.rgb, maskAir ), maskHide );
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, maskNight( gl_FragColor.rgb, maskAir, maskCloud ), maskHide );
   // Anything that draws by *adding* light - a firefly, a lantern's halo, a grid
   // seam - has to go out rather than go dark, because a dark colour added to the
   // night is still a mark on it. Opaque materials do not blend, so this costs

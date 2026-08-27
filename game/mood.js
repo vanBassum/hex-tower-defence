@@ -124,6 +124,27 @@ export const MOOD = {
       band:   [0.30, 0.85],
       hold:   1.4,       // how far into the dark the air stays out of the boundary
     },
+
+    // And the banks standing in that air. Sparse on purpose: most of the dark has
+    // none, and what there is should read as one shape passing rather than as
+    // cover laid over the board. Everything here is its own - a bigger scale, a
+    // slower drift at a slant to the haze's - because two layers that share any
+    // of it move together, and two things moving together are one thing.
+    //
+    // On the strong side, for looking at. band is the sparseness: its low end is
+    // how much of the field becomes cloud at all, and lifting it is how you get
+    // fewer and rarer banks rather than thinner ones.
+    cloud: {
+      amount: 0.055,
+      // Navy-grey, lighter than the haze's tint and nowhere near white: a bank is
+      // a place the dark is *thicker*, not a thing painted over it.
+      tint:   0x9aacc0,
+      scale:  13.0,      // world units across a bank - three or four over the board
+      speed:  0.06,      // a third of the haze's, and across it rather than with it
+      band:   [0.60, 0.90],
+      warp:   0.55,      // how far the shapes are pushed off the lattice
+      hold:   2.5,       // held off the reveal edge harder than the haze is
+    },
   },
 
   // A unit has to survive being the smallest thing in a dark frame. The cloak is
