@@ -42,6 +42,9 @@ export class VisibilityMask extends Component {
     air   = null,          // { amount, tint, scale, speed, hold }
     // And the banks standing in it - a second field entirely. See maskCloudAt.
     cloud = null,          // { amount, tint, scale, speed, band, warp, hold }
+    // How the dark leaves a hex that has just been found. Presentation only: the
+    // rule has already changed by the time any of this is drawn.
+    reveal = null,         // { time, soft, jitter, grain }
     // Which way it drifts, and how hard. The level's one wind, handed in rather
     // than picked here: three effects with private weather look like three
     // effects.
@@ -69,9 +72,14 @@ export class VisibilityMask extends Component {
       uMaskStrength: { value: 1 },
       ...airUniforms(air, drift),
       ...cloudUniforms(cloud, drift),
+      ...revealUniforms(reveal),
     };
 
-    this._refresh();
+    // Seconds for the dark to cross one hex, as a rate. Instant if a level asks
+    // for nothing: a reveal of zero has to still be a reveal, not a divide by it.
+    this._revealRate = 1 / Math.max(reveal?.time ?? 0.65, 1e-3);
+
+    this._refresh(true);
     this._unsub = this._vis.onChange(() => this._refresh());
   }
 
@@ -87,9 +95,13 @@ export class VisibilityMask extends Component {
   // the real term would have had done to it.
   setAirDebug(v) { this._u.uMaskAirDebug.value = v; }
 
-  // Unscaled, like the swell and the sway: the debug speed slider is for watching
-  // a fight at a tenth, not for changing the weather while you do it.
-  update(_dt, rawDt) { this._u.uMaskTime.value += rawDt; }
+  // The weather runs on unscaled time, like the swell and the sway - the debug
+  // speed slider is for watching a fight at a tenth, not for changing the
+  // weather while you do it. The reveal runs on scaled time; see `_advance`.
+  update(dt, rawDt) {
+    this._u.uMaskTime.value += rawDt;
+    if (this._settling) this._advance(dt);
+  }
 
   // ── The table ─────────────────────────────────────────────────────────────
 
@@ -108,7 +120,18 @@ export class VisibilityMask extends Component {
     // One texel per hex, nearest-sampled, and every texel outside the level's
     // own hexes left at "visible" - a hole in a shaped board is open sea, not
     // undiscovered ground.
+    //
+    // Two channels, and keeping them apart is the whole of how the reveal stays
+    // honest. **R is the rule**: watched or not, binary, changed the instant the
+    // VisibilityMap says so, and the only thing culling reads. **G is the
+    // picture**: how far through its reveal the hex is, which eases from one to
+    // the other over `reveal.time` and is what every cosmetic term reads. A hex
+    // is therefore *fully* a gameplay fact before it has finished looking like
+    // one, and never the other way round.
     this._data = new Uint8Array(this._w * this._h * 4).fill(255);
+    // Where each hex is going, and where it has got to. Indexed like the texture.
+    this._goal = new Float32Array(this._w * this._h).fill(1);
+    this._cur  = new Float32Array(this._w * this._h).fill(1);
     this._texture = new THREE.DataTexture(this._data, this._w, this._h, THREE.RGBAFormat);
     this._texture.minFilter = this._texture.magFilter = THREE.NearestFilter;
     this._texture.wrapS = this._texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -117,12 +140,46 @@ export class VisibilityMask extends Component {
   }
 
   // The only place the two systems touch, and it is one-way: hexes in, a table
-  // out. Cheap enough to redo whole on every change - it is one byte per hex.
-  _refresh() {
+  // out. Cheap enough to redo whole on every change - it is two bytes per hex.
+  //
+  // The rule lands immediately. The picture is only given a new destination here;
+  // `_advance` walks it there. `instant` is construction: whatever is already
+  // known at the start of a run has always been known, and should not sweep in.
+  _refresh(instant = false) {
+    let settling = false;
     for (const { q, r } of this._hexList) {
-      const i = ((r - this._rMin) * this._w + (q - this._qMin)) * 4;
-      this._data[i] = this._vis.isVisible(q, r) ? 255 : 0;
+      const t = (r - this._rMin) * this._w + (q - this._qMin);
+      const lit = this._vis.isVisible(q, r) ? 1 : 0;
+      this._data[t * 4] = lit ? 255 : 0;
+      this._goal[t] = lit;
+      if (instant) {
+        this._cur[t] = lit;
+        this._data[t * 4 + 1] = lit ? 255 : 0;
+      } else if (this._cur[t] !== lit) {
+        settling = true;
+      }
     }
+    if (settling) this._settling = true;
+    this._texture.needsUpdate = true;
+  }
+
+  // The dark arriving and leaving, one step a frame. Scaled time rather than raw:
+  // this is tied to a unit walking, and the debug speed slider is for watching
+  // exactly this kind of thing happen slowly.
+  _advance(dt) {
+    const step = this._revealRate * dt;
+    let settling = false;
+    for (const { q, r } of this._hexList) {
+      const t = (r - this._rMin) * this._w + (q - this._qMin);
+      const goal = this._goal[t];
+      let cur = this._cur[t];
+      if (cur === goal) continue;
+      cur = goal > cur ? Math.min(goal, cur + step) : Math.max(goal, cur - step);
+      this._cur[t] = cur;
+      this._data[t * 4 + 1] = cur * 255;
+      if (cur !== goal) settling = true;
+    }
+    this._settling = settling;
     this._texture.needsUpdate = true;
   }
 
@@ -232,6 +289,17 @@ function cloudUniforms(cloud, drift) {
   };
 }
 
+// How the front that crosses a revealing hex is shaped. `soft` is its width as a
+// fraction of the hex, and it must never be zero: it divides.
+function revealUniforms(reveal) {
+  const r = { soft: 0.45, jitter: 0.30, grain: 2.6, ...(reveal || {}) };
+  return {
+    uMaskRevealSoft:   { value: Math.max(r.soft, 1e-3) },
+    uMaskRevealJitter: { value: r.jitter },
+    uMaskRevealGrain:  { value: Math.max(r.grain, 1e-3) },
+  };
+}
+
 // World position, taken the same way three takes it, instancing included - the
 // hex is worked out from it, so every reader has to agree where it is.
 const MASK_VERTEX = /* glsl */`
@@ -268,6 +336,9 @@ uniform vec2  uMaskCloudBand;
 uniform float uMaskCloudWarp;
 uniform float uMaskCloudHold;
 uniform vec2  uMaskCloudDrift;
+uniform float uMaskRevealSoft;
+uniform float uMaskRevealJitter;
+uniform float uMaskRevealGrain;
 uniform float uMaskAirSpeed;
 uniform float uMaskAirHold;
 uniform vec2  uMaskAirDriftA;
@@ -357,12 +428,32 @@ vec2 maskHexAt( vec2 p ) {
   return vec2( rq, rr );
 }
 
-// Is this hex watched? Anything off the table counts as watched - the open ocean
-// past the coast is not a secret.
-float maskWatched( vec2 ax ) {
+// The two readings of a hex, and which one a thing is allowed to ask matters.
+// Anything off the table counts as watched and finished - the open ocean past the
+// coast is not a secret.
+//
+// 'maskRule' is the gameplay fact, and only the culling below may read it: an
+// object on an unwatched hex is not drawn at all, and it starts being drawn the
+// instant the rule changes rather than when the picture catches up.
+//
+// 'maskShown' is how far through its reveal a hex is - 0 night, 1 open - and
+// every cosmetic term reads this one instead. 'maskWatched' is the same thing
+// asked as a yes or no, for the geometry that needs a side rather than a degree:
+// which edges the fade band and the weather's hold-back are measured from.
+float maskRule( vec2 ax ) {
   vec2 idx = ax - uMaskOrigin;
   if ( any( lessThan( idx, vec2( 0.0 ) ) ) || any( greaterThanEqual( idx, uMaskSize ) ) ) return 1.0;
   return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).r;
+}
+
+float maskShown( vec2 ax ) {
+  vec2 idx = ax - uMaskOrigin;
+  if ( any( lessThan( idx, vec2( 0.0 ) ) ) || any( greaterThanEqual( idx, uMaskSize ) ) ) return 1.0;
+  return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).g;
+}
+
+float maskWatched( vec2 ax ) {
+  return step( 0.5, maskShown( ax ) );
 }
 
 vec2 maskCenter( vec2 ax ) {
@@ -444,36 +535,75 @@ function maskFragment(cull) {
   return /* glsl */`
 {
   vec2 maskAx = maskHexAt( vMaskWorld.xz );
-  float maskHide = 1.0 - maskWatched( maskAx );
 ${cull ? `
-  // Not dimmed - gone. This is the information rule, not a look: on an unwatched
-  // hex there is to be nothing on screen to read, not even a shape against the
-  // ground behind it. It tests the fragment's own hex rather than the faded
-  // value, so a prop or a man standing in the band on a watched tile darkens
-  // with the ground he is standing on instead of blinking out of existence.
-  if ( maskHide > 0.5 ) discard;
+  // Not dimmed - gone, and off the *rule* rather than off the picture. This is
+  // the information rule: on an unwatched hex there is to be nothing on screen
+  // to read, not even a shape against the ground behind it. Reading the rule is
+  // what keeps that true through a reveal - a hex is a gameplay fact before it
+  // has finished looking like one, so an object waits for the fact and then
+  // emerges with the dark, painted toward the night by the same term the ground
+  // is until the front has passed it.
+  if ( maskRule( maskAx ) < 0.5 ) discard;
 ` : ''}
+  // How far through its own reveal this hex is, eased so the dark neither starts
+  // nor stops abruptly. 0 and 1 are left exactly alone, which is what makes the
+  // two ends of the animation identical to the two static looks.
+  float maskP = maskShown( maskAx );
+  maskP = maskP * maskP * ( 3.0 - 2.0 * maskP );
+
+  float maskLocal = 1.0;
   float maskAir = 0.0;
   float maskCloud = 0.0;
-  if ( maskHide > 0.5 ) {
-    // Weather, held out of the boundary. The air builds up over 'uMaskAirHold'
-    // as the night gets further from the light, so the edge of the lit region is
-    // plain dark on both sides of itself - the fade on one side and nothing on
-    // the other - and no drifting shape can put a lip on it.
+
+  if ( maskP < 1.0 ) {
     float maskToLight = maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0 );
-    float maskRaw = maskAirAt( vMaskWorld.xz );
-    maskAir = smoothstep( uMaskAirBand.x, uMaskAirBand.y, maskRaw )
-      * smoothstep( 0.0, uMaskAirHold, maskToLight );
-    // The banks are held off the reveal edge harder than the haze is: a dense
-    // shape landing on the boundary is what would read as a wall standing around
-    // the ground the player can see.
-    maskCloud = maskCloudAt( vMaskWorld.xz )
-      * smoothstep( 0.0, uMaskCloudHold, maskToLight );
-    if ( uMaskAirDebug > 0.5 && uMaskAirDebug < 1.5 ) maskAir = maskRaw;
-  } else {
-    maskHide = 1.0 - smoothstep( 0.0, uMaskFade, maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0 ) );
+
+    // The front crosses the hex from the edge the light is already on rather than
+    // the whole tile fading at once - which is the difference between the dark
+    // *retreating* and the dark being turned down. A hex with no lit neighbour to
+    // come in from - the first hex of a run, a unit put down out of nowhere - has
+    // no direction to offer, and fades evenly instead.
+    float maskU = maskToLight > 999.0
+      ? 0.0
+      : clamp( maskToLight / ( 2.0 * uMaskInradius ), 0.0, 1.0 );
+    // And a wobble on it, so the edge is a tide line rather than a wipe. Static
+    // and in world space: the raggedness belongs to the ground it crosses, not to
+    // the clock. Clamped back into the tile because the front must still be
+    // nowhere at zero and everywhere at one.
+    maskU = clamp( maskU + ( maskNoise( vMaskWorld.xz / uMaskRevealGrain, vec2( 13.7, 82.1 ) ) - 0.5 )
+                          * uMaskRevealJitter, 0.0, 1.0 );
+    float maskFront = maskP * ( 1.0 + uMaskRevealSoft );
+    maskLocal = clamp( ( maskFront - maskU ) / uMaskRevealSoft, 0.0, 1.0 );
+
+    if ( maskLocal < 1.0 ) {
+      // Still night here, and the night has weather in it. Both are held off the
+      // light by the same edge distance the front is measured from, so the two
+      // agree about where the boundary is - and both leave with the dark rather
+      // than switching off, because everything below is scaled by what is left of
+      // it.
+      float maskRaw = maskAirAt( vMaskWorld.xz );
+      maskAir = smoothstep( uMaskAirBand.x, uMaskAirBand.y, maskRaw )
+        * smoothstep( 0.0, uMaskAirHold, maskToLight );
+      // The banks are held off the reveal edge harder than the haze is: a dense
+      // shape landing on the boundary is what would read as a wall standing
+      // around the ground the player can see.
+      maskCloud = maskCloudAt( vMaskWorld.xz )
+        * smoothstep( 0.0, uMaskCloudHold, maskToLight );
+      if ( uMaskAirDebug > 0.5 && uMaskAirDebug < 1.5 ) maskAir = maskRaw;
+    }
+  }
+
+  float maskHide = 1.0;
+  if ( maskLocal > 0.0 ) {
+    // What this fragment is worth once the front has passed: the static visible
+    // look, band and all. Mixed by the front, so a fragment is the hidden look
+    // exactly until the front reaches it and the visible look exactly after.
+    float maskOpen = 1.0 - smoothstep( 0.0, uMaskFade,
+      maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0 ) );
+    maskHide = mix( 1.0, maskOpen, maskLocal );
   }
   maskHide *= uMaskStrength;
+
   gl_FragColor.rgb = mix( gl_FragColor.rgb, maskNight( gl_FragColor.rgb, maskAir, maskCloud ), maskHide );
   // Anything that draws by *adding* light - a firefly, a lantern's halo, a grid
   // seam - has to go out rather than go dark, because a dark colour added to the
