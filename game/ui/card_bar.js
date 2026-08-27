@@ -108,13 +108,31 @@ function name(card) {
 
 // Kept here rather than imported from units.js so the bar has no opinion about
 // the scene: it is handed cards and draws them.
-const NAMES = { scout: 'Scout', footman: 'Footmen' };
+const NAMES = { king: 'King', scout: 'Scout', footman: 'Footmen' };
 
 // The art is the unit's silhouette and nothing else, because the silhouette is
 // what the player has to match against the thing standing on the board - the
 // spears above the helmets are how a Footman is told apart at the game's camera,
 // so they are how the card is told apart too.
 const ART = {
+  // The two things that find the King on the board are the standard over the
+  // tile and the one figure taller than the rest, so they are the two things
+  // here and the retinue is only what makes him the tall one.
+  king: /* html */`
+    <svg viewBox="0 0 48 32" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <line x1="24" y1="30" x2="24" y2="2"/>
+      </g>
+      <path d="M24 3 h10 v7 h-10z" fill="currentColor" opacity="0.55"/>
+      <g fill="currentColor">
+        <circle cx="24" cy="14" r="4"/>
+        <path d="M18 30 l5 -13 h2 L30 30z"/>
+        <circle cx="12" cy="20" r="3" opacity="0.7"/>
+        <path d="M8 30 l3.5 -7 h1 L16 30z" opacity="0.7"/>
+        <circle cx="36" cy="20" r="3" opacity="0.7"/>
+        <path d="M32 30 l3.5 -7 h1 L40 30z" opacity="0.7"/>
+      </g>
+    </svg>`,
   footman: /* html */`
     <svg viewBox="0 0 48 32" aria-hidden="true">
       <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.85">

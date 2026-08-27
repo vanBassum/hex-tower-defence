@@ -16,10 +16,10 @@ export const DEBUG = {
   kingStart: { q: -3, r: 4 },
   scoutViewDistance: 2,
 
-  // Everything else is dealt. The Scout is a card like any other - the player
-  // places it - and adding `'footman'` here is how you play the second run
-  // without playing the first.
-  startingHand: ['scout'],
+  // What the run is dealt on top of the King, and it is nothing: every card the
+  // player holds is one they walked onto. Putting `'scout'` or `'footman'` back
+  // here is how you play the second half of a run without playing the first.
+  startingHand: [],
 
   showVision: false,   // ring the hexes the selected unit is lighting up
 };

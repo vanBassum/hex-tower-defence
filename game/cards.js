@@ -24,13 +24,25 @@ import { UNIT_TYPES } from './units.js';
 // they will get their own place on the card when there are enough of them to
 // compare - a row of figures, not prose pretending to be a description.
 export const CARD_TYPES = {
-  // The one the run begins holding. It is a card like any other and always was -
-  // the concept doc has the player owning a Scout before they own anything else,
-  // and a Scout that started already standing somewhere was a special case
-  // dressed up as a starting position. Played from the hand it costs one click
-  // and buys the opening its own beat: a King alone in the fog, one card, and one
-  // thing you are allowed to do. It works now only because the King is on the
-  // board first - a card has to be played beside something.
+  // The one card that is never played. The King is on the board before the first
+  // frame and no hand ever holds him unspent - but every other unit the player
+  // owns says how it is doing on the face of a card, and the one unit the run
+  // cannot afford to lose was the one with nowhere to say it. So he is dealt
+  // already spent and already bound to the man standing there, which costs a
+  // flag and buys him the same readout as everybody else. See
+  // `Deployment.addPlacedCard`.
+  king: {
+    key: 'king',
+    unit: 'king',
+    role: 'The army arrives beside him.',
+  },
+
+  // In the game, and in nobody's hand. The run used to be dealt one of these and
+  // it is not any more: the King sees as far as a Scout does, so the card bought
+  // a second pair of eyes that saw exactly what the first pair already did. The
+  // type and the card both stay - a Scout that goes somewhere the King must not
+  // is still the job this game will want - and the way back is one entry in
+  // `DEBUG.startingHand` or one pickup that grants it.
   scout: {
     key: 'scout',
     unit: 'scout',
@@ -40,7 +52,7 @@ export const CARD_TYPES = {
   footman: {
     key: 'footman',
     unit: 'footman',
-    role: 'Holds the ground the Scout finds.',
+    role: 'Holds the ground the King takes.',
   },
 };
 

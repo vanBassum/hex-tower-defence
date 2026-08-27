@@ -98,6 +98,20 @@ export class Deployment extends Component {
     return entry;
   }
 
+  // A card for something already standing on the board - the King, and for now
+  // only the King. It is spent on arrival because it was never in anybody's hand
+  // to play, and `placed` is what keeps that from reading as a move: the hint
+  // below asks whether the player has played anything, and a King dealt spent
+  // would answer yes before the run had begun.
+  addPlacedCard(cardKey, unit) {
+    const entry = this.addCard(cardKey);
+    entry.spent = true;
+    entry.placed = true;
+    entry.unit = unit;
+    this._changed();
+    return entry;
+  }
+
   get playable() { return this.hand.filter(e => !e.spent).length; }
 
   // The one line of text the game says to the player, and it lives here rather
@@ -111,7 +125,7 @@ export class Deployment extends Component {
     // come from. The moment anything has been played the player knows, so the
     // condition is "nothing has been played" rather than a timer or a flag.
     if (!this.armed) {
-      return this.playable && !this.hand.some(e => e.spent)
+      return this.playable && !this.hand.some(e => e.spent && !e.placed)
         ? 'Click a card to bring it onto the board'
         : '';
     }

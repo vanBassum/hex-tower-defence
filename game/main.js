@@ -355,9 +355,15 @@ control.onSelect = () => deployment.cancel();
 
 game.add(forceGO);
 
-// What the run is dealt: one Scout, because that is what the player owns. When
-// a run can be lost this is where a collection is spent instead, and it is still
-// this call.
+// The King's own card, spent before the run starts, because he is standing there
+// before it starts. It is the only card in the bar that was never in a hand: it
+// exists so the one unit that cannot be replaced has the same readout as every
+// unit that can.
+deployment.addPlacedCard('king', king);
+
+// And whatever else the run is dealt, which is currently nothing - every card
+// the player gets is one they find. When a run can be lost this is where a
+// collection is spent instead, and it is still this call.
 for (const card of DEBUG.startingHand) deployment.addCard(card);
 
 
