@@ -28,6 +28,16 @@ export class HexPicker extends Component {
     onHover = null,           // (hex | null) => void
     onPick = null,            // (hex) => void, left click
     onOrder = null,           // (hex) => void, right click
+    // A left press, its release, and the wheel. A click is enough to give an
+    // order; a drag is what painting needs, and the caller assembles one out of
+    // onDown plus the hovers that follow it - which it has to anyway, since only
+    // the caller knows whether crossing a hex twice means anything.
+    onDown = null,            // (hex, event) => void
+    onUp = null,              // (event) => void
+    // (hex | null, deltaY, event) => truthy to consume. Returning true stops the
+    // event before anything else on the canvas sees it - which is how a tool
+    // takes the wheel off the camera for as long as it is using it.
+    onWheel = null,
   } = {}) {
     super();
     this._grid = grid;
@@ -36,6 +46,9 @@ export class HexPicker extends Component {
     this._onHover = onHover;
     this._onPick = onPick;
     this._onOrder = onOrder;
+    this._onDown = onDown;
+    this._onUp = onUp;
+    this._onWheel = onWheel;
     this.hover = null;        // {q, r} or null
 
     this._ndc = new THREE.Vector2();
@@ -65,10 +78,36 @@ export class HexPicker extends Component {
       e.preventDefault();
       if (this.hover) this._onOrder?.(this.hover);
     };
+    this._onMouseDown = (e) => {
+      if (e.button !== 0 || e.altKey) return;   // alt+left is the camera's rotate
+      this._update(e);
+      if (this.hover) this._onDown?.(this.hover, e);
+    };
+    // On the window, not the element: a drag that ends off the canvas still ends.
+    this._onMouseUp = (e) => { if (e.button === 0) this._onUp?.(e); };
+
+    // Capture phase on the window, which is the only place a wheel listener can
+    // sit and still get first refusal: the camera's own zoom listens on the
+    // canvas, and two listeners on one element run in the order they were added
+    // regardless of phase. From up here the event can be stopped before it ever
+    // reaches the canvas - so a tool consumes exactly the notches it uses and
+    // the camera keeps the rest.
+    this._onWheelEvent = (e) => {
+      if (!this._onWheel) return;
+      this._update(e);
+      if (this._onWheel(this.hover, e.deltaY, e)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
     el.addEventListener('mousemove', this._onMove);
     el.addEventListener('mouseleave', this._onLeave);
     el.addEventListener('click', this._onClick);
     el.addEventListener('contextmenu', this._onContext);
+    el.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mouseup', this._onMouseUp);
+    window.addEventListener('wheel', this._onWheelEvent, { capture: true, passive: false });
   }
 
   _update(e) {
@@ -122,5 +161,8 @@ export class HexPicker extends Component {
     this._el?.removeEventListener('mouseleave', this._onLeave);
     this._el?.removeEventListener('click', this._onClick);
     this._el?.removeEventListener('contextmenu', this._onContext);
+    this._el?.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mouseup', this._onMouseUp);
+    window.removeEventListener('wheel', this._onWheelEvent, { capture: true });
   }
 }

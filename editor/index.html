@@ -37,64 +37,6 @@
     #panel .k { color: #7f93a4; }
     #panel .v { justify-self: end; color: #dcecf6; font-variant-numeric: tabular-nums; }
 
-    /* The shaping tools. A rule above them, because the rows are what the tile
-       *is* and this is what can be done to it. */
-    #panel .tools {
-      margin-top: 11px;
-      padding-top: 11px;
-      border-top: 1px solid rgba(143, 216, 232, 0.14);
-      transition: opacity 160ms ease;
-    }
-    /* Nothing selected, nothing to shape. Held back rather than hidden: a block
-       that disappears makes the panel jump every time a click lands on the sea. */
-    #panel .tools.is-idle { opacity: 0.4; }
-
-    /* Six buttons where the six neighbours are. Named grid areas rather than
-       coordinates, so the shape is legible in the CSS as well as on screen -
-       flat-top hexes put two neighbours straight up and down and four on the
-       diagonals, which is exactly what this reads as. */
-    #panel .rose {
-      display: grid;
-      grid-template-areas:
-        ".  n  ."
-        "nw .  ne"
-        "sw .  se"
-        ".  s  .";
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 4px;
-      justify-items: stretch;
-      margin-bottom: 8px;
-    }
-    #panel .rose .hub {
-      grid-area: 2 / 2 / 4 / 3;
-      border-radius: 4px;
-      background: rgba(143, 216, 232, 0.05);
-      border: 1px dashed rgba(143, 216, 232, 0.16);
-    }
-    #panel .rose button {
-      font: inherit;
-      line-height: 1;
-      color: #9fd8ee;
-      padding: 6px 0;
-      border-radius: 4px;
-      background: rgba(143, 216, 232, 0.10);
-      border: 1px solid rgba(143, 216, 232, 0.18);
-      cursor: pointer;
-      transition: background 160ms ease;
-    }
-    #panel .rose button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.22); }
-    /* Disabled because there is nothing selected, and disabled because that hex
-       is already board, are two different things and should not look the same:
-       the second is a wall you can see, and the first is just off. */
-    #panel .rose button:disabled { cursor: default; opacity: 0.3; }
-    #panel .rose button.is-there {
-      opacity: 1;
-      color: #55697c;
-      background: none;
-      border-style: dashed;
-      border-color: rgba(143, 216, 232, 0.12);
-    }
-
     /* A rule above the button: the rows are what the level *is* and the button
        is everything that can be done to it, which now lives behind the one
        word. */
@@ -119,12 +61,6 @@
     }
     #panel button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.20); }
     #panel button:disabled { opacity: 0.4; cursor: default; }
-    #panel .tools .bar { margin-top: 0; padding-top: 0; border-top: 0; }
-    #panel .tools .bar + .bar { margin-top: 6px; }
-    /* The one control that removes work, so it is the one control that is not
-       the panel's blue. */
-    #panel .is-danger { color: #d99184; border-color: rgba(217, 145, 132, 0.28); }
-    #panel .is-danger:hover:not(:disabled) { background: rgba(217, 145, 132, 0.14); }
 
     /* Empty until something has happened, and it collapses when it is - a status
        line reserving space for a message nobody has been given yet is a gap in
@@ -137,6 +73,105 @@
     }
     #panel .status:not(:empty) { margin-top: 9px; }
     #panel .status.is-error { color: #e08a7a; }
+
+    /* The tool rail, down the left edge, and the permanent home for editing.
+       Vertical because the list is going to grow - units, enemies, objects,
+       pickups - and downward is the direction the viewport can spare; a
+       horizontal strip of the same length would eat the board. */
+    #tools {
+      position: fixed;
+      left: 16px; top: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: #b9cfe0;
+      font-size: 12px;
+      line-height: 1;
+      user-select: none;
+    }
+    #tools .rail, #tools .settings {
+      padding: 9px;
+      border-radius: 7px;
+      background: rgba(9, 16, 30, 0.55);
+      border: 1px solid rgba(143, 216, 232, 0.14);
+    }
+
+    #tools .group + .group { margin-top: 10px; }
+    /* The category, small and quiet. It is a heading over two or three icons and
+       it is what makes the rail legible once there are four of them. */
+    #tools .glabel {
+      display: block;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #6d8195;
+      padding: 0 0 6px 2px;
+    }
+    #tools button.tool {
+      display: grid;
+      place-items: center;
+      width: 34px; height: 34px;
+      padding: 0;
+      color: #9fd8ee;
+      border-radius: 6px;
+      background: rgba(143, 216, 232, 0.08);
+      border: 1px solid rgba(143, 216, 232, 0.14);
+      cursor: pointer;
+      transition: background 140ms ease, color 140ms ease;
+    }
+    #tools button.tool + button.tool { margin-top: 5px; }
+    #tools button.tool svg { width: 18px; height: 18px; }
+    #tools button.tool:hover { background: rgba(143, 216, 232, 0.18); }
+    /* The active tool is warm, which is the one place in this UI that colour
+       carries state: everything else here is the same cool blue, so the tool
+       that is armed is the only warm thing on the left of the screen. */
+    #tools button.tool.is-on {
+      color: #f0dcc0;
+      background: rgba(224, 160, 92, 0.16);
+      border-color: rgba(224, 160, 92, 0.45);
+    }
+
+    /* The active tool's settings, in a card beside the rail rather than under it:
+       the rail is a fixed column of icons and stays that width however many
+       settings a tool turns out to have. */
+    #tools .settings { min-width: 132px; }
+    #tools .sname { color: #f0dcc0; padding-bottom: 8px; }
+    #tools .setting {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 3px 0;
+    }
+    #tools .slabel { color: #7f93a4; }
+    #tools .stepper { display: flex; align-items: center; gap: 2px; }
+    #tools .stepper b {
+      min-width: 16px;
+      text-align: center;
+      color: #dcecf6;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+    #tools .stepper button {
+      width: 20px; height: 20px;
+      padding: 0;
+      font: inherit;
+      color: #9fd8ee;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+      cursor: pointer;
+    }
+    #tools .stepper button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.22); }
+    #tools .stepper button:disabled { opacity: 0.3; cursor: default; }
+    /* What the tool does, in one line. It is the only prose in the editor and it
+       is here because a rail of icons needs somewhere to say what the icon meant. */
+    #tools .shint {
+      color: #6d8195;
+      line-height: 1.4;
+      padding-top: 7px;
+      max-width: 150px;
+    }
 
     /* The library. A <dialog>, so Escape closes it and the board behind stops
        taking clicks without any of that being written here. Its own surface is a
@@ -296,6 +331,7 @@
 
     #controls {
       left: 16px; bottom: 16px;
+      max-width: 260px;
       display: grid;
       grid-template-columns: auto auto;
       gap: 5px 12px;
@@ -325,13 +361,14 @@
   </script>
 </head>
 <body>
+  <div id="tools"></div>
   <div id="panel"></div>
   <dialog id="levels"></dialog>
   <div id="controls">
-    <kbd>Left-click</kbd><span>Select a hex</span>
+    <kbd>Left-drag</kbd><span>Use the tool</span>
+    <kbd>Wheel</kbd><span>Sculpt with Height, else zoom</span>
     <kbd>Right-drag</kbd><span>Rotate</span>
     <kbd>Middle-drag</kbd><span>Pan</span>
-    <kbd>Wheel</kbd><span>Zoom</span>
   </div>
   <script type="module" src="main.js"></script>
 </body>

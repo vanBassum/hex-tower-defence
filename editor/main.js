@@ -7,16 +7,15 @@ import { HexGridRenderer } from '../engine/components/hex_grid_renderer.js';
 import { HexGround } from '../engine/components/hex_ground.js';
 import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
+import { HexGrid } from '../engine/hex/hex_grid.js';
 import { MOOD } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
-import {
-  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt,
-  addTile, removeTile, raiseTile,
-} from './level.js';
-import { HexGrid, HEX_DIRECTIONS } from '../engine/hex/hex_grid.js';
+import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
+import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
+import { ToolBar } from './ui/toolbar.js';
 import { LevelLibrary } from './ui/levels.js';
 
 // The level editor: the game's world with the game taken out of it.
@@ -24,7 +23,7 @@ import { LevelLibrary } from './ui/levels.js';
 // This is a second composition root, not a second renderer. Every component in
 // the scene below is the one the game uses - same grid, same ground, same
 // camera, same picker - and what makes this the editor is only which of them are
-// wired up and what a click is taken to mean. So a change to how the island
+// wired up and what the mouse is taken to mean. So a change to how the island
 // looks lands here for free, and there is no version of the board that is only
 // true in the editor.
 //
@@ -36,15 +35,10 @@ import { LevelLibrary } from './ui/levels.js';
 //
 // ── The level is the only state ──────────────────────────────────────────────
 // `level` is a plain JSON object (see level.js) and it is the whole of what is
-// being edited. Everything else in this file is *derived* from it: the grid, the
-// ground mesh, the King standing on a tile. So the scene is not something that
-// drifts from the file and has to be reconciled with it - it is thrown away and
-// built again whenever the level changes, which is what makes import a two-line
-// operation and export honest.
-//
-// That is why the board lives in `buildBoard`/`clearBoard` rather than at the
-// top level of the module: an editor whose scene was built once could load a
-// file, and could not show it.
+// being edited. Everything else is *derived* from it: the grid, the ground mesh,
+// the King standing on a tile. So the scene never drifts from the file and has to
+// be reconciled with it - it is thrown away and built again whenever the level
+// changes, which is what makes import a two-line operation and export honest.
 //
 // ── And the level is stored, not saved ───────────────────────────────────────
 // Local storage is where the level lives, not a backup of it. Every change ends
@@ -52,21 +46,33 @@ import { LevelLibrary } from './ui/levels.js';
 // work, nothing to lose by closing the tab, and no Save button - the editor
 // opens again on whatever was on screen last time. Files are for the other
 // things: a backup, another machine, a level committed to git.
+//
+// ── What the mouse means is a tool's business ────────────────────────────────
+// This file routes the pointer and knows nothing about what any tool does. Hover
+// paints a preview of the active tool's footprint, a left press and drag hands
+// that footprint to the tool, and the wheel does the same when the tool wants it.
+// The tools are data in tools.js; adding units, enemies or objects later is a new
+// entry there and nothing here.
+//
+// The scene is in two halves because of that. The camera, the light, the brush
+// overlay and the picker are built once and outlive every edit - tearing the
+// picker down mid-drag would take the listener that is running the drag with it -
+// and only what the *level* describes is rebuilt.
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level, as in the game
 
 // How many rings of empty hexes are drawn beyond the board. Two is enough to
-// have somewhere to point at in every direction without the lattice running off
-// to the horizon - and it moves outward as the board grows, so there is always
-// room to keep going.
+// have somewhere to paint into in every direction without the lattice running
+// off to the horizon - and it moves outward as the board grows, so there is
+// always room to keep going.
 const MARGIN = 2;
 
 const game = new Game();
 
 // ── The parts that are not the level ─────────────────────────────────────────
-// The hour and the camera outlive any level: loading a file should not move the
-// camera or change the light, because the person doing it is looking at
-// something and expects to still be looking at it afterwards.
+// The hour, the camera, and the mouse. None of them belong to a level: loading a
+// file should not move the camera or change the light, because the person doing
+// it is looking at something and expects to still be looking at it afterwards.
 
 // Close in, because the default level is five hexes across and a wide shot of it
 // is a wide shot of empty sky. The wheel is there for anybody who disagrees.
@@ -96,17 +102,21 @@ sun.addComponent(new DirectionalLight({
 }));
 game.add(sun);
 
-// ── The board ────────────────────────────────────────────────────────────────
+// ── The level, and the board it describes ────────────────────────────────────
 
 let level = null;            // set by the boot block at the bottom of this file
 let world = null;            // grid, elevation and crags, derived from `level`
 let envelope = null;         // every hex that can be pointed at, board or not
-let board = [];              // the GameObjects that belong to this level
+let terrain = [];            // the GameObjects that belong to this level
 let hexGround = null;
-let selectionOverlay = null;
-let selected = null;         // {q, r} or null - the whole of the editor's state
 
-function buildBoard() {
+// Geometry only, and it never changes: where a hex sits and what its corners are
+// depend on the hex size and nothing else. The overlays are built once against
+// this, so they survive every rebuild - what they draw is a list of hexes, and a
+// list of hexes does not care how big the board currently is.
+const geometry = new HexGrid({ size: 1 });
+
+function buildTerrain() {
   world = buildLevel(level);
   game.hexGrid = world.grid;
 
@@ -135,7 +145,7 @@ function buildBoard() {
   // board's own seam colour: MOOD's grid is a dark green because it is drawn
   // *into* grass, and the same line over open water would be invisible. This one
   // is the editor talking rather than the world - the hexes it draws do not
-  // exist - so it is in the panel's blue, like the cursor and the selection.
+  // exist - so it is in the panel's blue, like the brush.
   const emptyGO = new GameObject('EmptyHexes');
   emptyGO.addComponent(new HexGridRenderer(envelope, {
     color: 0x7fa8c0, opacity: 0.15, y: 0.02,
@@ -160,92 +170,135 @@ function buildBoard() {
     emerge: false,
   }));
 
-  // What is selected. A separate overlay from the cursor rather than a recolour
-  // of it, because the two are true at the same time - the thing being worked on
-  // and the thing about to be clicked - and one hexagon cannot say both.
-  //
-  // Stronger than anything the game draws on a tile, and it has earned that: in
-  // the game a highlight is a hint about a move, and here it is the answer to
-  // "which tile am I editing", which has to be unmistakable from across the
-  // board. Still additive, so the tile keeps its own grass and simply catches
-  // much more light - a flat pale hexagon stuck on the ground is the thing
-  // MOOD's overlays exist to avoid.
-  const selectionGO = new GameObject('Selection');
-  selectionOverlay = selectionGO.addComponent(new HexOverlay(envelope, [], {
-    color: 0xbfe8ff, opacity: 0.5, y: 0.045, additive: true,
-    // Off the board there is no surface, and `topY` says zero - which is the
-    // height an empty hex would be added at, so the highlight sits exactly where
-    // the tile would appear.
-    heightAt: (q, r) => hexGround.topY(q, r),
-  }));
-
-  // The cursor under the mouse. Straight out of the game, including the two-pass
-  // plane solve that makes a click on a hillside land on the tile you were
-  // aiming at.
-  const cursorGO = new GameObject('Cursor');
-  cursorGO.addComponent(new HexOverlay(envelope, [], {
-    color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
-  }));
-  cursorGO.addComponent(new HexPicker({
-    grid: envelope,
-    ground: hexGround,
-    onPick: (hex) => select(hex),
-  }));
-
-  board = [groundGO, gridGO, emptyGO, kingGO, selectionGO, cursorGO];
-  for (const go of board) game.add(go);
+  terrain = [groundGO, gridGO, emptyGO, kingGO];
+  for (const go of terrain) game.add(go);
 }
 
-function clearBoard() {
-  // Removing a GameObject destroys its components, which is what takes the
-  // picker's listeners off the canvas and gives the King's hex back to the grid.
-  for (const go of board) game.remove(go);
-  board = [];
+function clearTerrain() {
+  // Removing a GameObject destroys its components, which is what gives the
+  // King's hex back to the grid and releases the ground's geometry.
+  for (const go of terrain) game.remove(go);
+  terrain = [];
   hexGround = null;
-  selectionOverlay = null;
 }
 
-// The one way the level on screen changes. Everything derived from it is
-// rebuilt, and the selection goes with the old board: a hex coordinate that
-// meant something on the last level is not a promise about this one.
-//
-// It stores as well as loads. Every level the editor has open is a level in the
-// browser - a board that exists only on screen is one refresh from being gone -
-// so this is also what makes a brand new or freshly imported level real.
+// ── The mouse ────────────────────────────────────────────────────────────────
+
+let hovered = null;          // the hex under the cursor, or null
+let painting = false;        // a left button held down, mid-stroke
+
+// The brush: the footprint the active tool would act on, in that tool's colour.
+// One overlay for every tool, because there is only ever one brush - and it is
+// the only thing on screen that says what the mouse is about to do.
+const brushGO = new GameObject('Brush');
+const brush = brushGO.addComponent(new HexOverlay(geometry, [], {
+  color: 0x9fd8ee, opacity: 0.34, y: 0.045, additive: true,
+  // Off the board there is no surface and `topY` says zero, which is the height
+  // a tile would be added at - so the preview sits exactly where the tile will.
+  heightAt: (q, r) => hexGround?.topY(q, r) ?? 0,
+}));
+game.add(brushGO);
+
+// Built once and never rebuilt, so a stroke that started is a stroke that
+// finishes. It is handed views of the current envelope and ground rather than the
+// objects themselves, because both are replaced on every edit and a captured
+// reference would be pointing at the board as it was two tiles ago.
+const cursorGO = new GameObject('Cursor');
+cursorGO.addComponent(new HexPicker({
+  grid: {
+    worldToHex: (x, z) => envelope.worldToHex(x, z),
+    inBounds: (q, r) => envelope.inBounds(q, r),
+  },
+  ground: { topY: (q, r) => hexGround?.topY(q, r) ?? 0 },
+  onHover: (hex) => {
+    hovered = hex;
+    if (painting) apply();          // a drag is the hexes it crosses
+    else refreshBrush();
+    refreshPanel();
+  },
+  onDown: (hex) => {
+    hovered = hex;
+    painting = true;
+    apply();
+  },
+  onUp: () => { painting = false; },
+  // The wheel is the tool's only if the tool wants it and there is something
+  // under the cursor to use it on. Everything else - which is every notch spent
+  // off the board, and every notch spent with a tool that has no use for one -
+  // falls through to the camera's zoom.
+  onWheel: (hex, deltaY) => {
+    if (!hex || !tool().wheel) return false;
+    hovered = hex;
+    const hexes = tool().brush(ctx(), hex);
+    if (!hexes.length) return false;
+    edited(tool().wheel(ctx(), hexes, deltaY < 0 ? +1 : -1));
+    return true;                    // consumed: the camera does not zoom
+  },
+}));
+game.add(cursorGO);
+
+function tool() {
+  return TOOL_BY_ID[activeTool];
+}
+
+// What a tool is given: the level to change, the lattice to stay inside, and its
+// own settings. Rebuilt per call because `level` and `envelope` are both replaced
+// out from under it.
+function ctx() {
+  return { level, envelope, s: settings[activeTool] };
+}
+
+function brushHexes() {
+  return hovered ? tool().brush(ctx(), hovered) : [];
+}
+
+function refreshBrush() {
+  brush.setColor(tool().color);
+  brush.setHexes(brushHexes());
+}
+
+// One stroke's worth of work: hand the tool its footprint and rebuild if it
+// changed anything. A drag across ground that is already drawn reports zero and
+// costs nothing, which is what keeps a long stroke cheap.
+function apply() {
+  const hexes = brushHexes();
+  if (!hexes.length) { refreshBrush(); return; }
+  edited(tool().paint?.(ctx(), hexes) ?? 0);
+}
+
+// ── Changing things ──────────────────────────────────────────────────────────
+
+// The one way the level on screen changes. Everything derived from it is rebuilt,
+// and the board is stored: every level the editor has open is a level in the
+// browser, so this is also what makes a brand new or freshly imported level real.
 function loadLevel(next) {
-  clearBoard();
+  clearTerrain();
   level = next;
-  selected = null;
-  buildBoard();
+  buildTerrain();
   commit();
   storage.setOpenId(level.id);
+  refreshBrush();
   refreshPanel();
 }
 
-// A change to the board, rather than a change of board. The scene is thrown away
-// and built again from the level - which is the same thing `loadLevel` does, and
-// on purpose: a tile added at the coast changes the cliff faces of the three
-// tiles beside it, and a partial update is where stale side walls and holes in
-// the ground come from. On boards this size the whole mesh is cheaper to rebuild
-// than to reason about.
+// An edit to the board rather than a change of board. The terrain is thrown away
+// and built again from the level - a tile added at the coast changes the cliff
+// faces of the three tiles beside it, and a partial update is where stale side
+// walls and holes in the ground come from. On boards this size the whole mesh is
+// cheaper to rebuild than to reason about.
 //
-// The selection survives, which is the whole difference from `loadLevel`: raising
-// a tile four times in a row is four clicks on the same button, not four clicks
-// and three reselections. It only survives if there is still a tile there - a
-// delete takes its own selection with it.
-function rebuild(keep = selected) {
-  clearBoard();
-  buildBoard();
-  // Any hex inside the envelope, not only one with a tile on it: an empty hex is
-  // a place the board can be extended to, and losing the selection after every
-  // add would undo the point of being able to point at one.
-  selected = keep && envelope.inBounds(keep.q, keep.r) ? { q: keep.q, r: keep.r } : null;
-  selectionOverlay.setHexes(selected ? [selected] : []);
+// Nothing happens when nothing changed, which is the difference between a drag
+// that feels immediate and one that rebuilds the world sixty times a second.
+function edited(changed) {
+  if (!changed) return;
+  clearTerrain();
+  buildTerrain();
   commit();
+  refreshBrush();
 }
 
 // What every edit ends in, and the reason there is no Save button. It is one
-// function so that the day terrain can be painted or a unit moved, the
+// function so that the day units are placed or terrain is painted, the
 // persistence is already written and the tool only has to say that it changed
 // something.
 function commit() {
@@ -260,13 +313,10 @@ function commit() {
   refreshPanel();
 }
 
-function select(hex) {
-  selected = hex ? { q: hex.q, r: hex.r } : null;
-  selectionOverlay.setHexes(selected ? [selected] : []);
-  refreshPanel();
-}
+// ── The tools, the panel and the library ─────────────────────────────────────
 
-// ── The panel and the library ────────────────────────────────────────────────
+let activeTool = TOOLS[0].id;
+const settings = defaultSettings();
 
 function levelList() {
   try { return storage.list(); } catch { return []; }
@@ -275,21 +325,10 @@ function levelList() {
 function refreshPanel() {
   panel.update({
     level,
-    hex: selected,
-    tile: selected ? tileAt(level, selected.q, selected.r) : null,
-    // The King cannot be deleted out from under himself. He is the one thing on
-    // the board that is not terrain and every level has to have one somewhere,
-    // so the tile he is standing on is not a tile to remove - and the button
-    // says so by being dead rather than by refusing when pressed.
-    canDelete: !!selected && !(level.king.q === selected.q && level.king.r === selected.r),
-    // Which of the six neighbours are already board, so the rose can show where
-    // there is still room.
-    taken: selected
-      ? HEX_DIRECTIONS
-          .map(d => ({ q: selected.q + d.q, r: selected.r + d.r }))
-          .filter(h => tileAt(level, h.q, h.r))
-      : [],
+    hex: hovered,
+    tile: hovered ? tileAt(level, hovered.q, hovered.r) : null,
   });
+  toolbar.update(tool(), settings[activeTool]);
   // The library is repainted out of storage rather than told what changed, so a
   // rename, a duplicate and an import all land the same way.
   if (library.isOpen) library.render(levelList(), level.id);
@@ -327,58 +366,30 @@ function say(text, isError = false) {
   ui()?.setStatus(text, isError);
 }
 
+const toolbar = new ToolBar({
+  root: document.getElementById('tools'),
+  groups: toolGroups(),
+  onSelect: (id) => {
+    if (!TOOL_BY_ID[id]) return;
+    activeTool = id;
+    refreshBrush();
+    refreshPanel();
+  },
+  // Settings arrive as a nudge rather than a value, so the toolbar never has to
+  // know a setting's bounds - they are declared on the tool and clamped here.
+  onSetting: (key, by) => {
+    const spec = tool().settings?.find(s => s.key === key);
+    if (!spec) return;
+    const at = settings[activeTool][key] ?? spec.min;
+    settings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + by));
+    refreshBrush();
+    refreshPanel();
+  },
+});
+
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
   onLevels: () => library.open(levelList(), level.id),
-
-  // ── The shaping tools ────────────────────────────────────────────────────
-  // Three of them, and all three are the same shape: change the level, rebuild
-  // from it, say what happened. Nothing here touches a mesh.
-
-  // The new tile becomes the selected one, which is what makes drawing a passage
-  // a run of clicks on the same button rather than click-select-click-select.
-  onAdd: act((dq, dr) => {
-    if (!selected) return null;
-    const q = selected.q + dq, r = selected.r + dr;
-    if (!addTile(level, q, r)) return null;      // the rose already knew; a stale click
-    rebuild({ q, r });
-    return null;
-  }),
-
-  // One button, two jobs, because they are the same job seen from either side:
-  // the selected hex either has a tile on it or is somewhere one could go. This
-  // is what makes the lattice outside the board worth drawing - point at an empty
-  // hex and it can be filled, without counting directions from a tile.
-  onPlace: act(() => {
-    if (!selected) return null;
-    const { q, r } = selected;
-    if (!tileAt(level, q, r)) {
-      addTile(level, q, r);
-      rebuild(selected);
-      return null;
-    }
-    if (level.king.q === q && level.king.r === r) {
-      throw new Error('the King is standing there');
-    }
-    if (!removeTile(level, q, r)) return null;
-    // Somewhere sensible to carry on from: a neighbour that is still board, so
-    // the tools stay live and the next delete is one click away. `grid` is the
-    // old one until the rebuild, which is exactly what is wanted here - it still
-    // knows the shape the deleted tile was part of.
-    const next = HEX_DIRECTIONS
-      .map(d => ({ q: q + d.q, r: r + d.r }))
-      .find(h => tileAt(level, h.q, h.r)) ?? null;
-    rebuild(next);
-    return null;
-  }),
-
-  onRaise: act((by) => {
-    if (!selected) return null;
-    const at = raiseTile(level, selected.q, selected.r, by);
-    if (at === null) return null;
-    rebuild();
-    return null;
-  }),
 });
 
 const library = new LevelLibrary({
@@ -493,15 +504,15 @@ function anyStoredLevel() {
 
 // Open looking at the middle of the board.
 {
-  const { x, z } = world.grid.hexToWorld(0, 0);
+  const { x, z } = geometry.hexToWorld(0, 0);
   rig.focusOn(x, z);
 }
 
 // The same hook the game exposes, and for the same reason: tools/check.py drives
 // the page through it, and a screenshot of a hex has to be able to ask where
-// that hex is on screen. The board is rebuilt on every load, so what it hands
+// that hex is on screen. The terrain is rebuilt on every edit, so what it hands
 // out are getters rather than the objects that were current when it was written.
-// Not editor UI - the editor's UI is the panel.
+// Not editor UI - the editor's UI is the toolbar and the panel.
 window.hex = {
   game, rig,
   get level()    { return level; },
@@ -509,23 +520,28 @@ window.hex = {
   get grid()     { return world.grid; },
   get envelope() { return envelope; },
   get ground()   { return hexGround; },
-  get selected() { return selected; },
-  select,
+  get hovered()  { return hovered; },
+  get tool()     { return activeTool; },
+  settings,
   loadLevel,
   commit,
-  rebuild,
-  // The editing verbs, so a shape can be sketched from the console or the check
-  // script without twenty clicks - the same calls the buttons make.
-  addTile:    (q, r) => { addTile(level, q, r); rebuild({ q, r }); },
-  removeTile: (q, r) => { if (removeTile(level, q, r)) rebuild(); },
-  raiseTile:  (q, r, by) => { raiseTile(level, q, r, by); rebuild(); },
   storage,
-  panel, library,
+  panel, toolbar, library,
+  // The tools, driven the way the mouse drives them, so a shape can be sketched
+  // from the console or the check script without a drag: point at a hex and use
+  // whatever is active.
+  pick: (id) => { activeTool = id; refreshBrush(); refreshPanel(); },
+  at: (q, r) => { hovered = { q, r }; refreshBrush(); refreshPanel(); },
+  use: () => { apply(); },
+  scroll: (dir) => {
+    const hexes = brushHexes();
+    if (hexes.length && tool().wheel) edited(tool().wheel(ctx(), hexes, dir));
+  },
   // The file format, reachable from the console and from the check script, so a
   // round trip can be asserted without a download dialog in the way.
   stringifyLevel: () => stringifyLevel(level),
   parseLevel,
-  lookAt: (q, r) => { const { x, z } = world.grid.hexToWorld(q, r); rig.focusOn(x, z); },
+  lookAt: (q, r) => { const { x, z } = geometry.hexToWorld(q, r); rig.focusOn(x, z); },
 };
 
 game.start();
