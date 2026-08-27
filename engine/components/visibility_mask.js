@@ -254,22 +254,39 @@ vec3 maskNight( vec3 rgb, float air ) {
     + uMaskAirAmount * air * uMaskAirTint;
 }
 
+// No sine in here, and the lattice is offset off the integers, because both of
+// those put a hole in the field. sin(0) is 0, so the old hash returned exactly
+// zero at the lattice point on the world origin - which is the middle of the
+// board, where the run starts - and every fract-of-a-product hash degenerates
+// the same way on an exact zero. A non-integer offset means no sample ever lands
+// on it, and it doubles as the per-octave seed.
 float maskHash( vec2 p ) {
-  return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+  vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
+  p3 += dot( p3, p3.yzx + 19.19 );
+  return fract( ( p3.x + p3.y ) * p3.z );
 }
 
-float maskNoise( vec2 p ) {
-  vec2 i = floor( p ), f = fract( p );
+float maskNoise( vec2 p, vec2 seed ) {
+  vec2 i = floor( p ) + seed, f = fract( p );
   vec2 u = f * f * ( 3.0 - 2.0 * f );
   return mix( mix( maskHash( i ),                  maskHash( i + vec2( 1.0, 0.0 ) ), u.x ),
               mix( maskHash( i + vec2( 0.0, 1.0 ) ), maskHash( i + vec2( 1.0, 1.0 ) ), u.x ), u.y );
 }
 
-// The weather in the dark. Two very large fields crossing each other slowly: one
-// field drifting on its own reads as a texture being pulled across the board,
-// and two at different scales and angles never repeat their arrangement, which is
-// what turns a moving pattern into air. It is sampled in *world* space, so it
-// stays put when the camera turns.
+// The weather in the dark. Two fields crossing each other slowly: one field
+// drifting on its own reads as a texture being pulled across the board, and two
+// at different scales and angles never repeat their arrangement, which is what
+// turns a moving pattern into air. Sampled in *world* space, so it stays put when
+// the camera turns.
+//
+// The primary carries the shapes and the second is coarser and slower - regional
+// weather, a few features across the whole island, deciding where the primary's
+// shapes are thick and where they thin out. It was the other way round once, a
+// *finer* second field, which only added detail nothing was asking for.
+//
+// The board is about fifty world units across, so a scale of six gives eight or
+// nine features over it - the coarse version of this had three, which is why the
+// whole thing turned on the luck of a handful of lattice values.
 //
 // uMaskAirBand is what decides whether this is patches or haze: it is the slice
 // of the noise that becomes air at all. Its low end is where the dark still goes
@@ -277,8 +294,15 @@ float maskNoise( vec2 p ) {
 // it lifts the whole region and narrowing it leaves only the peaks.
 float maskAirAt( vec2 xz ) {
   vec2 a = ( xz + uMaskAirDriftA * ( uMaskTime * uMaskAirSpeed        ) ) / uMaskAirScale;
-  vec2 b = ( xz + uMaskAirDriftB * ( uMaskTime * uMaskAirSpeed * 0.55 ) ) / ( uMaskAirScale * 0.42 );
-  return 0.65 * maskNoise( a ) + 0.35 * maskNoise( b );
+  vec2 b = ( xz + uMaskAirDriftB * ( uMaskTime * uMaskAirSpeed * 0.55 ) ) / ( uMaskAirScale * 2.2 );
+  // Averaging two fields pulls the result to the middle - the sum of two randoms
+  // is always narrower than either of them - so the contrast is put back after
+  // the average rather than the average being avoided. What comes out spans 0..1
+  // with a mean near a half whatever the scales are, which is the property that
+  // lets the band below keep meaning the same thing when the scale is retuned.
+  float n = 0.7 * maskNoise( a, vec2( 37.2, 91.7 ) )
+          + 0.3 * maskNoise( b, vec2( 11.3, 57.9 ) );
+  return clamp( 0.5 + ( n - 0.5 ) * 1.7, 0.0, 1.0 );
 }
 
 // HexGrid.worldToHex, in GLSL: flat-top axial, then cube rounding. Kept in step
