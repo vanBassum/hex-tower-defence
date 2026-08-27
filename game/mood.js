@@ -116,9 +116,10 @@ export const MOOD = {
       // even rather than make it a different colour.
       tint:   0x8fb8e8,
       scale:  6.0,       // world units across one shape - eight or nine over the board
-      // World units a second, before WIND.strength scales it. TEMPORARY: twice
-      // the intended 0.45, so the drift is unmistakable while it is being judged.
-      speed:  0.90,
+      // World units a second, before WIND.strength scales it. A shape crosses its
+      // own width in about twenty seconds - slow enough to read as air rather
+      // than as a texture being pulled, fast enough to be moving on sight.
+      speed:  0.45,
       // Which part of the noise becomes air. Narrow, and only the extreme peaks
       // come through and the region reads as flat black between them; wide, and
       // the whole dark lifts evenly and stops having shapes in it at all. This is
@@ -137,16 +138,24 @@ export const MOOD = {
     // how much of the field becomes cloud at all, and lifting it is how you get
     // fewer and rarer banks rather than thinner ones.
     cloud: {
-      amount: 0.06,
+      // Higher than it looks, and readable only because the band below never
+      // lets it all land: what a fragment actually gets is this times a number
+      // that is almost never one.
+      amount: 0.10,
       // Navy-grey, lighter than the haze's tint and nowhere near white: a bank is
       // a place the dark is *thicker*, not a thing painted over it.
-      tint:   0x9aacc0,
+      tint:   0x8ea2ba,
       scale:  12.0,      // world units across a bank - four or five over the board
       // Half the haze's, and across it rather than with it - a bank is higher up
-      // and further off. TEMPORARY: twice the intended 0.22, as the haze is.
-      speed:  0.44,
-      band:   [0.62, 0.74],
-      warp:   0.70,      // how far the shapes are pushed off the lattice
+      // and further off, and two layers that keep station are one layer.
+      speed:  0.22,
+      // The high end is the reason a bank is not a grey shape painted on the
+      // ground: it sits past anything the noise actually reaches, so nothing
+      // ever tops out. A bank is a gradient the whole way through and has no
+      // flat interior to read as a slab - narrow this back towards the low end
+      // and the painted-on look comes straight back.
+      band:   [0.68, 0.98],
+      warp:   1.00,      // how far the shapes are pushed off the lattice
       hold:   2.5,       // held off the reveal edge harder than the haze is
     },
 
