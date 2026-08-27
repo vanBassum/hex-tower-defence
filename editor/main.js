@@ -301,7 +301,7 @@ const library = new LevelLibrary({
   // it moves to another one - and makes a starter level if that was the last.
   onDelete: act((id) => {
     const entry = levelList().find(l => l.id === id);
-    const name = entry?.name ?? 'this level';
+    const name = entry ? storage.entryName(entry) : 'this level';
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return null;
     storage.remove(id);
     if (id === level.id) loadLevel(anyStoredLevel() ?? defaultLevel());

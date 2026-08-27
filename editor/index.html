@@ -134,6 +134,24 @@
     }
     #levels .card.is-broken { border-color: rgba(224, 138, 122, 0.35); }
 
+    /* The board, and it sits in a slightly sunken well rather than on the card:
+       a plan view with no lighting in it needs an edge to read as a picture, and
+       a darker ground is also what the sea and the unlit grass look right
+       against. */
+    #levels .card .shot {
+      display: block;
+      /* Nearly square, because a hex board nearly is. A wide letterbox fits a
+         round island by its height and leaves a third of the card empty either
+         side, which makes the picture small for no reason. */
+      aspect-ratio: 4 / 3;
+      margin-bottom: 9px;
+      border-radius: 5px;
+      background: #0b1220;
+      border: 1px solid rgba(143, 216, 232, 0.09);
+      overflow: hidden;
+    }
+    #levels .card .shot svg { display: block; width: 100%; height: 100%; }
+
     #levels .card .title {
       display: flex;
       align-items: center;

@@ -39,11 +39,14 @@ function store() {
 // the order they happened to be written, which means nothing to anybody and
 // reshuffles the library between two visits.
 //
-// Each entry is a summary rather than the level, because the library shows a
-// dozen cards and needs a name and a tile count from each. A stored level that
-// no longer parses still gets an entry with `error` set: it has to be visible to
-// be deletable, and a card that cannot be shown is a level nobody can get rid
-// of.
+// Each entry is `{ id, level, error }` - the whole level, not a summary of it.
+// It was a summary while a card was a name and a tile count; a card that draws
+// the board needs the tiles, and parsing every level to show a library of a
+// dozen costs less than the two lines of caching it would take to avoid.
+//
+// A stored level that no longer parses still gets an entry, with `error` set and
+// no level: it has to be visible to be deletable, and an entry that cannot be
+// shown is a level nobody can get rid of.
 export function list() {
   const s = store();
   const out = [];
@@ -52,13 +55,18 @@ export function list() {
     if (!key?.startsWith(LEVELS)) continue;
     const id = key.slice(LEVELS.length);
     try {
-      const level = parseLevel(s.getItem(key));
-      out.push({ id, name: level.name, tiles: level.tiles.length, king: level.king, error: null });
+      out.push({ id, level: parseLevel(s.getItem(key)), error: null });
     } catch (e) {
-      out.push({ id, name: id, tiles: 0, king: null, error: e.message });
+      out.push({ id, level: null, error: e.message });
     }
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  return out.sort((a, b) => entryName(a).localeCompare(entryName(b)));
+}
+
+// What to call an entry in a list - its name, or its id when it is too broken to
+// have one.
+export function entryName(entry) {
+  return entry.level?.name ?? entry.id;
 }
 
 export function has(id) {
@@ -114,7 +122,7 @@ export function setOpenId(id) {
 // A name nothing else in the library is using. Not because names have to be
 // unique - the id is the identity now - but because two cards reading "Untitled"
 // is a library that cannot be used, and this is where "Untitled 2" comes from.
-export function uniqueName(base, taken = list().map(l => l.name)) {
+export function uniqueName(base, taken = list().map(entryName)) {
   if (!taken.includes(base)) return base;
   for (let n = 2; ; n++) {
     const tryName = `${base} ${n}`;

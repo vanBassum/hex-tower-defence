@@ -1,4 +1,5 @@
 import { esc } from './dom.js';
+import { thumbSvg } from './thumb.js';
 
 // The library: every level in this browser, as cards, and everything that can be
 // done to one.
@@ -89,7 +90,7 @@ export class LevelLibrary {
 
   render(levels, openId) {
     this._cards.innerHTML = levels.length
-      ? levels.map(l => card(l, l.id === openId)).join('')
+      ? levels.map(entry => card(entry, entry.id === openId)).join('')
       : `<p class="empty">No levels in this browser yet.</p>`;
   }
 
@@ -99,20 +100,26 @@ export class LevelLibrary {
   }
 }
 
-function card(level, isOpen) {
+function card(entry, isOpen) {
   // A level that no longer parses gets a card saying so and one button. It has
   // to be visible to be deletable - a broken entry that cannot be shown is a
   // level nobody can get rid of.
-  if (level.error) {
-    return `<article class="card is-broken" data-id="${esc(level.id)}">
+  if (entry.error) {
+    return `<article class="card is-broken" data-id="${esc(entry.id)}">
       <div class="title">Unreadable level</div>
-      <div class="meta">${esc(level.error)}</div>
+      <div class="meta">${esc(entry.error)}</div>
       <div class="acts"><button type="button" data-act="delete">Delete</button></div>
     </article>`;
   }
-  return `<article class="card${isOpen ? ' is-open' : ''}" data-id="${esc(level.id)}">
+  const level = entry.level;
+  const tiles = level.tiles.length;
+  // The board itself, above the name. It is the part of the card that is
+  // actually recognised - a level is remembered by its shape long before its
+  // name - so it takes the top and the words label it.
+  return `<article class="card${isOpen ? ' is-open' : ''}" data-id="${esc(entry.id)}">
+    <div class="shot">${thumbSvg(level)}</div>
     <div class="title">${esc(level.name)}${isOpen ? '<span class="badge">open</span>' : ''}</div>
-    <div class="meta">${level.tiles} tile${level.tiles === 1 ? '' : 's'}${
+    <div class="meta">${tiles} tile${tiles === 1 ? '' : 's'}${
       level.king ? ` · king at ${level.king.q}, ${level.king.r}` : ''}</div>
     <div class="acts">
       <button type="button" data-act="open"${isOpen ? ' disabled' : ''}>Open</button>
