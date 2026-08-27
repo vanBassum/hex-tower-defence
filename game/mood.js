@@ -150,10 +150,7 @@ export const MOOD = {
     // the rule changed the moment the unit committed to the tile, and this is the
     // picture catching up with it.
     reveal: {
-      time:   0.65,      // seconds for the front to cross one hex
-      soft:   0.45,      // its width, as a fraction of the hex it is crossing
-      jitter: 0.30,      // how far the front wanders off straight
-      grain:  2.6,       // world units across one wander of it
+      time:   0.65,      // seconds for the dark to leave a hex, and all there is
     },
   },
 
