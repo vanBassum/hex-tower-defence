@@ -163,9 +163,13 @@ propsGO.addComponent(new PropLayer({
 game.add(propsGO);
 
 // Darker than the grass, so the grid reads as seams in the ground rather than as
-// white lines drawn over it.
+// white lines drawn over it - but only just. At 0.45 it stopped reading as seams
+// and started reading as cracks between the tiles, which is a hole in a landmass
+// that is meant to be one piece. It is also drawn at one height for the whole
+// board, so it only ever shows on the lowest tiles anyway; faint is the honest
+// version of that. Zero here removes it entirely and nothing else notices.
 const gridGO = new GameObject('HexGrid');
-gridGO.addComponent(new HexGridRenderer(map.grid, { color: MOOD.gridColor, opacity: 0.45 }));
+gridGO.addComponent(new HexGridRenderer(map.grid, { color: MOOD.gridColor, opacity: 0.14 }));
 game.add(gridGO);
 
 // What a unit carries a light for is a fact about its type; how bright it burns
