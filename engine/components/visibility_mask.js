@@ -455,19 +455,26 @@ float maskShown( vec2 ax ) {
 // Which of the two sides a neighbour is on, for whichever side is being measured
 // from - and the two questions are deliberately asked of different things.
 //
-// The band that laps the dark over the edge of the lit region asks the **rule**:
-// is the far side genuinely unwatched? Anything softer outlines every hex in the
-// region while it is revealing, which is what a black seam down the middle of the
-// explored ground was. A neighbour halfway through its own reveal is not half
-// night for this purpose - it is ground the player already owns, and the two have
-// to merge into one region with nothing drawn between them.
+// Measuring toward the *light*, which the reveal front comes in from and the
+// weather is held off by, a neighbour halfway through its reveal is halfway a
+// source of light. Continuous, or the hold-back steps as a reveal crosses it.
 //
-// The distance to the light, which the reveal front comes in from and the weather
-// is held off by, asks the **picture**: a neighbour halfway through its reveal is
-// halfway a source of light, and that one has to be continuous or the hold-back
-// steps as the reveal crosses it.
-float maskSide( vec2 ax, float want ) {
-  return want > 0.5 ? maskShown( ax ) : 1.0 - maskRule( ax );
+// Measuring toward the *night* - the band that laps the dark over the edge of the
+// lit region - the answer is how much darker the far side is than *this* side
+// ('self'), and that difference is the whole trick. It gets all three cases right
+// at once and needs no thresholds:
+//
+//   - open ground beside real night: one against zero, a full band, exactly the
+//     static look that was always there;
+//   - open ground beside a hex partway through its reveal: the band fades out as
+//     that hex lightens, so nothing steps at the moment the reveal begins;
+//   - two hexes opening *together*: no difference between them, so no band at all
+//     and no seam - they merge into one region, which is what a black line down
+//     the middle of the explored ground was the absence of.
+float maskSide( vec2 ax, float want, float self ) {
+  return want > 0.5
+    ? maskShown( ax )
+    : clamp( self - maskShown( ax ), 0.0, 1.0 );
 }
 
 vec2 maskCenter( vec2 ax ) {
@@ -519,14 +526,14 @@ float maskEdgeDepth( vec2 ax, vec2 off, vec2 dir, float weight ) {
 // directions are the same question asked twice: 'want' 0.0 measures a watched
 // fragment's distance in from the night, and 1.0 measures a night fragment's
 // distance in from the light.
-float maskBoundaryDepth( vec2 ax, vec2 xz, float want ) {
+float maskBoundaryDepth( vec2 ax, vec2 xz, float want, float self ) {
   vec2 off = xz - maskCenter( ax );
-  float d =        maskEdgeDepth( ax, off, vec2(  0.8660254,  0.5 ), maskSide( ax + vec2(  1.0,  0.0 ), want ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2(  0.8660254, -0.5 ), maskSide( ax + vec2(  1.0, -1.0 ), want ) ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,       -1.0 ), maskSide( ax + vec2(  0.0, -1.0 ), want ) ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2( -0.8660254, -0.5 ), maskSide( ax + vec2( -1.0,  0.0 ), want ) ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2( -0.8660254,  0.5 ), maskSide( ax + vec2( -1.0,  1.0 ), want ) ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,        1.0 ), maskSide( ax + vec2(  0.0,  1.0 ), want ) ) );
+  float d =        maskEdgeDepth( ax, off, vec2(  0.8660254,  0.5 ), maskSide( ax + vec2(  1.0,  0.0 ), want, self ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.8660254, -0.5 ), maskSide( ax + vec2(  1.0, -1.0 ), want, self ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,       -1.0 ), maskSide( ax + vec2(  0.0, -1.0 ), want, self ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2( -0.8660254, -0.5 ), maskSide( ax + vec2( -1.0,  0.0 ), want, self ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2( -0.8660254,  0.5 ), maskSide( ax + vec2( -1.0,  1.0 ), want, self ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,        1.0 ), maskSide( ax + vec2(  0.0,  1.0 ), want, self ) ) );
   return d;
 }
 `;
@@ -571,15 +578,15 @@ ${cull ? `
   // How far through its own reveal this hex is, eased so the dark neither starts
   // nor stops abruptly. 0 and 1 are left exactly alone, which is what makes the
   // two ends of the animation identical to the two static looks.
-  float maskP = maskShown( maskAx );
-  maskP = maskP * maskP * ( 3.0 - 2.0 * maskP );
+  float maskSelf = maskShown( maskAx );
+  float maskP = maskSelf * maskSelf * ( 3.0 - 2.0 * maskSelf );
 
   float maskLocal = 1.0;
   float maskAir = 0.0;
   float maskCloud = 0.0;
 
   if ( maskP < 1.0 ) {
-    float maskToLight = maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0 );
+    float maskToLight = maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0, maskSelf );
 
     // The front crosses the hex from the edge the light is already on rather than
     // the whole tile fading at once - which is the difference between the dark
@@ -622,7 +629,7 @@ ${cull ? `
     // look, band and all. Mixed by the front, so a fragment is the hidden look
     // exactly until the front reaches it and the visible look exactly after.
     float maskOpen = 1.0 - smoothstep( 0.0, uMaskFade,
-      maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0 ) );
+      maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0, maskSelf ) );
     maskHide = mix( 1.0, maskOpen, maskLocal );
   }
   maskHide *= uMaskStrength;
