@@ -452,7 +452,14 @@ const panel = new EditorPanel({
   root: document.getElementById('panel'),
   onLevels: () => { if (!session) library.open(levelList(), level.id); },
   onPlay: act(() => { start(); return null; }),
-  onFog: (on) => { setFogWanted(on); refreshPanel(); },
+  // Whether the board is hidden is decided when a session starts, so flipping it
+  // mid-fight starts one again rather than doing nothing until the next Play -
+  // which is what it did, and it read exactly like a broken switch.
+  onFog: (on) => {
+    setFogWanted(on);
+    if (session) restart();
+    else refreshPanel();
+  },
 });
 
 // Off to the game with whatever is on screen. The level is already stored - every
@@ -483,6 +490,31 @@ function start() {
   commit();
   clearTerrain();
   editorMouse(false);
+  begin();
+  refreshPanel();
+}
+
+function stop() {
+  if (!session) return;
+  session.teardown();
+  session = null;
+  buildTerrain();
+  editorMouse(true);
+  refreshPanel();
+}
+
+// A new session in place of the one running, for the settings that are decided
+// when a session starts and cannot be changed inside one. The editor's board is
+// not rebuilt in between - it was never put back - so this is a blink, which is
+// the only reason it is an acceptable answer to a switch being flipped.
+function restart() {
+  if (!session) return;
+  session.teardown();
+  begin();
+  refreshPanel();
+}
+
+function begin() {
   session = startPlay({
     game, map: buildMap(parseLevel(stringifyLevel(level))), rig,
     fog: fogWanted(),
@@ -494,16 +526,6 @@ function start() {
     // right when a run opens and wrong when this is the fifth time in a minute.
     focus: false,
   });
-  refreshPanel();
-}
-
-function stop() {
-  if (!session) return;
-  session.teardown();
-  session = null;
-  buildTerrain();
-  editorMouse(true);
-  refreshPanel();
 }
 
 const library = new LevelLibrary({

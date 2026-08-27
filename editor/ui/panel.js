@@ -51,7 +51,6 @@ export class EditorPanel {
     this._play.querySelector('b').textContent = playing ? 'Stop' : 'Play';
     this._play.querySelector('kbd').textContent = playing ? 'Esc' : 'P';
     this._levels.disabled = playing;
-    this._fog.disabled = playing;
     this._root.classList.toggle('is-playing', playing);
     const rows = playing
       ? [['Level', esc(level.name)], ['Playing', 'a copy - edits are safe']]
