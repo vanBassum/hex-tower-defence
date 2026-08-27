@@ -1,4 +1,5 @@
 # Publishes the playable build to https://vanbassum.github.io/hex-tower-defence/
+# and the level editor to .../editor/
 #
 # There is no build step. The game is plain ES modules loaded straight from
 # index.html, and three.js arrives from a CDN through the importmap there, so
@@ -38,11 +39,18 @@ jobs:
       # carries the game and nothing else: plan/ alone is ~2 MB of concept art,
       # and tools/, CLAUDE.md and readme.md are for people working on the game,
       # not people playing it.
+      #
+      # Every directory the pages import from has to be here, and that is the one
+      # way this list bites: a new top-level folder is served or not served
+      # depending on a line in a YAML file nobody looks at while writing it, and
+      # the failure is a 404 on the live site only. `editor/` reaches back into
+      # `game/` and `engine/`, which is why it needs no more than its own name
+      # adding.
       - name: Stage site
         run: |
           mkdir _site
           cp index.html _site/
-          cp -r engine game assets _site/
+          cp -r engine game assets editor _site/
 
       - uses: actions/upload-pages-artifact@v3
         with:

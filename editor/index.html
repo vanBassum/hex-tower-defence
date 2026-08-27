@@ -37,46 +37,17 @@
     #panel .k { color: #7f93a4; }
     #panel .v { justify-self: end; color: #dcecf6; font-variant-numeric: tabular-nums; }
 
-    /* The name of the level being edited, and the one thing in the panel that is
-       an input rather than a readout - so it is the same grid row as everything
-       else and looks like a field you can type in. */
-    #panel .name {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 5px 12px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    #panel .name input {
-      width: 100%;
-      font: inherit;
-      color: #f0dcc0;
-      text-align: right;
-      padding: 5px 7px;
-      border-radius: 4px;
-      background: rgba(8, 12, 20, 0.55);
-      border: 1px solid rgba(143, 216, 232, 0.18);
-    }
-    #panel .name input:focus { outline: none; border-color: rgba(143, 216, 232, 0.45); }
-
-    /* A rule above the first bar: the rows are what the level *is* and the bars
-       are what can be done to it, and the two should not read as one list. */
+    /* A rule above the button: the rows are what the level *is* and the button
+       is everything that can be done to it, which now lives behind the one
+       word. */
     #panel .bar {
       display: flex;
       gap: 8px;
-      margin-top: 8px;
-    }
-    #panel .bar:first-of-type {
       margin-top: 11px;
       padding-top: 10px;
       border-top: 1px solid rgba(143, 216, 232, 0.14);
     }
-    /* Moving a level in or out of the browser is the secondary way to work now -
-       held back rather than hidden, and lifted when it is reached for. */
-    #panel .bar.is-secondary { opacity: 0.55; }
-    #panel .bar.is-secondary:hover { opacity: 1; }
-
-    #panel button, #panel select {
+    #panel button {
       flex: 1;
       min-width: 0;
       font: inherit;
@@ -88,12 +59,7 @@
       cursor: pointer;
       transition: background 160ms ease;
     }
-    #panel button:hover:not(:disabled), #panel select:hover { background: rgba(143, 216, 232, 0.20); }
-    #panel button:disabled, #panel select:disabled { opacity: 0.35; cursor: default; }
-    /* A dark dropdown draws its own list in the platform's colours; the option
-       colour is the one part of it worth stating so the list is not black text on
-       a black field on some machines. */
-    #panel select option { color: #16202f; background: #dcecf6; }
+    #panel button:hover { background: rgba(143, 216, 232, 0.20); }
 
     /* Empty until something has happened, and it collapses when it is - a status
        line reserving space for a message nobody has been given yet is a gap in
@@ -106,6 +72,144 @@
     }
     #panel .status:not(:empty) { margin-top: 9px; }
     #panel .status.is-error { color: #e08a7a; }
+
+    /* The library. A <dialog>, so Escape closes it and the board behind stops
+       taking clicks without any of that being written here. Its own surface is a
+       shade lighter than the panels and it carries a shadow, because it is the
+       one thing on screen that is *over* the world rather than beside it. */
+    #levels {
+      margin: auto;
+      width: min(880px, calc(100vw - 32px));
+      max-height: calc(100vh - 64px);
+      padding: 0;
+      border: 1px solid rgba(143, 216, 232, 0.18);
+      border-radius: 10px;
+      background: #101a2b;
+      color: #b9cfe0;
+      font-size: 12px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      overflow: hidden;
+    }
+    #levels::backdrop { background: rgba(4, 8, 16, 0.62); }
+    #levels .sheet { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
+
+    #levels header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 15px 18px 13px;
+      border-bottom: 1px solid rgba(143, 216, 232, 0.14);
+    }
+    #levels h2 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #f0dcc0;
+    }
+    #levels .hint { color: #6d8195; }
+
+    /* Cards, and they wrap: a library of three is three across and a library of
+       twenty scrolls, without either case needing a different layout. */
+    #levels .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+      gap: 10px;
+      padding: 14px 18px;
+      overflow-y: auto;
+    }
+    #levels .empty { color: #6d8195; padding: 6px 0 10px; }
+
+    #levels .card {
+      padding: 11px 12px 9px;
+      border-radius: 7px;
+      background: rgba(143, 216, 232, 0.05);
+      border: 1px solid rgba(143, 216, 232, 0.12);
+    }
+    /* The level on screen behind the modal, and it is said twice - a warm border
+       and the word - because "which one am I in" is the question the library is
+       opened with. */
+    #levels .card.is-open {
+      border-color: rgba(224, 160, 92, 0.45);
+      background: rgba(224, 160, 92, 0.07);
+    }
+    #levels .card.is-broken { border-color: rgba(224, 138, 122, 0.35); }
+
+    #levels .card .title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #dcecf6;
+      font-size: 13px;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+    #levels .card .badge {
+      flex: none;
+      font-size: 9.5px;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: #e0a05c;
+      padding: 2px 5px;
+      border-radius: 3px;
+      background: rgba(224, 160, 92, 0.14);
+    }
+    #levels .card .meta { color: #6d8195; padding: 5px 0 9px; line-height: 1.35; }
+
+    /* Five words on a card is a lot of buttons, so they are text rather than
+       boxes - a row of chips would outweigh the name they belong to. */
+    #levels .card .acts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px 4px;
+      margin: 0 -5px;
+    }
+    #levels .card .acts button {
+      font: inherit;
+      color: #9fd8ee;
+      background: none;
+      border: 0;
+      padding: 3px 5px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #levels .card .acts button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.14); }
+    #levels .card .acts button:disabled { color: #55697c; cursor: default; }
+    #levels .card .acts [data-act=delete] { color: #d99184; }
+
+    #levels footer {
+      display: flex;
+      gap: 8px;
+      padding: 12px 18px 14px;
+      border-top: 1px solid rgba(143, 216, 232, 0.14);
+    }
+    #levels footer button {
+      font: inherit;
+      color: #dcecf6;
+      padding: 7px 12px;
+      border-radius: 5px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+      cursor: pointer;
+      transition: background 160ms ease;
+    }
+    #levels footer button:hover { background: rgba(143, 216, 232, 0.20); }
+    #levels footer [data-act=new] { color: #f0dcc0; border-color: rgba(224, 160, 92, 0.35); }
+    /* Close is pushed to the far end and given no fill: it is the way out, not
+       one of the things to do in here. */
+    #levels footer .is-plain {
+      margin-left: auto;
+      background: none;
+      border-color: transparent;
+      color: #8fa4b8;
+    }
+
+    #levels .status {
+      color: #7f93a4;
+      line-height: 1.4;
+      padding: 0 18px 14px;
+    }
+    #levels .status:empty { display: none; }
+    #levels .status.is-error { color: #e08a7a; }
 
     #controls {
       left: 16px; bottom: 16px;
@@ -139,6 +243,7 @@
 </head>
 <body>
   <div id="panel"></div>
+  <dialog id="levels"></dialog>
   <div id="controls">
     <kbd>Left-click</kbd><span>Select a hex</span>
     <kbd>Right-drag</kbd><span>Rotate</span>

@@ -9,10 +9,11 @@ import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { MOOD } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
-import { defaultLevel, buildLevel, parseLevel, stringifyLevel, tileAt } from './level.js';
+import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
 import { downloadLevel, readFile } from './files.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
+import { LevelLibrary } from './ui/levels.js';
 
 // The level editor: the game's world with the game taken out of it.
 //
@@ -40,6 +41,13 @@ import { EditorPanel } from './ui/panel.js';
 // That is why the board lives in `buildBoard`/`clearBoard` rather than at the
 // top level of the module: an editor whose scene was built once could load a
 // file, and could not show it.
+//
+// ── And the level is stored, not saved ───────────────────────────────────────
+// Local storage is where the level lives, not a backup of it. Every change ends
+// in `commit()`, which writes it through immediately, so there is no unsaved
+// work, nothing to lose by closing the tab, and no Save button - the editor
+// opens again on whatever was on screen last time. Files are for the other
+// things: a backup, another machine, a level committed to git.
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level, as in the game
 
@@ -80,7 +88,7 @@ game.add(sun);
 
 // ── The board ────────────────────────────────────────────────────────────────
 
-let level = defaultLevel();
+let level = null;            // set by the boot block at the bottom of this file
 let world = null;            // grid, elevation and crags, derived from `level`
 let board = [];              // the GameObjects that belong to this level
 let hexGround = null;
@@ -162,14 +170,36 @@ function clearBoard() {
   selectionOverlay = null;
 }
 
-// The one way the level changes. Everything derived from it is rebuilt, and the
-// selection goes with the old board: a hex coordinate that meant something on
-// the last level is not a promise about this one.
+// The one way the level on screen changes. Everything derived from it is
+// rebuilt, and the selection goes with the old board: a hex coordinate that
+// meant something on the last level is not a promise about this one.
+//
+// It stores as well as loads. Every level the editor has open is a level in the
+// browser - a board that exists only on screen is one refresh from being gone -
+// so this is also what makes a brand new or freshly imported level real.
 function loadLevel(next) {
   clearBoard();
   level = next;
   selected = null;
   buildBoard();
+  commit();
+  storage.setOpenId(level.id);
+  refreshPanel();
+}
+
+// What every edit ends in, and the reason there is no Save button. It is one
+// function so that the day tiles can be painted, elevation raised or a unit
+// moved, the persistence is already written and the tool only has to say that it
+// changed something.
+function commit() {
+  try {
+    storage.save(level);
+  } catch (e) {
+    // The one case where the promise this editor makes cannot be kept, so it is
+    // said out loud rather than swallowed: a full quota, or a browser with
+    // storage switched off, means the work really is only on screen.
+    say(e.message, true);
+  }
   refreshPanel();
 }
 
@@ -179,24 +209,10 @@ function select(hex) {
   refreshPanel();
 }
 
-// ── The panel, and what it can do ────────────────────────────────────────────
+// ── The panel and the library ────────────────────────────────────────────────
 
-// Where the open level stands relative to the copy in local storage. It is the
-// panel's answer to "which level am I editing" - a name on its own does not say
-// whether what is on screen is the thing that was saved under it.
-function storageState() {
-  let text;
-  try {
-    text = storage.savedText(level.name);
-  } catch {
-    return 'unavailable';
-  }
-  if (text === null) return 'not saved';
-  return text === stringifyLevel(level) ? 'saved' : 'unsaved changes';
-}
-
-function savedNames() {
-  try { return storage.listSaved(); } catch { return []; }
+function levelList() {
+  try { return storage.list(); } catch { return []; }
 }
 
 function refreshPanel() {
@@ -204,68 +220,151 @@ function refreshPanel() {
     level,
     hex: selected,
     tile: selected ? tileAt(level, selected.q, selected.r) : null,
-    saved: savedNames(),
-    storage: storageState(),
   });
+  // The library is repainted out of storage rather than told what changed, so a
+  // rename, a duplicate and an import all land the same way.
+  if (library.isOpen) library.render(levelList(), level.id);
 }
 
-// Every action is the same three lines - do the thing, say what happened, and
-// say what went wrong instead - so it is one wrapper rather than five identical
-// try blocks. Nothing here reaches past `loadLevel` and `refreshPanel`: an
-// action changes the level or the store, and the panel is repainted from what it
-// finds afterwards rather than told.
+// Every library action is the same three lines - do the thing, say what
+// happened, say what went wrong instead - so it is one wrapper rather than seven
+// identical try blocks. Nothing inside them reaches past `loadLevel` and
+// `commit`.
 function act(fn) {
   return async (...args) => {
     try {
-      // Nothing back means nothing happened - a cancelled confirmation - and the
-      // panel is left saying whatever it was already saying.
+      // Nothing back means nothing happened - a cancelled prompt - and the panel
+      // is left saying whatever it was already saying.
       const said = await fn(...args);
-      if (said != null) panel.setStatus(said);
+      if (said != null) say(said);
     } catch (e) {
-      panel.setStatus(e.message, true);
+      say(e.message, true);
     }
     refreshPanel();
   };
 }
 
+// Said in whichever of the two is in front of the person. The library covers the
+// panel, so a message about an import that went there would be a message nobody
+// read.
+function say(text, isError = false) {
+  (library?.isOpen ? library : panel)?.setStatus(text, isError);
+}
+
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
+  onLevels: () => library.open(levelList(), level.id),
+});
 
-  // Renaming is the one action that is not an event: it happens on every
-  // keystroke, so it does not touch the board and does not report anything. It
-  // does repaint, because the level's standing in storage changed the moment its
-  // name did.
-  onRename: (name) => { level.name = name; refreshPanel(); },
+const library = new LevelLibrary({
+  root: document.getElementById('levels'),
 
-  onNew:  act(() => { loadLevel(defaultLevel()); return 'New level'; }),
-  onSave: act(() => { storage.save(level); return `Saved "${level.name}"`; }),
-  onLoad: act((name) => { loadLevel(storage.load(name)); return `Loaded "${name}"`; }),
+  onOpen: act((id) => {
+    loadLevel(storage.load(id));
+    library.close();
+    return null;                    // the panel already says which level it is
+  }),
 
-  // The one place a click is asked to confirm itself. Everything else here can
-  // be undone by doing it again - a load is a load away, a save is a save away -
-  // and this is the only button that destroys something.
-  onDelete: act((name) => {
-    if (!window.confirm(`Delete the saved level "${name}"?`)) return null;
-    storage.remove(name);
+  // A fresh starter board under a name nothing else is using, open immediately.
+  onNew: act(() => {
+    loadLevel(defaultLevel(storage.uniqueName('Untitled')));
+    library.close();
+    return null;
+  }),
+
+  // `prompt` rather than an editable card. It is the whole of the interaction -
+  // one string, once - and a field that has to be committed, cancelled and
+  // validated is three more things on a card that is mostly a name already.
+  onRename: act((id) => {
+    const before = storage.load(id);
+    const name = window.prompt('Name for this level', before.name)?.trim();
+    if (!name || name === before.name) return null;
+    if (id === level.id) {
+      level.name = name;
+      commit();
+    } else {
+      storage.save({ ...before, name });
+    }
+    return `Renamed to "${name}"`;
+  }),
+
+  onDuplicate: act((id) => {
+    const from = storage.load(id);
+    const copy = storage.duplicate(from, storage.uniqueName(`${from.name} copy`));
+    return `Duplicated as "${copy.name}"`;
+  }),
+
+  // The one place a click is asked to confirm itself: everything else here can
+  // be undone by doing it again, and this is the only button that destroys work.
+  //
+  // Deleting the level that is open leaves the editor with nothing to show, so
+  // it moves to another one - and makes a starter level if that was the last.
+  onDelete: act((id) => {
+    const entry = levelList().find(l => l.id === id);
+    const name = entry?.name ?? 'this level';
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return null;
+    storage.remove(id);
+    if (id === level.id) loadLevel(anyStoredLevel() ?? defaultLevel());
     return `Deleted "${name}"`;
   }),
 
-  onExport: act(() => `Exported ${downloadLevel(level)}`),
+  // With an id it is that card's level; without one it is the footer button and
+  // means the level that is open.
+  onExport: act((id) => `Exported ${downloadLevel(id ? storage.load(id) : level)}`),
 
-  // A refused file leaves the board exactly as it was. `parseLevel` throws
-  // before anything is torn down, which is the only reason that is true.
+  // Validated before anything is stored or torn down, because a file off disk is
+  // the one input here that nothing in this editor wrote.
+  //
+  // An arriving level never lands on top of one already here. A file carrying an
+  // id this browser already holds is a second copy of that level rather than a
+  // newer version of it - there is no way to tell which is newer, and guessing
+  // wrong loses work - so it comes in under a fresh identity. A name already
+  // taken is made unique so the library stays readable. Both are reported: a
+  // level quietly renamed is a level you cannot find again.
   onImport: act(async (file) => {
+    let next;
     try {
-      loadLevel(parseLevel(await readFile(file)));
+      next = parseLevel(await readFile(file));
     } catch (e) {
       throw new Error(`${file.name}: ${e.message}`);
     }
-    return `Imported ${file.name}`;
+    const notes = [];
+    if (storage.has(next.id)) {
+      next.id = newId();
+      notes.push('a level with that id is already here, so this is a copy');
+    }
+    const name = storage.uniqueName(next.name);
+    if (name !== next.name) {
+      notes.push(`renamed to "${name}"`);
+      next.name = name;
+    }
+    loadLevel(next);
+    return `Imported "${next.name}"${notes.length ? ` - ${notes.join('; ')}` : ''}`;
   }),
 });
 
-buildBoard();
-refreshPanel();
+// The first level in the library that can actually be read, or null.
+function anyStoredLevel() {
+  for (const entry of levelList()) {
+    if (entry.error) continue;
+    try { return storage.load(entry.id); } catch { /* try the next one */ }
+  }
+  return null;
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+// Carry on from where the last session stopped: the level that was open, or any
+// other level in the browser if that one has gone, or a starter board if this is
+// the first visit. `loadLevel` stores whichever it ends up being, so a first
+// visit leaves a level behind rather than an empty library.
+{
+  const wanted = storage.openId();
+  let opening = null;
+  if (wanted) {
+    try { opening = storage.load(wanted); } catch { /* deleted, or no longer reads */ }
+  }
+  loadLevel(opening ?? anyStoredLevel() ?? defaultLevel());
+}
 
 // Open looking at the middle of the board.
 {
@@ -287,7 +386,9 @@ window.hex = {
   get selected() { return selected; },
   select,
   loadLevel,
+  commit,
   storage,
+  panel, library,
   // The file format, reachable from the console and from the check script, so a
   // round trip can be asserted without a download dialog in the way.
   stringifyLevel: () => stringifyLevel(level),

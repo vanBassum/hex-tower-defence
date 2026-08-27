@@ -22,7 +22,17 @@ import { HexGrid } from '../engine/hex/hex_grid.js';
 // in the middle of building a scene; the version is here so the day the shape
 // changes, a file written before it can say so.
 export const LEVEL_FORMAT = 'hex-tower-defence.level';
-export const LEVEL_VERSION = 1;
+export const LEVEL_VERSION = 2;
+
+// A level's identity, and the reason it is not the name: a name is a label a
+// person changes their mind about, and everything that has to keep pointing at
+// the same level across a rename - which one is open, which one an imported file
+// collides with - needs something that does not move. It is minted once and then
+// travels with the level, into local storage and into the file.
+export function newId() {
+  return crypto.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 // The terrain a tile can be. The three the ground renderer already draws
 // differently, and no more: a fourth kind is a fourth thing to draw, not a
@@ -33,11 +43,12 @@ export const TERRAIN = ['land', 'crag', 'water'];
 // standing in the middle of it. Small because the first thing anybody does with
 // an editor is click a tile, and a board you have to fly across to find one is
 // answering a question nobody asked yet.
-export function defaultLevel() {
+export function defaultLevel(name = 'Untitled') {
   return {
     format: LEVEL_FORMAT,
     version: LEVEL_VERSION,
-    name: 'Untitled',
+    id: newId(),
+    name,
     hexSize: 1,
     // The envelope, not the board - `tiles` is the board. Two rings of margin,
     // so growing the patch later is a tile the editor adds rather than a number
@@ -72,6 +83,7 @@ export function stringifyLevel(level) {
     '{',
     `  "format": ${JSON.stringify(level.format)},`,
     `  "version": ${level.version},`,
+    `  "id": ${JSON.stringify(level.id)},`,
     `  "name": ${JSON.stringify(level.name)},`,
     `  "hexSize": ${level.hexSize},`,
     `  "radius": ${level.radius},`,
@@ -113,10 +125,17 @@ export function parseLevel(text) {
     throw new Error(`not a level file (format is ${JSON.stringify(raw.format ?? null)}, ` +
                     `expected ${JSON.stringify(LEVEL_FORMAT)})`);
   }
-  if (raw.version !== LEVEL_VERSION) {
+  // Version 1 is read and brought forward. It is the same board - it only
+  // predates levels having an identity of their own - and refusing a file this
+  // editor wrote last week would be the version number doing harm rather than
+  // work. Anything older than that does not exist, and anything newer was
+  // written by an editor that knows something this one does not, so it is
+  // refused rather than guessed at.
+  if (raw.version !== 1 && raw.version !== LEVEL_VERSION) {
     throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
                     `(this editor reads version ${LEVEL_VERSION})`);
   }
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : newId();
 
   const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name : null;
   if (!name) throw new Error('"name" must be a non-empty string');
@@ -161,7 +180,7 @@ export function parseLevel(text) {
   return {
     format: LEVEL_FORMAT,
     version: LEVEL_VERSION,
-    name, hexSize, radius,
+    id, name, hexSize, radius,
     king: { q: king.q, r: king.r },
     tiles,
   };
