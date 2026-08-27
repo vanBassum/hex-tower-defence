@@ -168,8 +168,16 @@ export const MAP_1 = {
 };
 
 // Expands a map definition into the runtime pieces the scene needs.
+//
+// Two dialects arrive here and they are the same map said two ways. A hand-
+// authored level draws its outline as text and its hills as regions, because a
+// silhouette is judged by looking at it. A level out of the editor is a list of
+// tiles, each with its own terrain and its own height, because that is the shape
+// the thing doing the editing works in. Both land in the same built map, so there
+// is one loading path and a playtest is the game opening a level rather than the
+// editor pretending to be a game.
 export function buildMap(def) {
-  const { hexes, crags, water } = parseShape(def);
+  const { hexes, crags, water } = def.tiles ? parseTiles(def) : parseShape(def);
   const grid = new HexGrid({ size: def.hexSize, radius: def.radius, hexes });
 
   for (const p of def.props ?? []) {
@@ -193,18 +201,30 @@ export function buildMap(def) {
   }
 
   // Anything the level stands on the board has to be somewhere a unit can be.
-  for (const e of def.enemies ?? []) {
+  for (const e of [...(def.enemies ?? []), ...(def.units ?? [])]) {
     if (!grid.inBounds(e.q, e.r) || blockedKeys.has(`${e.q},${e.r}`)) {
       throw new Error(`Map "${def.name}": ${e.type} cannot stand at ${e.q},${e.r}`);
     }
   }
 
-  checkConnected(def, grid, hexes?.[0] ?? { q: 0, r: 0 });
+  // An outline drawn as text is easy to mis-draw into two islands and worth
+  // refusing. A board somebody is looking at while they paint it is not: the
+  // check would turn "I have not joined these up yet" into a level that will not
+  // open, in the middle of the loop this is meant to be fast.
+  if (!def.tiles) checkConnected(def, grid, hexes?.[0] ?? { q: 0, r: 0 });
 
   return {
     def,
     grid,
-    levels: buildElevation(def, grid, crags),
+    levels: def.tiles ? tileLevels(def) : buildElevation(def, grid, crags),
+    // Where the player starts, when the level says. A hand-authored map does not
+    // - see DEBUG.kingStart, which is the knob that stands in for it.
+    king: def.king ?? null,
+    // Everybody the level stands on the board itself, both sides in one list:
+    // `hostile` on the type is what makes one an enemy, so there is nothing here
+    // to sort them by that the type does not already say. `enemies` is the older
+    // spelling of the same thing and still authored that way in the map above.
+    units: [...(def.units ?? []), ...(def.enemies ?? [])],
     blocked: crags,
     blockedKeys,
     water,
@@ -222,8 +242,33 @@ export function buildMap(def) {
       // grass drawn over its foot is the composition arguing with itself.
       ...(def.pickups ?? []).map(p => `${p.q},${p.r}`),
       ...(def.enemies ?? []).map(e => `${e.q},${e.r}`),
+      ...(def.units ?? []).map(u => `${u.q},${u.r}`),
     ])),
   };
+}
+
+// A tile list to the three sets the scene needs. The same three glyphs as an
+// outline, said as a field on each tile instead of a character in a row.
+function parseTiles(def) {
+  const hexes = [], crags = [], water = [];
+  for (const t of def.tiles) {
+    if (t.terrain === 'water') { water.push({ q: t.q, r: t.r }); continue; }
+    hexes.push({ q: t.q, r: t.r });
+    if (t.terrain === 'crag') crags.push({ q: t.q, r: t.r });
+  }
+  return { hexes, crags, water };
+}
+
+// And its heights, which are already per-hex integers. Note that a crag is *not*
+// lifted to `cragLevel` here, unlike an authored one: the editor drew that tile
+// at that height and showed it at that height, so raising it on the way into the
+// game would make the playtest a different board from the one on screen.
+function tileLevels(def) {
+  const levels = new Map();
+  for (const t of def.tiles) {
+    if (t.terrain !== 'water') levels.set(`${t.q},${t.r}`, t.level ?? 0);
+  }
+  return levels;
 }
 
 // Expands the scatter rules into placements. Deterministic, because a board that

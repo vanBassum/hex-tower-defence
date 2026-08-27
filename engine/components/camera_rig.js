@@ -161,6 +161,24 @@ export class CameraRig extends Component {
   // Puts a world point in the middle of the view. Where the player is looking
   // when a level opens is the game's decision, not the rig's - the rig only
   // knows how to look at whatever it is pointed at.
+  // Where the camera is, as four numbers, and how to put it back. It exists so a
+  // page that navigates away and returns can return to the same view - which is
+  // the difference between a playtest being a glance and being a place you have
+  // to fly back to. Written against the *goal* values rather than the eased ones,
+  // so a snapshot taken mid-glide restores where the glide was heading.
+  snapshot() {
+    return { x: this._target.x, z: this._target.z, dist: this._distGo, azimuth: this._aziGo, tilt: this._tilt };
+  }
+
+  restore(state) {
+    if (!state) return;
+    this._target.set(state.x ?? 0, 0, state.z ?? 0);
+    this._dist = this._distGo = state.dist ?? this._distGo;
+    this._azimuth = this._aziGo = state.azimuth ?? this._azimuth;
+    this._tilt = state.tilt ?? this._tilt;
+    this._apply();
+  }
+
   focusOn(x, z) {
     this._target.x = x;
     this._target.z = z;

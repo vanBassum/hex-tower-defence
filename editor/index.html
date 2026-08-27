@@ -61,6 +61,30 @@
     }
     #panel button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.20); }
     #panel button:disabled { opacity: 0.4; cursor: default; }
+    /* Play is the one thing in this panel that leaves the editor, so it is the
+       one warm control - the same warm the active tool and the open level card
+       are, which is this UI's whole vocabulary for "this one is live". */
+    #panel .is-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #f0dcc0;
+      background: rgba(224, 160, 92, 0.14);
+      border-color: rgba(224, 160, 92, 0.42);
+    }
+    #panel .is-primary:hover { background: rgba(224, 160, 92, 0.24); }
+    #panel .is-primary kbd {
+      font: inherit;
+      font-size: 10px;
+      color: #b9cfe0;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+    }
+    /* The bar under it has no rule of its own - the two are one block. */
+    #panel .bar + .bar { margin-top: 6px; padding-top: 0; border-top: 0; }
 
     /* Empty until something has happened, and it collapses when it is - a status
        line reserving space for a message nobody has been given yet is a gap in
@@ -362,7 +386,6 @@
 
     #controls {
       left: 16px; bottom: 16px;
-      max-width: 260px;
       display: grid;
       grid-template-columns: auto auto;
       gap: 5px 12px;
@@ -397,9 +420,10 @@
   <dialog id="levels"></dialog>
   <div id="controls">
     <kbd>Left-drag</kbd><span>Use the tool</span>
-    <kbd>Wheel</kbd><span>Sculpt with Height, else zoom</span>
+    <kbd>Wheel</kbd><span>Sculpt or zoom</span>
     <kbd>Right-drag</kbd><span>Rotate</span>
     <kbd>Middle-drag</kbd><span>Pan</span>
+    <kbd>P</kbd><span>Play this level</span>
   </div>
   <script type="module" src="main.js"></script>
 </body>

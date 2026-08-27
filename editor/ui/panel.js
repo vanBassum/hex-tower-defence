@@ -12,10 +12,13 @@ import { esc } from './dom.js';
 // The readout follows the *cursor* rather than a selection, for the same reason:
 // while painting, the interesting hex is the one under the brush.
 export class EditorPanel {
-  constructor({ root, onLevels }) {
+  constructor({ root, onLevels, onPlay }) {
     this._root = root;
     root.innerHTML = `
       <div class="rows"></div>
+      <div class="bar">
+        <button type="button" data-act="play" class="is-primary">Play <kbd>P</kbd></button>
+      </div>
       <div class="bar">
         <button type="button" data-act="levels">Levels</button>
       </div>
@@ -24,6 +27,7 @@ export class EditorPanel {
     this._rows   = root.querySelector('.rows');
     this._status = root.querySelector('.status');
     root.querySelector('[data-act=levels]').onclick = () => onLevels();
+    root.querySelector('[data-act=play]').onclick = () => onPlay();
   }
 
   // `hex` is what the cursor is over, or null, and `tile` is the level's tile

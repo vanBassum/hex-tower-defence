@@ -50,14 +50,10 @@ export function thumbSvg(level, { width = 228, height = 96 } = {}) {
     }
   }
 
-  // Who is on it, as marks rather than figures. At this size a shape would be
-  // four pixels of nothing; what reads is a dot, and what tells them apart is the
-  // one thing that tells them apart on the real board - blue is the player's and
-  // red is the enemy. The King is the largest and warmest, because he is.
+  // Who is on it. The King last, so he is on top of anything he overlaps.
   const marks = [
-    ...(level.units ?? []).map(u => dot(u.q, u.r, 3.2,
-      UNIT_TYPES[u.type]?.hostile ? MOOD.units.spearmen.trim : MOOD.units.footman.trim)),
-    level.king ? dot(level.king.q, level.king.r, 4.4, MOOD.kingFire.color) : '',
+    ...(level.units ?? []).map(u => mark(u.q, u.r, UNIT_TYPES[u.type])),
+    level.king ? mark(level.king.q, level.king.r, UNIT_TYPES.king, MOOD.kingFire.color) : '',
   ].join('');
 
   // `preserveAspectRatio` does the fitting, so a wide board and a tall one both
@@ -75,12 +71,62 @@ export function thumbSvg(level, { width = 228, height = 96 } = {}) {
     `<g stroke="${css(MOOD.gridColor)}" stroke-width="0.7">${shapes.join('')}</g>${marks}</svg>`;
 }
 
-// Somebody on a hex, ringed in the board's own dark so it reads against grass and
-// against water alike.
-function dot(q, r, radius, color) {
+// Somebody on a hex, drawn from the same three facts about their type that the
+// board itself is read by: what shape the crowd stands in, whether anything
+// sticks up out of it, and whether it carries a light. So a Footman is a rank
+// with a shaft over it, Spearmen are a mob with theirs going every way, a Scout
+// is a small crowd with a glow, and the King has the flag - the four of them tell
+// apart at ten pixels for the reason they tell apart on the board, which is
+// silhouette rather than hue.
+//
+// Nothing here has a table of unit ids in it. A type added to the game gets a
+// mark out of its own `formation`, `spears`, `standard` and `lamp`, and the only
+// thing colour says is which side it is on.
+function mark(q, r, type, color = null) {
+  if (!type) return '';
   const { x, z } = GEO.hexToWorld(q, r);
-  return `<circle cx="${round(x)}" cy="${round(z)}" r="${radius}" fill="${css(color)}" ` +
-    `stroke="${css(0x0b1220)}" stroke-width="1.4"/>`;
+  const tint = css(color ?? (type.hostile ? MOOD.units.spearmen.trim : MOOD.units.footman.trim));
+  const dark = css(0x0b1220);
+  const parts = [];
+
+  // The lamp, behind everything: a ring of its own glow, which is what a light
+  // looks like from above.
+  if (type.lamp) {
+    parts.push(`<circle cx="${round(x)}" cy="${round(z)}" r="6" fill="none" ` +
+      `stroke="${css(MOOD.units.lampGlow)}" stroke-width="1.1" opacity="0.4"/>`);
+  }
+
+  // What stands above the heads. Spears go up in a rank and out in a mob, which
+  // is the difference between the two bodies that carry them - see the notes on
+  // `formation` in units.js.
+  const shafts = type.spears
+    ? (type.formation === 'block'
+        ? [[0, -3.4, 0, -9]]
+        : [[-0.6, -2.6, -3.6, -8], [0, -3, 0, -9.2], [0.6, -2.6, 3.6, -8]])
+    : [];
+  for (const [x1, z1, x2, z2] of shafts) {
+    parts.push(`<path d="M${round(x + x1)} ${round(z + z1)}L${round(x + x2)} ${round(z + z2)}" ` +
+      `stroke="${tint}" stroke-width="1.3" stroke-linecap="round"/>`);
+  }
+
+  // And the standard, which is the taller of the two things that can stick up and
+  // the one that actually finds the King on a dark board.
+  if (type.standard) {
+    parts.push(`<path d="M${round(x)} ${round(z - 2.6)}V${round(z - 11)}" stroke="${tint}" ` +
+      `stroke-width="1.4" stroke-linecap="round"/>`);
+    parts.push(`<path d="M${round(x)} ${round(z - 11)}L${round(x + 5.4)} ${round(z - 9.5)}` +
+      `L${round(x)} ${round(z - 8)}Z" fill="${tint}"/>`);
+  }
+
+  // The crowd itself, on top: a block for ranks, a round body for rings, ringed
+  // in the board's own dark so it reads against grass and against water alike.
+  parts.push(type.formation === 'block'
+    ? `<rect x="${round(x - 3.1)}" y="${round(z - 2.7)}" width="6.2" height="5.4" rx="1.2" ` +
+      `fill="${tint}" stroke="${dark}" stroke-width="1.3"/>`
+    : `<circle cx="${round(x)}" cy="${round(z)}" r="3.2" fill="${tint}" ` +
+      `stroke="${dark}" stroke-width="1.3"/>`);
+
+  return parts.join('');
 }
 
 function tileColor(tile) {

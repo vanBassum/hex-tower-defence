@@ -199,6 +199,39 @@
       50%      { opacity: 0.9; }
     }
 
+    /* The way out of a playtest. Top left, out of the hand's way, and it is not
+       in the page at all unless the level came from the editor - so the game as
+       a game has no editor chrome on it. Warm, because it is the one control
+       here that is not part of the world. */
+    #back {
+      position: fixed;
+      left: 16px; top: 16px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1;
+      color: #f0dcc0;
+      padding: 9px 12px;
+      border-radius: 7px;
+      background: rgba(9, 16, 30, 0.62);
+      border: 1px solid rgba(224, 160, 92, 0.38);
+      cursor: pointer;
+      z-index: 11;
+      transition: background 160ms ease;
+    }
+    #back.is-live { display: flex; }
+    #back:hover { background: rgba(224, 160, 92, 0.18); }
+    #back kbd {
+      font: inherit;
+      color: #b9cfe0;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+    }
+
     @keyframes card-in {
       from { opacity: 0; transform: translateY(26px) scale(0.94); }
       to   { opacity: 1; transform: none; }
@@ -223,6 +256,7 @@
     <kbd>Wheel</kbd><span>Zoom</span>
     <kbd>Q / E</kbd><span>Turn a hex face</span>
   </div>
+  <button type="button" id="back">← Editor <kbd>Esc</kbd></button>
   <div id="hand" class="is-empty"></div>
   <script type="module" src="game/main.js"></script>
 </body>

@@ -13,6 +13,7 @@ import { Unit } from '../game/components/unit.js';
 import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
+import { play, takeView } from './playtest.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
 import { ToolBar } from './ui/toolbar.js';
@@ -421,7 +422,21 @@ const toolbar = new ToolBar({
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
   onLevels: () => library.open(levelList(), level.id),
+  onPlay: act(() => { start(); return null; }),
 });
+
+// Off to the game with whatever is on screen. The level is already stored - every
+// edit ends in `commit()` - so this stores it once more only to be certain the
+// bytes the game reads are the bytes this editor is holding, and hands the camera
+// over with it so coming back is not a flight back.
+//
+// No confirmation, no dialog, no loading screen. The loop this exists for is
+// change something, fight for twenty seconds, change it again, and every step
+// that has to be dismissed is spent twice a minute.
+function start() {
+  commit();
+  play(level, rig.snapshot());
+}
 
 const library = new LevelLibrary({
   root: document.getElementById('levels'),
@@ -533,11 +548,25 @@ function anyStoredLevel() {
   loadLevel(opening ?? anyStoredLevel() ?? defaultLevel());
 }
 
-// Open looking at the middle of the board.
+// Where to look. Back from a playtest it is exactly where the camera was when Play
+// was pressed; otherwise the middle of the board.
 {
-  const { x, z } = geometry.hexToWorld(0, 0);
-  rig.focusOn(x, z);
+  const view = takeView();
+  if (view) rig.restore(view);
+  else {
+    const { x, z } = geometry.hexToWorld(0, 0);
+    rig.focusOn(x, z);
+  }
 }
+
+// One key, and it is the other half of Escape in the game. Ignored while a field
+// or the library has the keyboard, so typing a level name does not launch a
+// playtest halfway through the word.
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyP' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (library.isOpen || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
+  start();
+});
 
 // The same hook the game exposes, and for the same reason: tools/check.py drives
 // the page through it, and a screenshot of a hex has to be able to ask where
@@ -556,6 +585,7 @@ window.hex = {
   settings,
   loadLevel,
   commit,
+  play: start,
   storage,
   panel, toolbar, library,
   // The tools, driven the way the mouse drives them, so a shape can be sketched

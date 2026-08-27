@@ -23,6 +23,7 @@ import { Pickup } from './components/pickup.js';
 import { Deployment } from './components/deployment.js';
 import { EnemyForce } from './components/enemy_force.js';
 import { Battle } from './components/battle.js';
+import { CARD_TYPES } from './cards.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
 
@@ -39,9 +40,35 @@ import { DEBUG, installDebug } from './debug.js';
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level
 
+// ── A level handed over from the editor ─────────────────────────────────────
+// The editor writes the level it has open into session storage and comes here
+// with `?playtest=1`. What arrives is the same JSON it stores and exports, and it
+// goes into the same `buildMap` an authored level does - see the note there about
+// the two dialects. So a playtest is this page opening a different level, not a
+// second simulation, and there is nothing here that a real level does not use.
+//
+// Session storage rather than a query string full of JSON: a board is kilobytes,
+// and it has to survive the reload somebody presses mid-fight. Nothing is ever
+// written back - the game has no save path - so playing cannot touch the level
+// the editor is holding.
+const PLAYTEST_KEY = 'hex-tower-defence#playtest';
+
+function playtestLevel() {
+  if (!new URLSearchParams(location.search).has('playtest')) return null;
+  try {
+    return JSON.parse(sessionStorage.getItem(PLAYTEST_KEY));
+  } catch {
+    return null;
+  }
+}
+
 window.__boot = { t0: performance.now() };
 const game = new Game();
-const map  = buildMap(MAP_1);
+const playtest = playtestLevel();
+const map  = buildMap(playtest ?? MAP_1);
+// Where the run begins. A level that says so wins; DEBUG.kingStart is what stands
+// in for it on the hand-authored map, which has never had to say.
+const kingStart = map.king ?? DEBUG.kingStart;
 window.__boot.map = performance.now();
 game.map     = map;
 game.hexGrid = map.grid;
@@ -206,7 +233,7 @@ const king = kingGO.addComponent(new Unit({
   grid: map.grid,
   ground: hexGround,
   type: 'king',
-  q: DEBUG.kingStart.q, r: DEBUG.kingStart.r,
+  q: kingStart.q, r: kingStart.r,
   colors: MOOD.units,
   tuning: { lamp: LAMPS.king },
 }));
@@ -374,7 +401,20 @@ for (const card of DEBUG.startingHand) deployment.addCard(card);
 const enemyGO = new GameObject('Enemies');
 const enemies = enemyGO.addComponent(new EnemyForce({ grid: map.grid, control }));
 game.add(enemyGO);
-for (const e of map.enemies) enemies.add(deploy(e.type, e.q, e.r, { emerge: false }));
+
+// Everybody the level puts on the board, sorted by the only thing that says which
+// side they are on: `hostile` on their type. A level that stands friendly units
+// on the board - which is every level out of the editor, and none of the authored
+// ones - hands them to the roster the same way a played card does, and they get a
+// card apiece so the bar reads the whole force rather than only the King.
+for (const u of map.units) {
+  const unit = deploy(u.type, u.q, u.r, { emerge: false });
+  if (UNIT_TYPES[u.type]?.hostile) enemies.add(unit);
+  else {
+    control.add(unit);
+    if (CARD_TYPES[u.type]) deployment.addPlacedCard(u.type, unit);
+  }
+}
 
 // And what happens when the two of them end up next to each other. It is handed
 // both rosters and neither of them is told: a side is anything with a `units`
@@ -478,6 +518,23 @@ installDebug({
   spawn: deploy,
 });
 
+// The way back, and it only exists during a playtest: a real visit to this page
+// has nowhere to go. One button and one key, because the loop this is for -
+// change something, fight for twenty seconds, change it again - is spoiled by
+// anything that has to be confirmed.
+if (playtest) {
+  const back = document.getElementById('back');
+  back?.classList.add('is-live');
+  const leave = () => {
+    // Cleared on the way out so a later plain visit to this page is a plain
+    // visit, rather than a fight in a level nobody asked for.
+    try { sessionStorage.removeItem(PLAYTEST_KEY); } catch { /* nothing to do */ }
+    location.href = 'editor/';
+  };
+  back?.addEventListener('click', leave);
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape') leave(); });
+}
+
 window.__boot.wired = performance.now();
 game.start();
 
@@ -510,18 +567,18 @@ game.start();
 // them, so nothing draws them until the frame a card is armed. A hex apiece for
 // the same throwaway frame does for them what the scrap units do for themselves.
 function warmShaders() {
-  const at = map.grid.hexToWorld(DEBUG.kingStart.q, DEBUG.kingStart.r);
+  const at = map.grid.hexToWorld(kingStart.q, kingStart.r);
   const scrap = Object.values(UNIT_TYPES).map((type) => {
     const mesh = type.build(MOOD.units, { lamp: LAMPS[type.key], hexSize: map.grid.size });
     mask.patch(mesh, { cull: true });
     // Where the camera is already looking, and clear of the ground, so its
     // fragments are really shaded rather than sorted away behind the terrain.
-    mesh.position.set(at.x, hexGround.topY(DEBUG.kingStart.q, DEBUG.kingStart.r) + 1.2, at.z);
+    mesh.position.set(at.x, hexGround.topY(kingStart.q, kingStart.r) + 1.2, at.z);
     game.scene.add(mesh);
     return mesh;
   });
   const overlays = [pathOverlay, placeOverlay];
-  for (const o of overlays) o.setHexes([{ q: DEBUG.kingStart.q, r: DEBUG.kingStart.r }]);
+  for (const o of overlays) o.setHexes([{ q: kingStart.q, r: kingStart.r }]);
 
   window.__boot.beforeWarm = performance.now();
   game.renderer.render(game.scene, game.camera);
