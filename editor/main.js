@@ -13,7 +13,7 @@ import { Unit } from '../game/components/unit.js';
 import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
-import { play, takeView } from './playtest.js';
+import { play, takeView, fogWanted, setFogWanted } from './playtest.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
 import { ToolBar } from './ui/toolbar.js';
@@ -352,6 +352,7 @@ function refreshPanel() {
     level,
     hex: hovered,
     tile: hovered ? tileAt(level, hovered.q, hovered.r) : null,
+    fog: fogWanted(),
   });
   toolbar.update(tool(), settings[activeTool]);
   // The library is repainted out of storage rather than told what changed, so a
@@ -423,6 +424,7 @@ const panel = new EditorPanel({
   root: document.getElementById('panel'),
   onLevels: () => library.open(levelList(), level.id),
   onPlay: act(() => { start(); return null; }),
+  onFog: (on) => { setFogWanted(on); refreshPanel(); },
 });
 
 // Off to the game with whatever is on screen. The level is already stored - every
@@ -435,7 +437,7 @@ const panel = new EditorPanel({
 // that has to be dismissed is spent twice a minute.
 function start() {
   commit();
-  play(level, rig.snapshot());
+  play(level, rig.snapshot(), { fog: fogWanted() });
 }
 
 const library = new LevelLibrary({

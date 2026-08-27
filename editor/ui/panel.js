@@ -12,13 +12,17 @@ import { esc } from './dom.js';
 // The readout follows the *cursor* rather than a selection, for the same reason:
 // while painting, the interesting hex is the one under the brush.
 export class EditorPanel {
-  constructor({ root, onLevels, onPlay }) {
+  constructor({ root, onLevels, onPlay, onFog }) {
     this._root = root;
     root.innerHTML = `
       <div class="rows"></div>
       <div class="bar">
         <button type="button" data-act="play" class="is-primary">Play <kbd>P</kbd></button>
       </div>
+      <label class="check">
+        <input type="checkbox" data-act="fog">
+        <span>Fog of war</span>
+      </label>
       <div class="bar">
         <button type="button" data-act="levels">Levels</button>
       </div>
@@ -28,11 +32,14 @@ export class EditorPanel {
     this._status = root.querySelector('.status');
     root.querySelector('[data-act=levels]').onclick = () => onLevels();
     root.querySelector('[data-act=play]').onclick = () => onPlay();
+    this._fog = root.querySelector('[data-act=fog]');
+    this._fog.onchange = () => onFog(this._fog.checked);
   }
 
   // `hex` is what the cursor is over, or null, and `tile` is the level's tile
   // there - null for a hex the board does not reach.
-  update({ level, hex, tile }) {
+  update({ level, hex, tile, fog = true }) {
+    if (this._fog.checked !== fog) this._fog.checked = fog;
     const rows = [
       ['Level', esc(level.name)],
       ['Tiles', String(level.tiles.length)],

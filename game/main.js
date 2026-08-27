@@ -62,6 +62,17 @@ function playtestLevel() {
   }
 }
 
+// Whether the board is hidden. Always, for the game; a playtest may ask for it
+// off, because most of what the editor is used to check - does this ridge read,
+// can they get round that flank, is this fight the right length - is a question
+// about a board you can see all of. `?fog=0` says so.
+//
+// It is off by *not building the mask*, rather than by revealing everything: an
+// explored tile is still drawn dim, so a revealed board is a dim board. With no
+// mask there is nothing painting anything out, and the layers below hand their
+// `visibility` over as null, which is already how they say "always lit".
+const FOG = !(new URLSearchParams(location.search).get('fog') === '0');
+
 window.__boot = { t0: performance.now() };
 const game = new Game();
 const playtest = playtestLevel();
@@ -89,7 +100,7 @@ game.visibility = visibility;
 // looking like is a decision taken against something honest rather than against
 // a bank of mist that was already hiding the answer.
 const maskGO = new GameObject('Visibility');
-const mask = maskGO.addComponent(new VisibilityMask(map.grid, visibility, {
+const mask = FOG ? maskGO.addComponent(new VisibilityMask(map.grid, visibility, {
   hexes: [...map.grid.allHexes(), ...map.water],
   hexSize: map.grid.size,
   // The air in the dark drifts on the level's one breeze, for the reason the
@@ -97,9 +108,13 @@ const mask = maskGO.addComponent(new VisibilityMask(map.grid, visibility, {
   // like three effects, and one direction reads as a night with a wind on it.
   drift: { angle: WIND.angle, flow: WIND.strength },
   ...MOOD.hidden,
-}));
+})) : null;
 game.visibilityMask = mask;
 game.add(maskGO);
+
+// What the layers below are told about discovery. Null is how a lantern, a
+// pickup and a prop each say "always lit", so with the fog off they simply are.
+const found = FOG ? visibility : null;
 
 const camera = new GameObject('Camera');
 // Closer again than the last time this was pulled in. A run opens on nothing but
@@ -181,7 +196,7 @@ propsGO.addComponent(new PropLayer({
   // Lamps are lit when their tile is found rather than burning from the first
   // frame - the board answering the player, and the reason an undiscovered
   // lantern no longer lights the inside of the cloud standing over it.
-  visibility,
+  visibility: found,
   tuning: {
     lanternLight: MOOD.lanternLight,
     flicker: { lantern: MOOD.lanternFlickerAmount },
@@ -257,7 +272,7 @@ for (const p of map.pickups) {
     ground: hexGround,
     // Found before lit, the same as a lantern - and for the harder of the two
     // reasons: an undiscovered light burns the inside of the cloud above it.
-    visibility,
+    visibility: found,
     type: p.type, q: p.q, r: p.r,
     colors: MOOD.pickups,
     tuning: { light: MOOD.pickupLight },
@@ -300,7 +315,7 @@ function deploy(type, q, r, { emerge = true } = {}) {
   // Built after the sweep at the bottom of this file, so it patches itself in -
   // culled rather than dimmed, because a unit is the one thing on the board that
   // is nothing but information.
-  mask.patch(go.object3D, { cull: true });
+  mask?.patch(go.object3D, { cull: true });
   return unit;
 }
 
@@ -504,8 +519,8 @@ game.add(motes);
 // standing on it is *information* - a unit, an enemy, a prop, a pickup - and
 // information is not dimmed, it is discarded: on an unwatched hex there is
 // nothing on screen to read at all.
-for (const go of [groundGO, sea]) mask.patch(go.object3D);
-for (const go of [propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask.patch(go.object3D, { cull: true });
+for (const go of [groundGO, sea]) mask?.patch(go.object3D);
+for (const go of [propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask?.patch(go.object3D, { cull: true });
 
 // Developer knobs: V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
@@ -570,7 +585,7 @@ function warmShaders() {
   const at = map.grid.hexToWorld(kingStart.q, kingStart.r);
   const scrap = Object.values(UNIT_TYPES).map((type) => {
     const mesh = type.build(MOOD.units, { lamp: LAMPS[type.key], hexSize: map.grid.size });
-    mask.patch(mesh, { cull: true });
+    mask?.patch(mesh, { cull: true });
     // Where the camera is already looking, and clear of the ground, so its
     // fragments are really shaded rather than sorted away behind the terrain.
     mesh.position.set(at.x, hexGround.topY(kingStart.q, kingStart.r) + 1.2, at.z);

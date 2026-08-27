@@ -18,7 +18,7 @@ import { stringifyLevel } from './level.js';
 const LEVEL = 'hex-tower-defence#playtest';
 const VIEW = 'hex-tower-defence#view';
 
-export function play(level, view = null) {
+export function play(level, view = null, { fog = true } = {}) {
   try {
     sessionStorage.setItem(LEVEL, stringifyLevel(level));
     if (view) sessionStorage.setItem(VIEW, JSON.stringify(view));
@@ -28,7 +28,24 @@ export function play(level, view = null) {
   // Up one, because the editor is served out of /editor/ - the game is the page
   // above it, and every path in this project is relative so the same link works
   // from a checkout and from the /hex-tower-defence/ subpath Pages serves under.
-  location.href = '../index.html?playtest=1';
+  //
+  // The fog goes in the query rather than beside the level, because it is a fact
+  // about this run and not about the board - the level does not get an opinion
+  // about how it is looked at.
+  location.href = `../index.html?playtest=1${fog ? '' : '&fog=0'}`;
+}
+
+// The one editor preference there is, kept because it is answered once and then
+// meant for an hour - and because every return from a playtest is a fresh page,
+// which would otherwise forget it twice a minute.
+const FOG = 'hex-tower-defence#fog';
+
+export function fogWanted() {
+  try { return localStorage.getItem(FOG) !== '0'; } catch { return true; }
+}
+
+export function setFogWanted(on) {
+  try { localStorage.setItem(FOG, on ? '1' : '0'); } catch { /* nothing to do */ }
 }
 
 // Where the camera was when Play was pressed, taken once and then forgotten - so

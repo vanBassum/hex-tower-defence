@@ -83,6 +83,20 @@
       background: rgba(143, 216, 232, 0.10);
       border: 1px solid rgba(143, 216, 232, 0.18);
     }
+    /* One switch, under Play, because it is a fact about the playtest and not
+       about the level. Most of what the editor is used to check is a question
+       about a board you can see all of. */
+    #panel .check {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 2px 0;
+      color: #7f93a4;
+      cursor: pointer;
+    }
+    #panel .check input { accent-color: #e0a05c; cursor: pointer; }
+    #panel .check:hover { color: #b9cfe0; }
+
     /* The bar under it has no rule of its own - the two are one block. */
     #panel .bar + .bar { margin-top: 6px; padding-top: 0; border-top: 0; }
 
