@@ -69,9 +69,16 @@ Break one of these and something three files away goes subtly wrong.
 - **Hidden ground is unlit, not covered.** `VisibilityMask` is the only drawing
   of visibility and it hides nothing with geometry: a hex the force is not
   watching *right now* collapses to `MOOD.hidden`, keeping a trace of its own
-  brightness so the land still reads as continuing into the dark. Deliberately
-  the plainest thing there is - hard hex edges, no reveal, no mist - and it is
-  being built up from here.
+  brightness so the land still reads as continuing into the dark.
+- **An unwatched hex leaks nothing.** Land is dimmed; everything standing on it -
+  units, enemies, props, pickups - is `discard`ed outright (`patch(go, { cull:
+  true })` in `main.js`), so there is no shape on screen to read. Visibility
+  itself stays binary: watched or night, decided by the fragment's own hex.
+- **Softening may only ever remove light.** `MOOD.hidden.fade` laps the night
+  back over the outer edge of *watched* tiles, along the perimeter of the whole
+  region. There is deliberately no term anywhere that can lift an unwatched hex,
+  and that asymmetry is what lets the edge be soft while the rule is hard - so
+  anything added here fades the lit side inward, never the dark side outward.
 - **The hex edge is rebuilt in the shader.** The fragment turns its own world
   position back into axial coordinates and reads a one-texel-per-hex table, so
   the boundary is the real hex boundary. `maskHexAt` in `visibility_mask.js` is

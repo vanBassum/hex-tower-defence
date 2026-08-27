@@ -29,6 +29,11 @@ export class VisibilityMask extends Component {
     hexSize = 1,
     color = 0x070c16,      // what a tile nobody is watching is worth
     keep  = 0.06,          // how much of its own shading survives - see below
+    // How far the night reaches back *inside* the watched region, as a fraction
+    // of a hex's width. Cosmetic and one-directional: it only ever takes light
+    // away from a tile the player can see, so no amount of it can lift a hex the
+    // player cannot. See the note over `maskFragment`.
+    fade  = 0.18,
   } = {}) {
     super();
     this._grid = grid;
@@ -43,6 +48,10 @@ export class VisibilityMask extends Component {
       uMaskOrigin:   { value: new THREE.Vector2(this._qMin, this._rMin) },
       uMaskSize:     { value: new THREE.Vector2(this._w, this._h) },
       uMaskHexSize:  { value: hexSize },
+      // Centre to edge, which is what the fade below measures from.
+      uMaskInradius: { value: hexSize * Math.sqrt(3) / 2 },
+      // A hex's width is two circumradii. Never zero: it divides a smoothstep.
+      uMaskFade:     { value: Math.max(fade * 2 * hexSize, 1e-4) },
       uMaskColor:    { value: new THREE.Color(color) },
       uMaskKeep:     { value: keep },
       uMaskStrength: { value: 1 },
@@ -94,17 +103,26 @@ export class VisibilityMask extends Component {
 
   // One call in main.js per layer, and the layer never hears about it: whether a
   // thing obeys fog of war is a fact about the scene, not about the thing.
-  patch(root) {
+  //
+  // `cull` is the difference between the two kinds of thing in the scene, and it
+  // is the rule rather than a look. Terrain is *land*, and land nobody is
+  // watching still has to read as land continuing into the dark, so it is dimmed
+  // to almost nothing and left there. Everything standing on it - a unit, an
+  // enemy, a prop, a pickup - is gameplay information, and information is not
+  // dimmed, it is thrown away: the fragment is discarded outright on a hex the
+  // force is not watching, so there is nothing on screen to read, not even a
+  // silhouette against the ground behind it.
+  patch(root, opts) {
     root.traverse?.((o) => {
       const m = o.material;
       if (!m) return;
-      if (Array.isArray(m)) for (const one of m) this.patchMaterial(one);
-      else this.patchMaterial(m);
+      if (Array.isArray(m)) for (const one of m) this.patchMaterial(one, opts);
+      else this.patchMaterial(m, opts);
     });
     return root;
   }
 
-  patchMaterial(material) {
+  patchMaterial(material, { cull = false } = {}) {
     if (!material || this._patched.has(material)) return material;
     this._patched.add(material);
 
@@ -112,7 +130,7 @@ export class VisibilityMask extends Component {
     // three keys its program cache on the source text of onBeforeCompile, and the
     // closure below reads identically for every material it is put on - so
     // anything that distinguishes them has to go into the key by hand.
-    const key = `${prev ? prev.toString() : ''}|mask`;
+    const key = `${prev ? prev.toString() : ''}|mask${cull ? 'c' : ''}`;
     material.customProgramCacheKey = () => key;
 
     material.onBeforeCompile = (shader, renderer) => {
@@ -127,7 +145,7 @@ export class VisibilityMask extends Component {
 
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', MASK_FRAG_PARS)
-        .replace('#include <tonemapping_fragment>', MASK_FRAGMENT);
+        .replace('#include <tonemapping_fragment>', maskFragment(cull));
     };
     material.needsUpdate = true;
     return material;
@@ -156,6 +174,8 @@ uniform sampler2D uMaskTable;
 uniform vec2  uMaskOrigin;
 uniform vec2  uMaskSize;
 uniform float uMaskHexSize;
+uniform float uMaskInradius;
+uniform float uMaskFade;
 uniform vec3  uMaskColor;
 uniform float uMaskKeep;
 uniform float uMaskStrength;
@@ -187,6 +207,28 @@ vec2 maskHexAt( vec2 p ) {
   else                      rr = -rq - ry;
   return vec2( rq, rr );
 }
+
+// Is this hex watched? Anything off the table counts as watched - the open ocean
+// past the coast is not a secret.
+float maskWatched( vec2 ax ) {
+  vec2 idx = ax - uMaskOrigin;
+  if ( any( lessThan( idx, vec2( 0.0 ) ) ) || any( greaterThanEqual( idx, uMaskSize ) ) ) return 1.0;
+  return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).r;
+}
+
+vec2 maskCenter( vec2 ax ) {
+  return uMaskHexSize * vec2( 1.5 * ax.x, 1.73205081 * ( ax.y + 0.5 * ax.x ) );
+}
+
+// How far inside the edge shared with this neighbour the fragment sits - but only
+// when there is night on the other side of it, and out of reach otherwise. A
+// watched neighbour never enters the minimum the fade is taken over, which is
+// what makes the band follow the perimeter of the whole region rather than the
+// outline of each hex in it.
+float maskEdgeDepth( vec2 ax, vec2 off, vec2 nb, vec2 dir ) {
+  if ( maskWatched( ax + nb ) > 0.5 ) return 1000.0;
+  return uMaskInradius - dot( off, dir );
+}
 `;
 
 // Injected where the fragment's colour is settled but before tone mapping, so an
@@ -198,12 +240,42 @@ vec2 maskHexAt( vec2 p ) {
 // surface's own brightness is left in - see `maskNight` - so a cliff face and a
 // tile top are still *just* separable and the island reads as continuing into
 // the dark rather than ending at the edge of the light.
-const MASK_FRAGMENT = /* glsl */`
+//
+// ── The band, and why it can only ever hide more ────────────────────────────
+// Gameplay visibility is binary and stays binary: a hex is watched or it is
+// night, and the fragment's own hex decides which with no softness anywhere in
+// it. The softening runs entirely in the other direction - a fragment on a
+// *watched* hex within `uMaskFade` of an edge it shares with the night is faded
+// toward that night, so the darkness laps a little way over the lit ground
+// instead of stopping dead along a hex edge.
+//
+// That asymmetry is the whole safety argument. The band takes light away from
+// tiles the player can already see; there is no term anywhere that can give any
+// to a tile they cannot. An unwatched hex is worth exactly `maskNight` of itself
+// whatever its neighbours are doing, and anything standing on one is discarded
+// before the fade is even computed.
+function maskFragment(cull) {
+  return /* glsl */`
 {
-  vec2 maskIdx = maskHexAt( vMaskWorld.xz ) - uMaskOrigin;
-  float maskHide = 0.0;
-  if ( all( greaterThanEqual( maskIdx, vec2( 0.0 ) ) ) && all( lessThan( maskIdx, uMaskSize ) ) ) {
-    maskHide = 1.0 - texture2D( uMaskTable, ( maskIdx + 0.5 ) / uMaskSize ).r;
+  vec2 maskAx = maskHexAt( vMaskWorld.xz );
+  float maskHide = 1.0 - maskWatched( maskAx );
+${cull ? `
+  // Not dimmed - gone. This is the information rule, not a look: on an unwatched
+  // hex there is to be nothing on screen to read, not even a shape against the
+  // ground behind it. It tests the fragment's own hex rather than the faded
+  // value, so a prop or a man standing in the band on a watched tile darkens
+  // with the ground he is standing on instead of blinking out of existence.
+  if ( maskHide > 0.5 ) discard;
+` : ''}
+  if ( maskHide < 0.5 ) {
+    vec2 maskOff = vMaskWorld.xz - maskCenter( maskAx );
+    float maskDepth = maskEdgeDepth( maskAx, maskOff, vec2(  1.0,  0.0 ), vec2(  0.8660254,  0.5 ) );
+    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2(  1.0, -1.0 ), vec2(  0.8660254, -0.5 ) ) );
+    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2(  0.0, -1.0 ), vec2(  0.0,       -1.0 ) ) );
+    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2( -1.0,  0.0 ), vec2( -0.8660254, -0.5 ) ) );
+    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2( -1.0,  1.0 ), vec2( -0.8660254,  0.5 ) ) );
+    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2(  0.0,  1.0 ), vec2(  0.0,        1.0 ) ) );
+    maskHide = 1.0 - smoothstep( 0.0, uMaskFade, maskDepth );
   }
   maskHide *= uMaskStrength;
   gl_FragColor.rgb = mix( gl_FragColor.rgb, maskNight( gl_FragColor.rgb ), maskHide );
@@ -215,3 +287,4 @@ const MASK_FRAGMENT = /* glsl */`
 }
 #include <tonemapping_fragment>
 `;
+}

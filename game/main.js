@@ -224,8 +224,10 @@ function deploy(type, q, r, { emerge = true } = {}) {
     emerge,
   }));
   game.add(go);
-  // Built after the sweep at the bottom of this file, so it patches itself in.
-  mask.patch(go.object3D);
+  // Built after the sweep at the bottom of this file, so it patches itself in -
+  // culled rather than dimmed, because a unit is the one thing on the board that
+  // is nothing but information.
+  mask.patch(go.object3D, { cull: true });
   return unit;
 }
 
@@ -403,7 +405,15 @@ game.add(motes);
 // *scene*, not about the thing. A tree, a wave crest, a grid seam and a unit all
 // want identical behaviour, and the next component to be added should get it
 // without having to remember to ask.
-for (const go of [groundGO, sea, propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask.patch(go.object3D);
+//
+// The two lists are the two kinds of thing on the board, and which list a layer
+// is in is a rule rather than a look. The land is dimmed to almost nothing and
+// left there, so the island still reads as continuing into the dark. Everything
+// standing on it is *information* - a unit, an enemy, a prop, a pickup - and
+// information is not dimmed, it is discarded: on an unwatched hex there is
+// nothing on screen to read at all.
+for (const go of [groundGO, sea]) mask.patch(go.object3D);
+for (const go of [propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask.patch(go.object3D, { cull: true });
 
 // Developer knobs: V rings what the force is lighting up, R
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how

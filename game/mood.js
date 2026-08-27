@@ -89,6 +89,12 @@ export const MOOD = {
     // light, where a hundredth is already a shape you can read. At 0.02 the
     // unknown stops being dark and becomes dim terrain with trees in it.
     keep:  0.006,
+    // How far the night laps back over the ground the player *can* see, as a
+    // fraction of a hex's width, so the lit region ends in a soft edge instead
+    // of along a hex boundary. It only ever takes light off a watched tile - it
+    // cannot lift an unwatched one - which is what keeps the softening cosmetic
+    // and the rule binary. Past about a quarter it starts eating whole tiles.
+    fade:  0.18,
   },
 
   // A unit has to survive being the smallest thing in a dark frame. The cloak is
