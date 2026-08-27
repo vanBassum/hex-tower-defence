@@ -135,14 +135,14 @@ export const MOOD = {
     // how much of the field becomes cloud at all, and lifting it is how you get
     // fewer and rarer banks rather than thinner ones.
     cloud: {
-      amount: 0.055,
+      amount: 0.06,
       // Navy-grey, lighter than the haze's tint and nowhere near white: a bank is
       // a place the dark is *thicker*, not a thing painted over it.
       tint:   0x9aacc0,
-      scale:  13.0,      // world units across a bank - three or four over the board
+      scale:  12.0,      // world units across a bank - four or five over the board
       speed:  0.06,      // a third of the haze's, and across it rather than with it
-      band:   [0.60, 0.90],
-      warp:   0.55,      // how far the shapes are pushed off the lattice
+      band:   [0.62, 0.74],
+      warp:   0.70,      // how far the shapes are pushed off the lattice
       hold:   2.5,       // held off the reveal edge harder than the haze is
     },
   },

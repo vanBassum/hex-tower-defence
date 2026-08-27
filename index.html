@@ -170,6 +170,35 @@
     .card.is-lost { opacity: 0.5; }
     .card.is-lost .card-state { color: #a8564b; }
 
+    /* Something on screen while the island is built and the shaders are compiled.
+       It is a word rather than a progress bar on purpose: there is nothing being
+       fetched to measure, only a couple of seconds of work with no honest
+       fractions in it, and a bar that jumps from nothing to done is a lie about
+       what is happening. What it has to say is only that the page has not died.
+
+       It is in the HTML rather than made by main.js because the point of it is to
+       be there *before* main.js runs. */
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: #0b1220;
+      color: #b9cfe0;
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      transition: opacity 320ms ease;
+      z-index: 10;
+    }
+    #loading.is-done { opacity: 0; pointer-events: none; }
+    #loading span { animation: loading-pulse 1.6s ease-in-out infinite; }
+
+    @keyframes loading-pulse {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 0.9; }
+    }
+
     @keyframes card-in {
       from { opacity: 0; transform: translateY(26px) scale(0.94); }
       to   { opacity: 1; transform: none; }
@@ -185,6 +214,7 @@
   </script>
 </head>
 <body>
+  <div id="loading"><span>Making an island</span></div>
   <div id="controls">
     <kbd>Left-click</kbd><span>Select / deselect</span>
     <kbd>Right-click</kbd><span>Walk there</span>

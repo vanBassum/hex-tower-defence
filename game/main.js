@@ -39,8 +39,10 @@ import { DEBUG, installDebug } from './debug.js';
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level
 
+window.__boot = { t0: performance.now() };
 const game = new Game();
 const map  = buildMap(MAP_1);
+window.__boot.map = performance.now();
 game.map     = map;
 game.hexGrid = map.grid;
 
@@ -466,6 +468,7 @@ installDebug({
   spawn: deploy,
 });
 
+window.__boot.wired = performance.now();
 game.start();
 
 // ── Shader warm-up ──────────────────────────────────────────────────────────
@@ -510,7 +513,9 @@ function warmShaders() {
   const overlays = [pathOverlay, placeOverlay];
   for (const o of overlays) o.setHexes([{ q: DEBUG.kingStart.q, r: DEBUG.kingStart.r }]);
 
+  window.__boot.beforeWarm = performance.now();
   game.renderer.render(game.scene, game.camera);
+  window.__boot.afterWarm = performance.now();
 
   // The scrap geometry goes; the *materials* stay, because three counts a
   // program's users by material and disposing them would release every program
@@ -520,6 +525,13 @@ function warmShaders() {
     mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
   }
   for (const o of overlays) o.setHexes([]);
+
+  // And the loading message goes with the last of the waiting. It is taken away
+  // here rather than when the module finishes, because the frame above is the
+  // slow one - a message that leaves before the freeze it exists to cover is
+  // worse than no message at all. The clean frame paints immediately after this
+  // returns, which is what the fade is timed against.
+  document.getElementById('loading')?.classList.add('is-done');
 }
 
 // On the first tick rather than from here: the camera is wired by
@@ -527,5 +539,7 @@ function warmShaders() {
 // with until there is one. One shot - it takes the hook back off itself.
 game.onTick = () => {
   game.onTick = null;
+  window.__boot.firstTick = performance.now();
   warmShaders();
+  requestAnimationFrame(() => { window.__boot.firstClean = performance.now(); });
 };
