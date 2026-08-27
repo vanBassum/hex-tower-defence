@@ -1,0 +1,52 @@
+# Publishes the playable build to https://vanbassum.github.io/hex-tower-defence/
+#
+# There is no build step. The game is plain ES modules loaded straight from
+# index.html, and three.js arrives from a CDN through the importmap there, so
+# "building" is a file copy. Every path in the source is relative, which is what
+# lets the same files work unchanged from a file:// checkout and from the
+# /hex-tower-defence/ subpath Pages serves them under.
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A run that is already obsolete is not worth finishing: only the newest commit
+# on main can be the live site, so let a new push cancel the one in flight.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # Staged into _site rather than uploading the repo root, so the deploy
+      # carries the game and nothing else: plan/ alone is ~2 MB of concept art,
+      # and tools/, CLAUDE.md and readme.md are for people working on the game,
+      # not people playing it.
+      - name: Stage site
+        run: |
+          mkdir _site
+          cp index.html _site/
+          cp -r engine game assets _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
