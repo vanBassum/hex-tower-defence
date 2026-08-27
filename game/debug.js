@@ -21,13 +21,12 @@ export const DEBUG = {
   // without playing the first.
   startingHand: ['scout'],
 
-  fog: true,           // draw the fog layer at all
   showVision: false,   // ring the hexes the selected unit is lighting up
 };
 
 const VISION_COLOR = 0xffc07a;
 
-export function installDebug({ game, grid, ground, rig, fog, field, control, visibility,
+export function installDebug({ game, grid, ground, rig, control, visibility,
                                spawn = null, pickups = [], deployment = null, enemies = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
@@ -53,13 +52,11 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     overlay.setHexes(out);
   };
 
-  fog.setShown(DEBUG.fog);
-  field?.setMasking(DEBUG.fog);
   visibility.onChange(refreshVision);
 
   const api = {
     DEBUG,
-    game, grid, ground, fog, field, control, visibility,
+    game, grid, ground, control, visibility,
     // What is on the board to be found, so a reward can be taken without walking
     // to it: `hex.pickups[0].collect()`. It grants exactly what standing on it
     // would, because the pickup calls the same hook either way.
@@ -74,17 +71,6 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     // to camp for depends entirely on how far camp is, and answering that by
     // walking to the cache every time is answering it twice a minute.
     card(key = 'footman') { return deployment?.addCard(key) ?? null; },
-
-    // Both halves at once. The mist is only the visible half now - the world
-    // hides itself off the same field - so a switch that lifted the sheet and
-    // left the terrain painted out would be a debug key that shows you nothing.
-    toggleFog(on = !DEBUG.fog) {
-      DEBUG.fog = on;
-      fog.setShown(on);
-      field?.setMasking(on);
-      api.onFogChanged?.();
-      return on;
-    },
 
     toggleVision(on = !DEBUG.showVision) {
       DEBUG.showVision = on;
@@ -131,10 +117,9 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     },
   };
 
-  // Speed slider and a fog switch, bottom right. Purely for watching a fight at
-  // 10% or skipping a walk at 100%, and for looking at the island without it.
-  // Both are on F and the slider already, so this is only so the two knobs
-  // anybody actually reaches for are visible rather than remembered.
+  // Speed slider, bottom right. Purely for watching a fight at 10% or skipping a
+  // walk at 100% - on the keyboard already, and here so the one knob anybody
+  // actually reaches for is visible rather than remembered.
   {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;gap:8px;'
@@ -152,23 +137,12 @@ export function installDebug({ game, grid, ground, rig, fog, field, control, vis
     };
     slider.addEventListener('input', apply);
     apply();
-    const fog = document.createElement('button');
-    fog.style.cssText = 'padding:4px 9px;border-radius:5px;cursor:pointer;font:12px system-ui;'
-      + 'background:rgba(143,216,232,0.10);border:1px solid rgba(143,216,232,0.28);color:#b9cfe0';
-    const label = () => { fog.textContent = DEBUG.fog ? 'Fog on' : 'Fog off'; };
-    fog.addEventListener('click', () => { api.toggleFog(); label(); });
-    label();
-
-    wrap.append(document.createTextNode('Speed'), slider, out, fog);
+    wrap.append(document.createTextNode('Speed'), slider, out);
     document.body.append(wrap);
-    // F still works, and the button has to agree with it or it lies the first
-    // time somebody uses both.
-    api.onFogChanged = label;
   }
 
   window.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    if (e.code === 'KeyF') api.toggleFog();
     if (e.code === 'KeyV') api.toggleVision();
     if (e.code === 'KeyR') api.revealAll();
   });

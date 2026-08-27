@@ -100,8 +100,6 @@ you turn twice and then stop turning.
     engine/components/hex_grid_renderer.js  hex outlines
     engine/components/hex_overlay.js   filled hex tiles (cursor, ranges)
     engine/components/hex_picker.js    mouse to hex, plus the cursor on it
-    engine/components/visibility_field.js  what is known, as a texture the world reads
-    engine/components/fog_of_war.js    the mist over the unknown - mood, not occlusion
     engine/components/health.js        hit points, hit descriptors, death hook
     engine/components/health_bar.js    camera-facing bar above the owner
     engine/components/path_follower.js constant-speed walk along world points

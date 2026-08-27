@@ -43,7 +43,7 @@ thing being changed - reach for them then, not by default.
       hex/hex_grid.js       axial grid, ranges, lines, occupancy, A*
       hex/visibility.js     what the player has seen - state only, no drawing
       hex/hex_noise.js      deterministic per-hex hash
-      components/           camera, atmosphere, lights, terrain, water, fog, overlays
+      components/           camera, atmosphere, lights, terrain, water, overlays
     game/                   this game: what is on the island and what plays on it
       main.js               composition root - every wire between components is here
       maps.js               the level: outline, elevation, props, pickups
@@ -64,21 +64,20 @@ Break one of these and something three files away goes subtly wrong.
   on that being the same instant.
 - **Visibility is state; drawing it is a separate job.** `VisibilityMap` is hexes
   and states. Nothing writes `UNEXPLORED` after construction: seen once is seen
-  forever. `FogOfWar` and `VisibilityField` read it and never write.
-- **Fog is mood; hex visibility is the rule.** The mist hides nothing - every
-  material paints *itself* out through `field.patch(layer)`. A horizontal sheet
-  occludes nothing when the camera looks along it, which is why this split exists.
-- **`field.patch` is one call per layer in `main.js`**, never an argument threaded
-  through a constructor. Anything new added to the scene gets fog behaviour by
-  being in that sweep.
+  forever. Whatever draws it reads it and never writes.
+- **Nothing draws the unknown right now.** The mist sheet and the material
+  masking pass are both gone; the board is drawn in full and `visibility` is pure
+  state that units, lanterns, pickups and deployment still read. A replacement is
+  being built step by step - whatever it is, it reads the map and stays out of
+  the rules.
 - **Occupancy lives in the grid.** Crags and units hold a key; `isWalkable` and
   A* already ask. Making something impassable is `grid.occupy`, and making
   something walkable-onto (a pickup) is simply not calling it.
 - **Every colour is in `mood.js`.** The palette is coupled on purpose - lanterns
   only read warm because the world is cool. Never hard-code a colour in a
   component.
-- **One wind.** `WIND` in `mood.js` drives the swell, the vegetation, the fog
-  drift and the banners. Three effects with private weather look like three
+- **One wind.** `WIND` in `mood.js` drives the swell, the vegetation and the
+  banners. Three effects with private weather look like three
   effects.
 - **Vision is the union over the force**, recomputed from a source list in
   `UnitControl.refreshVision`. A unit that owned its own fog would un-see a hex

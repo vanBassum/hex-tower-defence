@@ -24,10 +24,10 @@ import { Component } from '../../engine/gameobject.js';
 //
 // ── They are not fogged, and that is not a cheat ────────────────────────────
 // An enemy thinks whether or not the player can see it. It lives here; being
-// unobserved does not make it asleep. What the fog does is hide it - the same
-// `field.patch` sweep every other layer goes through - so a hunter you have not
-// found yet is a hunter already moving, and a holder you have not found yet is
-// the thing you walk into.
+// unobserved does not make it asleep. Hiding it is a drawing job - and there is
+// no drawing of hidden ground at the moment - so a hunter you have not found yet
+// is a hunter already moving, and a holder you have not found yet is the thing
+// you walk into.
 export class EnemyForce extends Component {
   constructor({
     grid,
