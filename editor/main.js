@@ -11,6 +11,7 @@ import { MOOD } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
 import { defaultLevel, buildLevel, parseLevel, stringifyLevel, tileAt } from './level.js';
 import { downloadLevel, readFile } from './files.js';
+import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
 
 // The level editor: the game's world with the game taken out of it.
@@ -178,27 +179,89 @@ function select(hex) {
   refreshPanel();
 }
 
-// ── The panel, and the two things it can do ──────────────────────────────────
+// ── The panel, and what it can do ────────────────────────────────────────────
+
+// Where the open level stands relative to the copy in local storage. It is the
+// panel's answer to "which level am I editing" - a name on its own does not say
+// whether what is on screen is the thing that was saved under it.
+function storageState() {
+  let text;
+  try {
+    text = storage.savedText(level.name);
+  } catch {
+    return 'unavailable';
+  }
+  if (text === null) return 'not saved';
+  return text === stringifyLevel(level) ? 'saved' : 'unsaved changes';
+}
+
+function savedNames() {
+  try { return storage.listSaved(); } catch { return []; }
+}
 
 function refreshPanel() {
-  panel.update(level, selected, selected ? tileAt(level, selected.q, selected.r) : null);
+  panel.update({
+    level,
+    hex: selected,
+    tile: selected ? tileAt(level, selected.q, selected.r) : null,
+    saved: savedNames(),
+    storage: storageState(),
+  });
+}
+
+// Every action is the same three lines - do the thing, say what happened, and
+// say what went wrong instead - so it is one wrapper rather than five identical
+// try blocks. Nothing here reaches past `loadLevel` and `refreshPanel`: an
+// action changes the level or the store, and the panel is repainted from what it
+// finds afterwards rather than told.
+function act(fn) {
+  return async (...args) => {
+    try {
+      // Nothing back means nothing happened - a cancelled confirmation - and the
+      // panel is left saying whatever it was already saying.
+      const said = await fn(...args);
+      if (said != null) panel.setStatus(said);
+    } catch (e) {
+      panel.setStatus(e.message, true);
+    }
+    refreshPanel();
+  };
 }
 
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
-  onExport: () => {
-    panel.setStatus(`Exported ${downloadLevel(level)}`);
-  },
-  onImport: async (file) => {
-    // A refused file leaves the board exactly as it was. `parseLevel` throws
-    // before anything is torn down, which is the only reason that is true.
+
+  // Renaming is the one action that is not an event: it happens on every
+  // keystroke, so it does not touch the board and does not report anything. It
+  // does repaint, because the level's standing in storage changed the moment its
+  // name did.
+  onRename: (name) => { level.name = name; refreshPanel(); },
+
+  onNew:  act(() => { loadLevel(defaultLevel()); return 'New level'; }),
+  onSave: act(() => { storage.save(level); return `Saved "${level.name}"`; }),
+  onLoad: act((name) => { loadLevel(storage.load(name)); return `Loaded "${name}"`; }),
+
+  // The one place a click is asked to confirm itself. Everything else here can
+  // be undone by doing it again - a load is a load away, a save is a save away -
+  // and this is the only button that destroys something.
+  onDelete: act((name) => {
+    if (!window.confirm(`Delete the saved level "${name}"?`)) return null;
+    storage.remove(name);
+    return `Deleted "${name}"`;
+  }),
+
+  onExport: act(() => `Exported ${downloadLevel(level)}`),
+
+  // A refused file leaves the board exactly as it was. `parseLevel` throws
+  // before anything is torn down, which is the only reason that is true.
+  onImport: act(async (file) => {
     try {
       loadLevel(parseLevel(await readFile(file)));
-      panel.setStatus(`Imported ${file.name}`);
     } catch (e) {
-      panel.setStatus(`${file.name}: ${e.message}`, true);
+      throw new Error(`${file.name}: ${e.message}`);
     }
-  },
+    return `Imported ${file.name}`;
+  }),
 });
 
 buildBoard();
@@ -224,6 +287,7 @@ window.hex = {
   get selected() { return selected; },
   select,
   loadLevel,
+  storage,
   // The file format, reachable from the console and from the check script, so a
   // round trip can be asserted without a download dialog in the way.
   stringifyLevel: () => stringifyLevel(level),
