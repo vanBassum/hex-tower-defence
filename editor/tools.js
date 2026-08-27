@@ -1,5 +1,11 @@
-import { addTile, removeTile, raiseTile, tileAt, removeEntityAt } from './level.js';
+import {
+  addTile, removeTile, raiseTile, tileAt, removeEntityAt,
+  propsAt, removePropsAt, tuneLights, isStandable,
+} from './level.js';
 import { PLACEABLES, PLACEABLE_BY_ID, placeableGroups, refusal } from './entities.js';
+import {
+  OBJECT_BY_ID, MIXED, objectGroups, scatterOnto, placeObject, LIGHT_DEFAULTS,
+} from './objects.js';
 
 // What the editor can do to a board, as a list of tools.
 //
@@ -22,7 +28,7 @@ import { PLACEABLES, PLACEABLE_BY_ID, placeableGroups, refusal } from './entitie
 //                     to say about it - which is how a refusal is visible before
 //                     the click rather than after it
 //   icon              inline SVG, 16x16, currentColor
-//   settings          [{ key, label, min, max }] for a number, or
+//   settings          [{ key, label, min, max, step }] for a number, or
 //                     [{ key, label, groups }] for a choice - the toolbar builds
 //                     whichever it finds
 //   continuous        false for a tool that acts on the press only, not on the
@@ -111,16 +117,19 @@ export const TOOLS = [
     brush: (ctx, hex) => spread(ctx, hex, ctx.s.radius).filter(h =>
       tileAt(ctx.level, h.q, h.r) && !isKing(ctx.level, h)),
 
-    // Whatever is standing on the hex first, and the ground only once the hex is
-    // clear. That is one tool rather than two because it is one intention -
-    // "take this away" - and it is also the only order that keeps the level
-    // buildable: nothing may be left standing in mid-air, which `removeTile`
-    // enforces from its own side.
+    // One layer per pass, from the top down: the decoration on a hex, then
+    // whoever is standing on it, then the ground itself. One tool rather than
+    // three because it is one intention - "take this away" - and it is also the
+    // only order that keeps the level buildable, since nothing may be left
+    // standing in mid-air. Dragging over a wood clears the wood; dragging over
+    // it again clears the ground under it.
     paint: (ctx, hexes) => {
       let changed = 0;
       for (const h of hexes) {
         if (isKing(ctx.level, h)) continue;      // the brush already left him out
-        if (removeEntityAt(ctx.level, h.q, h.r) || removeTile(ctx.level, h.q, h.r)) changed++;
+        changed += removePropsAt(ctx.level, h.q, h.r)
+          || (removeEntityAt(ctx.level, h.q, h.r) ? 1 : 0)
+          || (removeTile(ctx.level, h.q, h.r) ? 1 : 0);
       }
       return changed;
     },
@@ -162,6 +171,110 @@ export const TOOLS = [
       const no = refusal(ctx.level, entry, hex);
       if (no) throw new Error(`Cannot place the ${entry.name} here - ${no}.`);
       return entry.put(ctx.level, hex) ? 1 : 0;
+    },
+  },
+
+  {
+    id: 'object',
+    name: 'Object',
+    group: 'Decor',
+    hint: 'Click to stand one here. Click again for another.',
+    color: 0x9fe8b0,
+    icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
+      `stroke-width="1.1" opacity="0.45"/><path d="M8 13V8.4" stroke="currentColor" ` +
+      `stroke-width="1.3" stroke-linecap="round"/><path d="M8 3.2 11.2 9H4.8Z" ` +
+      `fill="currentColor"/></svg>`,
+
+    // Which one, and nothing else. Which way it faces, how big it is and where in
+    // the tile it stands are all decided from its salt in `buildProp` - the
+    // variation the board already has, per instance, without a control for it.
+    settings: [{ key: 'what', label: 'Object', groups: objectGroups({ mixed: false }), value: 'tree' }],
+
+    // The press only, so one click is one tree. A hex takes as many as you press
+    // onto it and they do not stack, because each gets its own salt.
+    continuous: false,
+
+    brush: (ctx, hex) => (hex ? [hex] : []),
+    colorAt: (ctx, hex) => (canStand(ctx, hex) ? 0x9fe8b0 : 0xe8a09a),
+
+    paint: (ctx, hexes) => {
+      const hex = hexes[0];
+      if (!canStand(ctx, hex)) throw new Error('Objects need a tile that is not water.');
+      return placeObject(ctx.level, object(ctx), hex.q, hex.r);
+    },
+  },
+
+  {
+    id: 'scatter',
+    name: 'Scatter',
+    group: 'Decor',
+    hint: 'Drag to paint. Density is a ceiling, not a count.',
+    color: 0x8fd8a8,
+    icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
+      `stroke-width="1.1" opacity="0.4"/><circle cx="5.4" cy="6.4" r="1.5" fill="currentColor"/>` +
+      `<circle cx="10.4" cy="5.4" r="1.1" fill="currentColor"/>` +
+      `<circle cx="8.4" cy="10.2" r="1.7" fill="currentColor"/></svg>`,
+
+    settings: [
+      { key: 'what', label: 'Paint', groups: objectGroups({ mixed: true, lights: false }), value: MIXED.id },
+      { key: 'radius', label: 'Brush', min: 1, max: 4 },
+      { key: 'density', label: 'Density', min: 1, max: 4 },
+    ],
+
+    // Only the tiles that could take something, so the preview is the wood you
+    // are about to paint rather than the circle the brush is.
+    brush: (ctx, hex) => spread(ctx, hex, ctx.s.radius).filter(h => canStand(ctx, h)),
+
+    // Density is a ceiling. How many actually land on a given tile is decided per
+    // hex, so some come out thick, some thin and some bare - which is the whole
+    // difference between a scattering and a plantation. See objects.js.
+    //
+    // Anything already there counts toward that tile's total, so a second pass
+    // over ground already painted adds nothing and a long drag stays cheap.
+    paint: (ctx, hexes) => {
+      let added = 0;
+      for (const h of hexes) added += scatterOnto(ctx.level, object(ctx), h.q, h.r, ctx.s.density);
+      return added;
+    },
+  },
+
+  {
+    id: 'light',
+    name: 'Light',
+    group: 'Decor',
+    hint: 'Click to set a lamp. Click a lamp again to re-tune it.',
+    color: 0xf0c88c,
+    icon: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4" fill="currentColor"/>` +
+      `<circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.1" ` +
+      `opacity="0.45"/></svg>`,
+
+    // Two numbers, and they are the two a level is placing a light *for*: how
+    // bright this corner is and how far the pool reaches. What colour it is
+    // belongs to the hour rather than to the level - see mood.js, and the note in
+    // `buildProp` about which half of a light a placement gets to state.
+    settings: [
+      { key: 'intensity', label: 'Bright', min: 2, max: 40, step: 2, value: LIGHT_DEFAULTS.intensity },
+      { key: 'distance', label: 'Reach', min: 2, max: 18, value: LIGHT_DEFAULTS.distance },
+    ],
+
+    continuous: false,
+
+    brush: (ctx, hex) => (hex ? [hex] : []),
+    colorAt: (ctx, hex) => (canStand(ctx, hex) ? 0xf0c88c : 0xe8a09a),
+
+    // A lamp where a lamp already stands is somebody adjusting that lamp, not
+    // asking for a second one on the same post. It is the whole of "edit the
+    // thing that is already there" in this pass, and it is the only bit of it
+    // anybody needs: the two numbers are what a placed light is for.
+    paint: (ctx, hexes) => {
+      const hex = hexes[0];
+      if (!canStand(ctx, hex)) throw new Error('A lamp needs a tile that is not water.');
+      const light = { intensity: ctx.s.intensity, distance: ctx.s.distance };
+      const tuned = tuneLights(ctx.level, hex.q, hex.r, light);
+      if (tuned) return tuned;
+      // Nothing here carries a light yet, so stand one.
+      if (propsAt(ctx.level, hex.q, hex.r).some(o => OBJECT_BY_ID[o.type]?.lights)) return 0;
+      return placeObject(ctx.level, OBJECT_BY_ID.lantern, hex.q, hex.r, light);
     },
   },
 ];
@@ -209,4 +322,17 @@ function isKing(level, hex) {
 // to the first, rather than throwing while the mouse moves.
 function chosen(ctx) {
   return PLACEABLE_BY_ID[ctx.s.what] ?? PLACEABLES[0];
+}
+
+// And which object the decorating tools are holding.
+function object(ctx) {
+  return ctx.s.what === MIXED.id ? MIXED : (OBJECT_BY_ID[ctx.s.what] ?? OBJECT_BY_ID.tree);
+}
+
+// Somewhere a thing can be stood. Land or bare rock; not water, and not a hex
+// with no tile on it - a tree in the sea is the level saying something it did not
+// mean.
+function canStand(ctx, hex) {
+  if (!hex) return false;
+  return isStandable(ctx.level, hex.q, hex.r) || tileAt(ctx.level, hex.q, hex.r)?.terrain === 'crag';
 }

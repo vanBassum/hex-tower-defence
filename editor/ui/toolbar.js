@@ -93,13 +93,17 @@ function choice(setting, value) {
 // direction, which is what lets one delegated listener serve all of them.
 function stepper(setting, value) {
   const at = value ?? setting.min;
+  // `step` is how much a press is worth, which a brush radius and a light's
+  // brightness do not agree about: one is a count of rings and the other is a
+  // number that has to travel from 2 to 40 without forty presses.
+  const by = setting.step ?? 1;
   return `<div class="setting">
     <span class="slabel">${esc(setting.label)}</span>
     <span class="stepper">
-      <button type="button" data-key="${esc(setting.key)}" data-by="-1"
+      <button type="button" data-key="${esc(setting.key)}" data-by="${-by}"
               ${at <= setting.min ? 'disabled' : ''}>−</button>
       <b>${at}</b>
-      <button type="button" data-key="${esc(setting.key)}" data-by="1"
+      <button type="button" data-key="${esc(setting.key)}" data-by="${by}"
               ${at >= setting.max ? 'disabled' : ''}>+</button>
     </span>
   </div>`;

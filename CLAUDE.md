@@ -58,7 +58,8 @@ thing being changed - reach for them then, not by default.
     editor/                 the level editor at /editor/ - same world, no game
       level.js              the level *as data*, and the only stored format
       storage.js            levels in localStorage, keyed by id
-      tools.js              what the mouse can do; entities.js what it can place
+      tools.js              what the mouse can do; entities.js / objects.js what
+                            it can place - both read the game's own definitions
       main.js               second composition root; edits rebuild the board
       ui/                   toolbar (tools + settings), panel, levels (library)
     tools/                  map.mjs (authoring), check.py (verification)
@@ -162,7 +163,7 @@ Break one of these and something three files away goes subtly wrong.
 | Adding | Touch |
 | --- | --- |
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
-| A prop | `game/props.js` `PROP_TYPES`, then place it in `maps.js` |
+| A prop | `game/props.js` `PROP_TYPES` (give it a `name`) - the editor's palette picks it up |
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
 | A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js`. `role` says what the troop is *for* - never a stat |
 | A unit others deploy beside | `deployAnchor: true` on its type |

@@ -274,6 +274,7 @@ function buildRock(mats, size) {
 export const PROP_TYPES = {
   tree: {
     key: 'tree',
+    name: 'Tree',
     sway: 0.042,
     build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.36 + n * 0.10)),   // ~0.72 to ~0.92 tall, so ~5 to ~6.5 m
   },
@@ -283,11 +284,13 @@ export const PROP_TYPES = {
   // stuff looking bolted down.
   bush: {
     key: 'bush',
+    name: 'Bush',
     sway: 0.075,
     build: (mats, n) => buildBush(mats, HEX_WIDTH * (0.055 + n * 0.028)),  // ~0.11 to ~0.17 radius
   },
   grass: {
     key: 'grass',
+    name: 'Grass',
     sway: 0.2,
     // A tuft is smaller than a shadow map texel at this range, so casting from it
     // costs a draw call per blade and buys a flicker.
@@ -296,6 +299,7 @@ export const PROP_TYPES = {
   },
   rock: {
     key: 'rock',
+    name: 'Rock',
     build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.085 + n * 0.038)),   // ~0.17 to ~0.25 radius
   },
   // Taller than a person and thinner than everything else, so it reads at a
@@ -304,11 +308,13 @@ export const PROP_TYPES = {
   // move.
   stake: {
     key: 'stake',
+    name: 'Stake',
     sway: 0.055,
     build: (mats, n) => buildStake(mats, HEX_WIDTH * (0.19 + n * 0.03)),   // ~0.38 to ~0.44 tall
   },
   lantern: {
     key: 'lantern',
+    name: 'Lantern',
     // `flicker` is the swing in the light's output, as a fraction. Small: a lamp
     // that visibly pulses reads as a fault, not as a flame.
     flicker: 0.09,
@@ -331,7 +337,20 @@ export function buildProp(placement, mats, { x, z, y }, tuning = {}) {
   const { q, r } = placement;
   const salt = (placement.salt ?? 0) * 7;
   const size = hashHex(q, r, 21 + salt);
-  const obj = type.build(mats, size, tuning);
+
+  // A placement may carry its own light, which is the difference between "there
+  // is a lamp here" and "this corner is lit". It is merged *over* the hour's
+  // default rather than replacing it, so a lantern that says nothing still looks
+  // like every other lantern - and so a level only has to state the numbers it
+  // actually meant to change.
+  //
+  // Colour is deliberately not among them. What colour a light is belongs to the
+  // hour and lives in mood.js; how bright it is and how far it reaches is what a
+  // level is placing it for.
+  const local = placement.light
+    ? { ...tuning, lanternLight: { ...tuning.lanternLight, ...placement.light } }
+    : tuning;
+  const obj = type.build(mats, size, local);
 
   const spread = placement.spread ?? 0.35;
   obj.position.x = x + (hashHex(q, r, 23 + salt) - 0.5) * spread;

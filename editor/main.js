@@ -8,8 +8,9 @@ import { HexGround } from '../engine/components/hex_ground.js';
 import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { HexGrid } from '../engine/hex/hex_grid.js';
-import { MOOD } from '../game/mood.js';
+import { MOOD, WIND } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
+import { PropLayer } from '../game/components/prop_layer.js';
 import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
@@ -161,6 +162,20 @@ function buildTerrain() {
     hexes: [...envelope.allHexes()].filter(h => !world.grid.inBounds(h.q, h.r)),
   }));
 
+  // The trees, the rocks and the lamps, through the game's own layer. No
+  // visibility, so every lamp is simply lit - which is what an editor wants, and
+  // what PropLayer already does when nothing tells it about fog. The wind is the
+  // level's one breeze, so a wood sways here exactly as it will in the fight.
+  const propsGO = new GameObject('Props');
+  propsGO.addComponent(new PropLayer({
+    grid: world.grid, ground: hexGround, props: level.props ?? [],
+    colors: MOOD.props, wind: WIND,
+    tuning: {
+      lanternLight: MOOD.lanternLight,
+      flicker: { lantern: MOOD.lanternFlickerAmount },
+    },
+  }));
+
   // Everybody standing on it, the King included, through the same component the
   // game builds them with. There is no editor-side drawing of a unit: what is on
   // screen here is what will be on the board, and a Spearman looks like an enemy
@@ -183,7 +198,7 @@ function buildTerrain() {
     units.push(go);
   }
 
-  terrain = [groundGO, gridGO, emptyGO, ...units];
+  terrain = [groundGO, gridGO, emptyGO, propsGO, ...units];
   for (const go of terrain) game.add(go);
 }
 

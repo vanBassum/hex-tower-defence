@@ -1,5 +1,6 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
 import { UNIT_TYPES } from '../game/units.js';
+import { PROP_TYPES } from '../game/props.js';
 
 // What a level *is*, as data, and how that data becomes the pieces the scene
 // needs.
@@ -23,7 +24,7 @@ import { UNIT_TYPES } from '../game/units.js';
 // in the middle of building a scene; the version is here so the day the shape
 // changes, a file written before it can say so.
 export const LEVEL_FORMAT = 'hex-tower-defence.level';
-export const LEVEL_VERSION = 3;
+export const LEVEL_VERSION = 4;
 
 // A level's identity, and the reason it is not the name: a name is a label a
 // person changes their mind about, and everything that has to keep pointing at
@@ -70,6 +71,7 @@ export function defaultLevel(name = 'Untitled') {
     radius: 4,
     king: { q: 0, r: 0 },
     units: [],
+    props: [],
     tiles: discTiles(2).map(({ q, r }) => ({ q, r, terrain: 'land', level: 0 })),
   };
 }
@@ -96,6 +98,12 @@ export function stringifyLevel(level) {
     `    { "q": ${t.q}, "r": ${t.r}, "terrain": ${JSON.stringify(t.terrain)}, "level": ${t.level ?? 0} }`);
   const units = (level.units ?? []).map(u =>
     `    { "type": ${JSON.stringify(u.type)}, "q": ${u.q}, "r": ${u.r} }`);
+  // A prop is its type, its hex, and the two numbers that make one instance of it
+  // itself: `salt` picks its size, its rotation and where in the tile it stands,
+  // and `spread` says how far off centre it may be. So the file *is* the seed -
+  // a level reloads the same forest down to which way each tree is facing, and
+  // nothing has to store four hundred positions to manage it.
+  const props = (level.props ?? []).map(o => '    ' + JSON.stringify(o));
   return [
     '{',
     `  "format": ${JSON.stringify(level.format)},`,
@@ -106,6 +114,7 @@ export function stringifyLevel(level) {
     `  "radius": ${level.radius},`,
     `  "king": { "q": ${level.king.q}, "r": ${level.king.r} },`,
     ...block('units', units, ','),
+    ...block('props', props, ','),
     ...block('tiles', tiles, ''),
     '}',
     '',
@@ -155,7 +164,7 @@ export function parseLevel(text) {
   // the version number doing harm rather than work. Anything newer was written by
   // an editor that knows something this one does not, so that is refused rather
   // than guessed at.
-  if (![1, 2, LEVEL_VERSION].includes(raw.version)) {
+  if (![1, 2, 3, LEVEL_VERSION].includes(raw.version)) {
     throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
                     `(this editor reads version ${LEVEL_VERSION})`);
   }
@@ -216,6 +225,39 @@ export function parseLevel(text) {
     units.push({ type: u.type, q: u.q, r: u.r });
   }
 
+  // What is standing about on it. Validated the same way everything else is,
+  // because a file off disk is the one input nothing in this editor wrote - and
+  // an unknown prop type is a crash inside `buildProp` if it gets that far.
+  const props = [];
+  if (raw.props !== undefined && !Array.isArray(raw.props)) throw new Error('"props" must be an array');
+  for (const [i, o] of (raw.props ?? []).entries()) {
+    const at = `props[${i}]`;
+    if (!o || typeof o !== 'object') throw new Error(`${at} is not an object`);
+    if (!PROP_TYPES[o.type]) {
+      throw new Error(`${at} is a ${JSON.stringify(o.type ?? null)}, which is not a prop type`);
+    }
+    if (!Number.isInteger(o.q) || !Number.isInteger(o.r)) throw new Error(`${at} needs whole "q" and "r"`);
+    const tile = tiles.find(t => t.q === o.q && t.r === o.r);
+    if (!tile) throw new Error(`${at} is at ${o.q},${o.r}, where there is no tile`);
+    if (tile.terrain === 'water') throw new Error(`${at} is standing in the water`);
+    const prop = { type: o.type, q: o.q, r: o.r, salt: o.salt ?? 0, spread: o.spread ?? 0.35 };
+    if (!Number.isInteger(prop.salt)) throw new Error(`${at} has a non-integer "salt"`);
+    if (typeof prop.spread !== 'number' || !(prop.spread >= 0)) throw new Error(`${at} has a bad "spread"`);
+    if (o.light !== undefined) {
+      if (!o.light || typeof o.light !== 'object') throw new Error(`${at} has a bad "light"`);
+      const light = {};
+      for (const key of ['intensity', 'distance']) {
+        if (o.light[key] === undefined) continue;
+        if (typeof o.light[key] !== 'number' || !(o.light[key] >= 0)) {
+          throw new Error(`${at} light "${key}" must be a number`);
+        }
+        light[key] = o.light[key];
+      }
+      if (Object.keys(light).length) prop.light = light;
+    }
+    props.push(prop);
+  }
+
   const king = raw.king;
   if (!king || typeof king !== 'object' || !Number.isInteger(king.q) || !Number.isInteger(king.r)) {
     throw new Error('"king" needs whole "q" and "r"');
@@ -233,7 +275,7 @@ export function parseLevel(text) {
     version: LEVEL_VERSION,
     id, name, hexSize, radius,
     king: { q: king.q, r: king.r },
-    units, tiles,
+    units, props, tiles,
   };
 }
 
@@ -299,10 +341,10 @@ export function addTile(level, q, r) {
 export function removeTile(level, q, r) {
   const i = level.tiles.findIndex(t => t.q === q && t.r === r);
   if (i < 0) return false;
-  // Nothing is left standing in mid-air. Erase takes the unit first and the
-  // ground on the next pass, which is also the order that reads correctly: you
-  // clear a tile before you remove it.
-  if (entityAt(level, q, r)) return false;
+  // Nothing is left standing in mid-air. Erase takes what is on a hex first and
+  // the ground on the next pass, which is also the order that reads correctly:
+  // you clear a tile before you remove it.
+  if (entityAt(level, q, r) || propsAt(level, q, r).length) return false;
   level.tiles.splice(i, 1);
   // The envelope is deliberately *not* shrunk. It costs nothing to leave it
   // wide - it is a bound, not a board - and pulling it in behind a delete would
@@ -380,6 +422,53 @@ export function removeEntityAt(level, q, r) {
   if (!here || here.kind === 'king') return false;
   level.units.splice(level.units.indexOf(here.unit), 1);
   return true;
+}
+
+// ── What is standing about on it ────────────────────────────────────────────
+// Props are the one layer where a hex holds *several* things, which is the whole
+// reason they are keyed by nothing: a tile has a list, and what separates two
+// trees on one tile is their `salt`. Everything else about them - which way they
+// face, how big they are, where in the tile they stand - falls out of that number
+// in `buildProp`, so the level stores a seed rather than a transform.
+
+export function propsAt(level, q, r) {
+  return (level.props ?? []).filter(o => o.q === q && o.r === r);
+}
+
+// A new one, on a hex that already has any number of them. The salt is one past
+// the highest already there rather than the count, so deleting one and adding
+// another does not put the new one exactly where the old one stood.
+export function addProp(level, type, q, r, { spread = 0.35, light = null } = {}) {
+  level.props ??= [];
+  const salt = propsAt(level, q, r).reduce((m, o) => Math.max(m, o.salt ?? 0), -1) + 1;
+  const prop = { type, q, r, salt, spread };
+  if (light) prop.light = { ...light };
+  level.props.push(prop);
+  return prop;
+}
+
+// Everything on a hex, in one go. Erase takes a hex rather than an object,
+// because at this size picking one tree out of a clump is a gizmo and this is a
+// brush.
+export function removePropsAt(level, q, r) {
+  const before = (level.props ?? []).length;
+  level.props = (level.props ?? []).filter(o => !(o.q === q && o.r === r));
+  return before - level.props.length;
+}
+
+// Re-tunes the lights already on a hex instead of adding another lamp to it.
+// Placing a light where one stands is somebody adjusting that light, which is
+// the only bit of "edit the thing that is already there" this pass needs.
+export function tuneLights(level, q, r, light) {
+  let changed = 0;
+  for (const o of propsAt(level, q, r)) {
+    if (!PROP_TYPES[o.type]?.flicker) continue;      // not something that carries a light
+    const next = { ...o.light, ...light };
+    if (JSON.stringify(next) === JSON.stringify(o.light)) continue;
+    o.light = next;
+    changed++;
+  }
+  return changed;
 }
 
 // How far a hex is from the middle, which is what `radius` bounds.

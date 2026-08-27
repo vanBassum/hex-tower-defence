@@ -57,6 +57,7 @@ export class EditorPanel {
       : [
           ['Level', esc(level.name)],
           ['Tiles', String(level.tiles.length)],
+          ['On it', `${level.units.length} units · ${(level.props ?? []).length} props`],
           ['Hex', hex ? `${hex.q}, ${hex.r}` : '—'],
           ['Height', tile ? String(tile.level ?? 0) : hex ? 'no ground' : '—'],
         ];
