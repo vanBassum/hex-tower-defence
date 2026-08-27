@@ -9,8 +9,8 @@ import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { MOOD } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
-import { UNIT_TYPES } from '../game/units.js';
-import { defaultLevel, buildLevel, tileAt } from './level.js';
+import { defaultLevel, buildLevel, parseLevel, stringifyLevel, tileAt } from './level.js';
+import { downloadLevel, readFile } from './files.js';
 import { EditorPanel } from './ui/panel.js';
 
 // The level editor: the game's world with the game taken out of it.
@@ -28,22 +28,26 @@ import { EditorPanel } from './ui/panel.js';
 // board or moves something without being asked is a system standing between the
 // author and the thing they are editing.
 //
-// This pass does one thing: it draws a small default level and lets a hex be
-// selected. Everything that comes next - painting terrain, placing units, saving
-// - is a change to the `level` object below and a redraw, which is why that
-// object is plain JSON and nothing in the scene owns a copy of it.
+// ── The level is the only state ──────────────────────────────────────────────
+// `level` is a plain JSON object (see level.js) and it is the whole of what is
+// being edited. Everything else in this file is *derived* from it: the grid, the
+// ground mesh, the King standing on a tile. So the scene is not something that
+// drifts from the file and has to be reconciled with it - it is thrown away and
+// built again whenever the level changes, which is what makes import a two-line
+// operation and export honest.
+//
+// That is why the board lives in `buildBoard`/`clearBoard` rather than at the
+// top level of the module: an editor whose scene was built once could load a
+// file, and could not show it.
 
 const ELEVATION_STEP = 0.22;   // world height of one elevation level, as in the game
 
-// The level being edited, and the pieces the scene reads out of it. One is data
-// and the other is derived: nothing below writes to `level` yet, and when
-// editing arrives it writes there and rebuilds `world`, never the other way
-// round.
-const level = defaultLevel();
-const world = buildLevel(level);
-
 const game = new Game();
-game.hexGrid = world.grid;
+
+// ── The parts that are not the level ─────────────────────────────────────────
+// The hour and the camera outlive any level: loading a file should not move the
+// camera or change the light, because the person doing it is looking at
+// something and expects to still be looking at it afterwards.
 
 // Close in, because the default level is five hexes across and a wide shot of it
 // is a wide shot of empty sky. The wheel is there for anybody who disagrees.
@@ -73,87 +77,132 @@ sun.addComponent(new DirectionalLight({
 }));
 game.add(sun);
 
-const groundGO = new GameObject('HexGround');
-const hexGround = groundGO.addComponent(new HexGround(world.grid, {
-  rockKeys: world.blockedKeys,
-  levels: world.levels,
-  step: ELEVATION_STEP,
-  ...MOOD.ground,
-}));
-game.add(groundGO);
+// ── The board ────────────────────────────────────────────────────────────────
 
-const gridGO = new GameObject('HexGrid');
-gridGO.addComponent(new HexGridRenderer(world.grid, { color: MOOD.gridColor, opacity: 0.14 }));
-game.add(gridGO);
+let level = defaultLevel();
+let world = null;            // grid, elevation and crags, derived from `level`
+let board = [];              // the GameObjects that belong to this level
+let hexGround = null;
+let selectionOverlay = null;
+let selected = null;         // {q, r} or null - the whole of the editor's state
 
-// What the level says is standing on the board. One loop rather than a King
-// spelled out, because the next thing this file is asked to do is place a second
-// one - and a unit the editor drew a special way would be a unit that looked
-// wrong the moment it was placed rather than authored.
-for (const u of level.units) {
-  const go = new GameObject(`Unit:${u.type}`);
-  go.addComponent(new Unit({
+function buildBoard() {
+  world = buildLevel(level);
+  game.hexGrid = world.grid;
+
+  const groundGO = new GameObject('HexGround');
+  hexGround = groundGO.addComponent(new HexGround(world.grid, {
+    rockKeys: world.blockedKeys,
+    levels: world.levels,
+    step: ELEVATION_STEP,
+    ...MOOD.ground,
+  }));
+
+  const gridGO = new GameObject('HexGrid');
+  gridGO.addComponent(new HexGridRenderer(world.grid, { color: MOOD.gridColor, opacity: 0.14 }));
+
+  // The King, and the one thing on the board that is not terrain. He is placed
+  // from `level.king` like everything else here is placed from the level - the
+  // editor has no opinion about where he goes, the file does.
+  const kingGO = new GameObject('King');
+  kingGO.addComponent(new Unit({
     grid: world.grid,
     ground: hexGround,
-    type: u.type,
-    q: u.q, r: u.r,
+    type: 'king',
+    q: level.king.q, r: level.king.r,
     colors: MOOD.units,
     // The King's torch, and the reason a lamp is named here rather than in
     // units.js: what a unit carries a light for is a fact about its type, how
     // bright it burns is a fact about the hour, and this is a place that knows
     // both. The game says the same thing in the same way.
-    tuning: { lamp: u.type === 'king' ? MOOD.kingFire : MOOD.scoutLamp },
+    tuning: { lamp: MOOD.kingFire },
     emerge: false,
   }));
-  game.add(go);
+
+  // What is selected. A separate overlay from the cursor rather than a recolour
+  // of it, because the two are true at the same time - the thing being worked on
+  // and the thing about to be clicked - and one hexagon cannot say both.
+  //
+  // Stronger than anything the game draws on a tile, and it has earned that: in
+  // the game a highlight is a hint about a move, and here it is the answer to
+  // "which tile am I editing", which has to be unmistakable from across the
+  // board. Still additive, so the tile keeps its own grass and simply catches
+  // much more light - a flat pale hexagon stuck on the ground is the thing
+  // MOOD's overlays exist to avoid.
+  const selectionGO = new GameObject('Selection');
+  selectionOverlay = selectionGO.addComponent(new HexOverlay(world.grid, [], {
+    color: 0xbfe8ff, opacity: 0.5, y: 0.045, additive: true,
+    heightAt: (q, r) => hexGround.topY(q, r),
+  }));
+
+  // The cursor under the mouse. Straight out of the game, including the two-pass
+  // plane solve that makes a click on a hillside land on the tile you were
+  // aiming at.
+  const cursorGO = new GameObject('Cursor');
+  cursorGO.addComponent(new HexOverlay(world.grid, [], {
+    color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
+  }));
+  cursorGO.addComponent(new HexPicker({
+    grid: world.grid,
+    ground: hexGround,
+    onPick: (hex) => select(hex),
+  }));
+
+  board = [groundGO, gridGO, kingGO, selectionGO, cursorGO];
+  for (const go of board) game.add(go);
 }
 
-// The cursor under the mouse. Straight out of the game, including the two-pass
-// plane solve that makes a click on a hillside land on the tile you were aiming
-// at.
-const cursor = new GameObject('Cursor');
-cursor.addComponent(new HexOverlay(world.grid, [], {
-  color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
-}));
+function clearBoard() {
+  // Removing a GameObject destroys its components, which is what takes the
+  // picker's listeners off the canvas and gives the King's hex back to the grid.
+  for (const go of board) game.remove(go);
+  board = [];
+  hexGround = null;
+  selectionOverlay = null;
+}
 
-// And what is selected. A separate overlay from the cursor rather than a
-// recolour of it, because the two are true at the same time - the thing being
-// worked on and the thing about to be clicked - and one hexagon cannot say both.
-//
-// Stronger than anything the game draws on a tile, and it has earned that: in
-// the game a highlight is a hint about a move, and here it is the answer to
-// "which tile am I editing", which has to be unmistakable from across the board.
-// Still additive, so the tile keeps its own grass and simply catches much more
-// light - a flat pale hexagon stuck on the ground is the thing MOOD's overlays
-// exist to avoid.
-const selectionGO = new GameObject('Selection');
-const selectionOverlay = selectionGO.addComponent(new HexOverlay(world.grid, [], {
-  color: 0xbfe8ff, opacity: 0.5, y: 0.045, additive: true,
-  heightAt: (q, r) => hexGround.topY(q, r),
-}));
-game.add(selectionGO);
-
-const panel = new EditorPanel({ root: document.getElementById('panel') });
-
-// The whole of the editor's state, for now. It is one hex, and it is here rather
-// than inside a component because selection is what the *editor* is doing, not
-// what anything in the scene is doing - the overlay and the panel are both told.
-let selected = null;
+// The one way the level changes. Everything derived from it is rebuilt, and the
+// selection goes with the old board: a hex coordinate that meant something on
+// the last level is not a promise about this one.
+function loadLevel(next) {
+  clearBoard();
+  level = next;
+  selected = null;
+  buildBoard();
+  refreshPanel();
+}
 
 function select(hex) {
   selected = hex ? { q: hex.q, r: hex.r } : null;
   selectionOverlay.setHexes(selected ? [selected] : []);
+  refreshPanel();
+}
+
+// ── The panel, and the two things it can do ──────────────────────────────────
+
+function refreshPanel() {
   panel.update(level, selected, selected ? tileAt(level, selected.q, selected.r) : null);
 }
 
-cursor.addComponent(new HexPicker({
-  grid: world.grid,
-  ground: hexGround,
-  onPick: (hex) => select(hex),
-}));
-game.add(cursor);
+const panel = new EditorPanel({
+  root: document.getElementById('panel'),
+  onExport: () => {
+    panel.setStatus(`Exported ${downloadLevel(level)}`);
+  },
+  onImport: async (file) => {
+    // A refused file leaves the board exactly as it was. `parseLevel` throws
+    // before anything is torn down, which is the only reason that is true.
+    try {
+      loadLevel(parseLevel(await readFile(file)));
+      panel.setStatus(`Imported ${file.name}`);
+    } catch (e) {
+      panel.setStatus(`${file.name}: ${e.message}`, true);
+    }
+  },
+});
 
-select(null);
+buildBoard();
+refreshPanel();
 
 // Open looking at the middle of the board.
 {
@@ -163,15 +212,22 @@ select(null);
 
 // The same hook the game exposes, and for the same reason: tools/check.py drives
 // the page through it, and a screenshot of a hex has to be able to ask where
-// that hex is on screen. Not editor UI - the editor's UI is the panel.
+// that hex is on screen. The board is rebuilt on every load, so what it hands
+// out are getters rather than the objects that were current when it was written.
+// Not editor UI - the editor's UI is the panel.
 window.hex = {
-  game, level, world,
-  grid: world.grid,
-  ground: hexGround,
-  rig,
-  types: UNIT_TYPES,
+  game, rig,
+  get level()    { return level; },
+  get world()    { return world; },
+  get grid()     { return world.grid; },
+  get ground()   { return hexGround; },
   get selected() { return selected; },
   select,
+  loadLevel,
+  // The file format, reachable from the console and from the check script, so a
+  // round trip can be asserted without a download dialog in the way.
+  stringifyLevel: () => stringifyLevel(level),
+  parseLevel,
   lookAt: (q, r) => { const { x, z } = world.grid.hexToWorld(q, r); rig.focusOn(x, z); },
 };
 

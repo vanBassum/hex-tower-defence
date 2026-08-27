@@ -14,10 +14,6 @@
        in a different visual language. */
     #panel, #controls {
       position: fixed;
-      display: grid;
-      grid-template-columns: auto auto;
-      gap: 5px 12px;
-      align-items: center;
       padding: 11px 14px;
       border-radius: 7px;
       background: rgba(9, 16, 30, 0.55);
@@ -31,12 +27,57 @@
 
     /* Top right, and at full opacity: this one is a readout that is being read,
        not a reminder that fades out of the picture after the first minute. */
-    #panel { right: 16px; top: 16px; }
+    #panel { right: 16px; top: 16px; min-width: 190px; }
+    #panel .rows {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 5px 12px;
+      align-items: center;
+    }
     #panel .k { color: #7f93a4; }
     #panel .v { justify-self: end; color: #dcecf6; font-variant-numeric: tabular-nums; }
 
+    /* A rule of its own above the buttons: the rows are what the level *is* and
+       the buttons are what can be done to it, and the two should not read as one
+       list. */
+    #panel .acts {
+      display: flex;
+      gap: 8px;
+      margin-top: 11px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(143, 216, 232, 0.14);
+    }
+    #panel button {
+      flex: 1;
+      font: inherit;
+      color: #dcecf6;
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+      cursor: pointer;
+      transition: background 160ms ease;
+    }
+    #panel button:hover { background: rgba(143, 216, 232, 0.20); }
+
+    /* Empty until something has happened, and it collapses when it is - a status
+       line reserving space for a message nobody has been given yet is a gap in
+       the panel. */
+    #panel .status {
+      color: #7f93a4;
+      line-height: 1.4;
+      max-width: 220px;
+      user-select: text;
+    }
+    #panel .status:not(:empty) { margin-top: 9px; }
+    #panel .status.is-error { color: #e08a7a; }
+
     #controls {
       left: 16px; bottom: 16px;
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 5px 12px;
+      align-items: center;
       opacity: 0.4;
       transition: opacity 220ms ease;
     }

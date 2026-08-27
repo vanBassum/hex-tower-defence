@@ -1,16 +1,28 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
 
 // What a level *is*, as data, and how that data becomes the pieces the scene
-// needs. Two halves on purpose: the top half is a plain object with nothing in
-// it but numbers and strings, so the day the editor writes a file it is
-// `JSON.stringify(level)` and nothing else; the bottom half is the one place
-// that turns it into a grid.
+// needs.
+//
+// The object below is not a serialisation of some other, realer level living
+// somewhere else - it is the level, and the file on disk is the same object with
+// newlines in it. There is deliberately no in-memory shape and on-disk shape to
+// map between: two shapes is two places for a field to be forgotten, and a round
+// trip that loses something is the one bug this file exists to not have. So
+// `defaultLevel()` carries the format header too, `stringifyLevel` only decides
+// where the newlines go, and `parseLevel` only checks and copies.
 //
 // This is the editor's answer to `maps.js` `parseShape`, and it is a separate
 // answer for a reason. A map's outline is authored as text because a silhouette
-// is judged by looking at it, and text is the shape a person can edit. An
-// editor edits one tile at a time, so its level is a list of tiles - the same
-// board, in the form the thing doing the editing works in.
+// is judged by looking at it, and text is the shape a person can edit. An editor
+// edits one tile at a time, so its level is a list of tiles - the same board, in
+// the form the thing doing the editing works in.
+
+// Stamped into every file, and checked on the way back in. The name is here so a
+// stray JSON file is refused with a sentence rather than by throwing somewhere
+// in the middle of building a scene; the version is here so the day the shape
+// changes, a file written before it can say so.
+export const LEVEL_FORMAT = 'hex-tower-defence.level';
+export const LEVEL_VERSION = 1;
 
 // The terrain a tile can be. The three the ground renderer already draws
 // differently, and no more: a fourth kind is a fourth thing to draw, not a
@@ -23,14 +35,16 @@ export const TERRAIN = ['land', 'crag', 'water'];
 // answering a question nobody asked yet.
 export function defaultLevel() {
   return {
+    format: LEVEL_FORMAT,
+    version: LEVEL_VERSION,
     name: 'Untitled',
     hexSize: 1,
     // The envelope, not the board - `tiles` is the board. Two rings of margin,
     // so growing the patch later is a tile the editor adds rather than a number
     // here that has to be found first.
     radius: 4,
+    king: { q: 0, r: 0 },
     tiles: discTiles(2).map(({ q, r }) => ({ q, r, terrain: 'land', level: 0 })),
-    units: [{ type: 'king', q: 0, r: 0 }],
   };
 }
 
@@ -45,13 +59,123 @@ export function discTiles(radius) {
   return out;
 }
 
+// ── The file ────────────────────────────────────────────────────────────────
+
+// The level as text. Hand-formatted rather than `JSON.stringify(l, null, 2)`,
+// for the one reason that matters about a file meant to be committed: a tile is
+// one line, so a diff that moved a tile is one line long instead of five, and a
+// board of a few hundred tiles is still something a person can read.
+export function stringifyLevel(level) {
+  const tiles = level.tiles.map(t =>
+    `    { "q": ${t.q}, "r": ${t.r}, "terrain": ${JSON.stringify(t.terrain)}, "level": ${t.level ?? 0} }`);
+  return [
+    '{',
+    `  "format": ${JSON.stringify(level.format)},`,
+    `  "version": ${level.version},`,
+    `  "name": ${JSON.stringify(level.name)},`,
+    `  "hexSize": ${level.hexSize},`,
+    `  "radius": ${level.radius},`,
+    `  "king": { "q": ${level.king.q}, "r": ${level.king.r} },`,
+    '  "tiles": [',
+    tiles.join(',\n'),
+    '  ]',
+    '}',
+    '',
+  ].join('\n');
+}
+
+// What to call the file. The level's own name, reduced to something every
+// filesystem will take.
+export function levelFilename(level) {
+  const slug = String(level.name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `${slug || 'level'}.json`;
+}
+
+// Text back to a level, or a thrown error saying what was wrong with it.
+//
+// It checks every field it is about to hand to the scene, because the
+// alternative is a stack trace out of the middle of building a mesh - and the
+// person who sees it is holding a file they wrote by hand, so the message has to
+// be about the file. It also *copies*: what comes back has exactly the fields
+// this version knows about and nothing else, so an unknown key in the file
+// cannot end up being carried along and written back out.
+export function parseLevel(text) {
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`not valid JSON: ${e.message}`);
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('not a JSON object');
+
+  if (raw.format !== LEVEL_FORMAT) {
+    throw new Error(`not a level file (format is ${JSON.stringify(raw.format ?? null)}, ` +
+                    `expected ${JSON.stringify(LEVEL_FORMAT)})`);
+  }
+  if (raw.version !== LEVEL_VERSION) {
+    throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
+                    `(this editor reads version ${LEVEL_VERSION})`);
+  }
+
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name : null;
+  if (!name) throw new Error('"name" must be a non-empty string');
+  const hexSize = raw.hexSize;
+  if (typeof hexSize !== 'number' || !(hexSize > 0)) throw new Error('"hexSize" must be a positive number');
+  const radius = raw.radius;
+  if (!Number.isInteger(radius) || radius < 0) throw new Error('"radius" must be a whole number ≥ 0');
+
+  if (!Array.isArray(raw.tiles) || !raw.tiles.length) throw new Error('"tiles" must be a non-empty array');
+  const seen = new Set();
+  const tiles = raw.tiles.map((t, i) => {
+    const at = `tiles[${i}]`;
+    if (!t || typeof t !== 'object') throw new Error(`${at} is not an object`);
+    if (!Number.isInteger(t.q) || !Number.isInteger(t.r)) throw new Error(`${at} needs whole "q" and "r"`);
+    // Off the envelope is a tile nothing will ever draw, which is worth saying
+    // out loud rather than quietly dropping.
+    if (Math.max(Math.abs(t.q), Math.abs(t.r), Math.abs(t.q + t.r)) > radius) {
+      throw new Error(`${at} at ${t.q},${t.r} is outside radius ${radius}`);
+    }
+    const key = `${t.q},${t.r}`;
+    if (seen.has(key)) throw new Error(`two tiles at ${key}`);
+    seen.add(key);
+    if (!TERRAIN.includes(t.terrain)) {
+      throw new Error(`${at} has terrain ${JSON.stringify(t.terrain ?? null)} - expected one of ${TERRAIN.join(', ')}`);
+    }
+    const level = t.level ?? 0;
+    if (!Number.isInteger(level)) throw new Error(`${at} has a non-integer "level"`);
+    return { q: t.q, r: t.r, terrain: t.terrain, level };
+  });
+
+  const king = raw.king;
+  if (!king || typeof king !== 'object' || !Number.isInteger(king.q) || !Number.isInteger(king.r)) {
+    throw new Error('"king" needs whole "q" and "r"');
+  }
+  // He has to be standing on something he could stand on. Water is not ground
+  // and a crag is solid rock the grid refuses to walk onto, so both are the file
+  // being wrong rather than the board being interesting.
+  const kingTile = tiles.find(t => t.q === king.q && t.r === king.r);
+  if (!kingTile) throw new Error(`the king is at ${king.q},${king.r}, where there is no tile`);
+  if (kingTile.terrain !== 'land') throw new Error(`the king is standing on ${kingTile.terrain}`);
+
+  return {
+    format: LEVEL_FORMAT,
+    version: LEVEL_VERSION,
+    name, hexSize, radius,
+    king: { q: king.q, r: king.r },
+    tiles,
+  };
+}
+
+// ── The scene's view of it ──────────────────────────────────────────────────
+
 // The level data expanded into what the scene reads: a grid whose bounds are the
 // land, the per-hex elevation, and which tiles are solid rock.
 //
-// Nothing here validates. `buildMap` refuses a bad placement because a map is
-// authored once and has to be right; an editor is mid-edit almost all the time,
-// and a level object that throws while it is being changed is an editor that
-// cannot be used.
+// Nothing here validates - `parseLevel` did, on the way in. `buildMap` refuses a
+// bad placement because a map is authored once and has to be right; an editor is
+// mid-edit almost all the time, and a level object that throws while it is being
+// changed is an editor that cannot be used.
 export function buildLevel(level) {
   const land = level.tiles.filter(t => t.terrain !== 'water');
   const grid = new HexGrid({
