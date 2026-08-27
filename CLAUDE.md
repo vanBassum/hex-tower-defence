@@ -1,10 +1,10 @@
 # Working in this repo
 
-A turn-based tactical exploration game on a hex grid. Plain ES modules, no build
-step, three.js from a CDN import map. `readme.md` is the long-form design record
-and is worth reading *before changing something it explains*; this file is the
-short version - the map, the rules that must not be broken, and where to add
-things.
+A real-time tactical exploration game on a hex grid - hexes are the spatial
+rule, not a turn structure. Plain ES modules, no build step, three.js from a
+CDN import map. `readme.md` is the long-form design record and is worth reading
+*before changing something it explains*; this file is the short version - the
+map, the rules that must not be broken, and where to add things.
 
 ## How to work here
 

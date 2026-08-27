@@ -1,6 +1,6 @@
 ## Game Progression / Core Gameplay Concept
 
-The game is a **turn-based tactical exploration game played on a hex grid**. The player controls a small collection of units represented by **cards**. These cards form the player's persistent collection and determine which units can be brought into a map.
+The game is a **real-time tactical exploration game played on a hex grid** — hexes are the spatial rule, not a turn structure. Time runs continuously: damage is a rate, and units engage or disengage by where they stand rather than by entering a locked combat state. The player controls a small collection of units represented by **cards**. These cards form the player's persistent collection and determine which units can be brought into a map.
 
 The central idea is that maps are **not necessarily intended to be completed on the first attempt**. Instead, exploring maps allows the player to discover permanent upgrades, additional units, new unit types, and eventually access to other maps. The player gradually builds a larger and more capable army, allowing them to return to places that were previously too dangerous.
 

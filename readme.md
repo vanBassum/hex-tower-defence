@@ -1,6 +1,6 @@
 # Hex Tactics
 
-A turn-based tactical exploration game on a hex grid - see
+A real-time tactical exploration game on a hex grid - see
 `plan/Core Gameplay Concept.md`. The player controls a few units drawn from a
 persistent collection of cards; maps are deliberately bigger than the army that
 first enters them, and what you find on a failed run is what lets you get further
