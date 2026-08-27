@@ -452,12 +452,22 @@ float maskShown( vec2 ax ) {
   return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).g;
 }
 
-// How much of a *side* a neighbour is, for whichever side is being measured
-// from: 'want' 0 asks how much night it is, 1 how much light. Continuous, and
-// that matters - see maskEdgeDepth.
+// Which of the two sides a neighbour is on, for whichever side is being measured
+// from - and the two questions are deliberately asked of different things.
+//
+// The band that laps the dark over the edge of the lit region asks the **rule**:
+// is the far side genuinely unwatched? Anything softer outlines every hex in the
+// region while it is revealing, which is what a black seam down the middle of the
+// explored ground was. A neighbour halfway through its own reveal is not half
+// night for this purpose - it is ground the player already owns, and the two have
+// to merge into one region with nothing drawn between them.
+//
+// The distance to the light, which the reveal front comes in from and the weather
+// is held off by, asks the **picture**: a neighbour halfway through its reveal is
+// halfway a source of light, and that one has to be continuous or the hold-back
+// steps as the reveal crosses it.
 float maskSide( vec2 ax, float want ) {
-  float shown = maskShown( ax );
-  return want > 0.5 ? shown : 1.0 - shown;
+  return want > 0.5 ? maskShown( ax ) : 1.0 - maskRule( ax );
 }
 
 vec2 maskCenter( vec2 ax ) {
