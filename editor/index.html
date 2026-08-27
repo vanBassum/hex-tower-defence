@@ -164,6 +164,37 @@
     }
     #tools .stepper button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.22); }
     #tools .stepper button:disabled { opacity: 0.3; cursor: default; }
+    /* A choice out of grouped options: the category, then chips that wrap. The
+       chips reuse the rail's warm-for-active, because it is the same statement -
+       this is the one that is armed. */
+    #tools .choice .glabel { padding: 7px 0 5px 1px; }
+    #tools .choice .glabel:first-child { padding-top: 2px; }
+    #tools .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    #tools .chips button {
+      font: inherit;
+      color: #9fd8ee;
+      padding: 4px 7px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.08);
+      border: 1px solid rgba(143, 216, 232, 0.16);
+      cursor: pointer;
+      transition: background 140ms ease;
+    }
+    #tools .chips button:hover { background: rgba(143, 216, 232, 0.20); }
+    #tools .chips button.is-on {
+      color: #f0dcc0;
+      background: rgba(224, 160, 92, 0.16);
+      border-color: rgba(224, 160, 92, 0.45);
+    }
+    /* The two numbers the game reads off the chosen type. A readout, not a
+       setting: they belong to the unit and the editor does not get a say. */
+    #tools .snote {
+      color: #7f93a4;
+      padding-top: 8px;
+      line-height: 1.4;
+      max-width: 150px;
+    }
+
     /* What the tool does, in one line. It is the only prose in the editor and it
        is here because a rail of icons needs somewhere to say what the icon meant. */
     #tools .shint {

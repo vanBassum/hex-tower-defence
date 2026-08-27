@@ -11,9 +11,9 @@ import { esc } from './dom.js';
 //
 // The settings block is generic on purpose. It renders whatever descriptors the
 // active tool declares and reports changes back by key, so a tool gains a
-// setting by naming one and this file does not learn about it. Today they are all
-// small whole numbers and there is one control type; a second type is a second
-// branch in `control()` when something needs one.
+// setting by naming one and this file does not learn about it. There are two
+// control types - a whole number, and a choice out of grouped options - and a
+// third is a third branch in `control()`.
 //
 // It holds no state but which tool is active - the values live with the editor,
 // because they outlive any one render of this panel.
@@ -43,11 +43,14 @@ export class ToolBar {
       if (b) onSelect(b.dataset.tool);
     };
 
-    // One listener for every stepper, now and later: a control says which key it
-    // belongs to and which way it goes, and this turns that into one call.
+    // One listener for every control, now and later: a button says which setting
+    // it belongs to and either which way to nudge it or what to set it to, and
+    // this turns that into one call.
     this._settings.onclick = (e) => {
       const b = e.target.closest('button[data-key]');
-      if (b) this._onSetting(b.dataset.key, +b.dataset.by);
+      if (!b) return;
+      this._onSetting(b.dataset.key,
+        b.dataset.value !== undefined ? { value: b.dataset.value } : { by: +b.dataset.by });
     };
   }
 
@@ -64,9 +67,31 @@ export class ToolBar {
   }
 }
 
+function control(setting, value) {
+  return setting.groups ? choice(setting, value) : stepper(setting, value);
+}
+
+// A choice out of grouped options: the group's name over a row of chips, and the
+// selected one's own note underneath. The chips wrap, so a category that grows
+// from two entries to six costs a line rather than a redesign.
+function choice(setting, value) {
+  const groups = setting.groups ?? [];
+  const all = groups.flatMap(g => g.options);
+  const at = all.find(o => o.id === value) ?? all[0];
+  return `<div class="choice">
+    ${groups.map(g => `
+      <span class="glabel">${esc(g.name)}</span>
+      <div class="chips">${g.options.map(o => `
+        <button type="button" data-key="${esc(setting.key)}" data-value="${esc(o.id)}"
+                class="${o.id === at?.id ? 'is-on' : ''}">${esc(o.name)}</button>`).join('')}
+      </div>`).join('')}
+    ${at?.note ? `<p class="snote">${esc(at.note)}</p>` : ''}
+  </div>`;
+}
+
 // A whole number with a minus and a plus. The buttons carry the key and the
 // direction, which is what lets one delegated listener serve all of them.
-function control(setting, value) {
+function stepper(setting, value) {
   const at = value ?? setting.min;
   return `<div class="setting">
     <span class="slabel">${esc(setting.label)}</span>

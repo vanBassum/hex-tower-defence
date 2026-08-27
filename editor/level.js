@@ -1,4 +1,5 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
+import { UNIT_TYPES } from '../game/units.js';
 
 // What a level *is*, as data, and how that data becomes the pieces the scene
 // needs.
@@ -22,7 +23,7 @@ import { HexGrid } from '../engine/hex/hex_grid.js';
 // in the middle of building a scene; the version is here so the day the shape
 // changes, a file written before it can say so.
 export const LEVEL_FORMAT = 'hex-tower-defence.level';
-export const LEVEL_VERSION = 2;
+export const LEVEL_VERSION = 3;
 
 // A level's identity, and the reason it is not the name: a name is a label a
 // person changes their mind about, and everything that has to keep pointing at
@@ -68,6 +69,7 @@ export function defaultLevel(name = 'Untitled') {
     // here that has to be found first.
     radius: 4,
     king: { q: 0, r: 0 },
+    units: [],
     tiles: discTiles(2).map(({ q, r }) => ({ q, r, terrain: 'land', level: 0 })),
   };
 }
@@ -92,6 +94,8 @@ export function discTiles(radius) {
 export function stringifyLevel(level) {
   const tiles = level.tiles.map(t =>
     `    { "q": ${t.q}, "r": ${t.r}, "terrain": ${JSON.stringify(t.terrain)}, "level": ${t.level ?? 0} }`);
+  const units = (level.units ?? []).map(u =>
+    `    { "type": ${JSON.stringify(u.type)}, "q": ${u.q}, "r": ${u.r} }`);
   return [
     '{',
     `  "format": ${JSON.stringify(level.format)},`,
@@ -101,12 +105,19 @@ export function stringifyLevel(level) {
     `  "hexSize": ${level.hexSize},`,
     `  "radius": ${level.radius},`,
     `  "king": { "q": ${level.king.q}, "r": ${level.king.r} },`,
-    '  "tiles": [',
-    tiles.join(',\n'),
-    '  ]',
+    ...block('units', units, ','),
+    ...block('tiles', tiles, ''),
     '}',
     '',
   ].join('\n');
+}
+
+// One array, one entry per line, and collapsed to `[]` when it is empty - an
+// empty array written open-and-closed over three lines is two lines of nothing in
+// every file that has no units in it yet.
+function block(name, entries, comma) {
+  if (!entries.length) return [`  "${name}": []${comma}`];
+  return [`  "${name}": [`, entries.join(',\n'), `  ]${comma}`];
 }
 
 // What to call the file. The level's own name, reduced to something every
@@ -138,13 +149,13 @@ export function parseLevel(text) {
     throw new Error(`not a level file (format is ${JSON.stringify(raw.format ?? null)}, ` +
                     `expected ${JSON.stringify(LEVEL_FORMAT)})`);
   }
-  // Version 1 is read and brought forward. It is the same board - it only
-  // predates levels having an identity of their own - and refusing a file this
-  // editor wrote last week would be the version number doing harm rather than
-  // work. Anything older than that does not exist, and anything newer was
-  // written by an editor that knows something this one does not, so it is
-  // refused rather than guessed at.
-  if (raw.version !== 1 && raw.version !== LEVEL_VERSION) {
+  // Earlier versions are read and brought forward. They are the same board - one
+  // predates levels having an identity of their own, the next predates anybody
+  // standing on them - and refusing a file this editor wrote last week would be
+  // the version number doing harm rather than work. Anything newer was written by
+  // an editor that knows something this one does not, so that is refused rather
+  // than guessed at.
+  if (![1, 2, LEVEL_VERSION].includes(raw.version)) {
     throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
                     `(this editor reads version ${LEVEL_VERSION})`);
   }
@@ -179,6 +190,32 @@ export function parseLevel(text) {
     return { q: t.q, r: t.r, terrain: t.terrain, level };
   });
 
+  // Who is standing on it. `hostile` on the type is what makes one an enemy - see
+  // the invariant in CLAUDE.md - so there is no side field here to disagree with
+  // it, and the King is not in this list: he is one hex on his own further down,
+  // which is how "exactly one player start" is a fact about the shape of the file
+  // rather than a rule something has to enforce.
+  const units = [];
+  if (raw.units !== undefined && !Array.isArray(raw.units)) throw new Error('"units" must be an array');
+  const standing = new Set();
+  for (const [i, u] of (raw.units ?? []).entries()) {
+    const at = `units[${i}]`;
+    if (!u || typeof u !== 'object') throw new Error(`${at} is not an object`);
+    if (!UNIT_TYPES[u.type]) {
+      throw new Error(`${at} is a ${JSON.stringify(u.type ?? null)}, which is not a unit type`);
+    }
+    if (!Number.isInteger(u.q) || !Number.isInteger(u.r)) throw new Error(`${at} needs whole "q" and "r"`);
+    const tile = tiles.find(t => t.q === u.q && t.r === u.r);
+    if (!tile) throw new Error(`${at} is at ${u.q},${u.r}, where there is no tile`);
+    if (tile.terrain !== 'land') throw new Error(`${at} is standing on ${tile.terrain}`);
+    const key = `${u.q},${u.r}`;
+    // A unit holds its hex in the grid's occupancy set, so two on one tile is a
+    // board the game cannot build.
+    if (standing.has(key)) throw new Error(`two units at ${key}`);
+    standing.add(key);
+    units.push({ type: u.type, q: u.q, r: u.r });
+  }
+
   const king = raw.king;
   if (!king || typeof king !== 'object' || !Number.isInteger(king.q) || !Number.isInteger(king.r)) {
     throw new Error('"king" needs whole "q" and "r"');
@@ -189,13 +226,14 @@ export function parseLevel(text) {
   const kingTile = tiles.find(t => t.q === king.q && t.r === king.r);
   if (!kingTile) throw new Error(`the king is at ${king.q},${king.r}, where there is no tile`);
   if (kingTile.terrain !== 'land') throw new Error(`the king is standing on ${kingTile.terrain}`);
+  if (standing.has(`${king.q},${king.r}`)) throw new Error('a unit is standing on the king');
 
   return {
     format: LEVEL_FORMAT,
     version: LEVEL_VERSION,
     id, name, hexSize, radius,
     king: { q: king.q, r: king.r },
-    tiles,
+    units, tiles,
   };
 }
 
@@ -261,6 +299,10 @@ export function addTile(level, q, r) {
 export function removeTile(level, q, r) {
   const i = level.tiles.findIndex(t => t.q === q && t.r === r);
   if (i < 0) return false;
+  // Nothing is left standing in mid-air. Erase takes the unit first and the
+  // ground on the next pass, which is also the order that reads correctly: you
+  // clear a tile before you remove it.
+  if (entityAt(level, q, r)) return false;
   level.tiles.splice(i, 1);
   // The envelope is deliberately *not* shrunk. It costs nothing to leave it
   // wide - it is a bound, not a board - and pulling it in behind a delete would
@@ -277,6 +319,67 @@ export function raiseTile(level, q, r, by) {
   const [lo, hi] = ELEVATION_RANGE;
   tile.level = Math.min(hi, Math.max(lo, (tile.level ?? 0) + by));
   return tile.level;
+}
+
+// ── What stands on it ───────────────────────────────────────────────────────
+// The same arrangement as the tile mutators above: they change the level and
+// report whether anything moved, and the caller draws and stores the result.
+//
+// `entityAt` is the one to extend. Everything that can occupy a hex answers
+// through it - today the King and a unit, tomorrow a pickup, an objective, a
+// building - so the rules that matter ("is this hex free", "what does erase
+// take") are written once against whatever it returns rather than once per kind.
+export function entityAt(level, q, r) {
+  if (level.king.q === q && level.king.r === r) return { kind: 'king' };
+  const unit = (level.units ?? []).find(u => u.q === q && u.r === r);
+  if (unit) return { kind: 'unit', unit };
+  return null;
+}
+
+// Ground somebody could be standing on. A crag is solid rock the grid refuses to
+// walk onto and water is not ground at all, so plain land is the whole of it.
+export function isStandable(level, q, r) {
+  return tileAt(level, q, r)?.terrain === 'land';
+}
+
+// Why this hex will not take that entity, or null if it will. It is a sentence
+// rather than a boolean because the answer is shown to a person - a placement
+// that fails silently is a tool that looks broken.
+export function whyNot(level, kind, q, r) {
+  if (!isStandable(level, q, r)) {
+    const tile = tileAt(level, q, r);
+    return tile ? `cannot stand on ${tile.terrain}` : 'no ground there';
+  }
+  const here = entityAt(level, q, r);
+  if (!here) return null;
+  // Moving the King onto himself is not an error, it is a no-op; and a unit may
+  // not share a hex with anything, the King included.
+  if (kind === 'king') return here.kind === 'king' ? null : 'a unit is standing there';
+  return here.kind === 'king' ? 'the King is standing there' : 'a unit is standing there';
+}
+
+// The player start, moved rather than added. There is one `king` field, so there
+// is one King - the singleton is the shape of the data and not a rule anybody has
+// to remember.
+export function moveKing(level, q, r) {
+  if (level.king.q === q && level.king.r === r) return false;
+  level.king = { q, r };
+  return true;
+}
+
+export function placeUnit(level, type, q, r) {
+  level.units ??= [];
+  level.units.push({ type, q, r });
+  return true;
+}
+
+// Takes whatever is standing here, and refuses the King: a level without a player
+// start is a level the game cannot open, and the Place tool moves him anyway.
+export function removeEntityAt(level, q, r) {
+  const here = entityAt(level, q, r);
+  if (!here || here.kind === 'king') return false;
+  level.units.splice(level.units.indexOf(here.unit), 1);
+  return true;
 }
 
 // How far a hex is from the middle, which is what `radius` bounds.

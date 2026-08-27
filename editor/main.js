@@ -108,7 +108,12 @@ let level = null;            // set by the boot block at the bottom of this file
 let world = null;            // grid, elevation and crags, derived from `level`
 let envelope = null;         // every hex that can be pointed at, board or not
 let terrain = [];            // the GameObjects that belong to this level
+let units = [];              // the ones that are people, a subset of the above
 let hexGround = null;
+
+// Which lights belong to which type, the same pair the game names. Anything not
+// in here carries none, which units.js already decides from `lamp` on the type.
+const LAMPS = { king: MOOD.kingFire, scout: MOOD.scoutLamp };
 
 // Geometry only, and it never changes: where a hex sits and what its corners are
 // depend on the hex size and nothing else. The overlays are built once against
@@ -119,6 +124,7 @@ const geometry = new HexGrid({ size: 1 });
 function buildTerrain() {
   world = buildLevel(level);
   game.hexGrid = world.grid;
+  units = [];
 
   // The board is `world.grid` - what exists, what a unit stands on, what the
   // ground mesh draws. The envelope is the lattice around it: the same hexes
@@ -152,25 +158,29 @@ function buildTerrain() {
     hexes: [...envelope.allHexes()].filter(h => !world.grid.inBounds(h.q, h.r)),
   }));
 
-  // The King, and the one thing on the board that is not terrain. He is placed
-  // from `level.king` like everything else here is placed from the level - the
-  // editor has no opinion about where he goes, the file does.
-  const kingGO = new GameObject('King');
-  kingGO.addComponent(new Unit({
-    grid: world.grid,
-    ground: hexGround,
-    type: 'king',
-    q: level.king.q, r: level.king.r,
-    colors: MOOD.units,
-    // The King's torch, and the reason a lamp is named here rather than in
-    // units.js: what a unit carries a light for is a fact about its type, how
-    // bright it burns is a fact about the hour, and this is a place that knows
-    // both. The game says the same thing in the same way.
-    tuning: { lamp: MOOD.kingFire },
-    emerge: false,
-  }));
+  // Everybody standing on it, the King included, through the same component the
+  // game builds them with. There is no editor-side drawing of a unit: what is on
+  // screen here is what will be on the board, and a Spearman looks like an enemy
+  // because `hostile` is on its type and the palette says so, not because the
+  // editor coloured it.
+  for (const u of [{ type: 'king', ...level.king }, ...(level.units ?? [])]) {
+    const go = new GameObject(`Unit:${u.type}`);
+    go.addComponent(new Unit({
+      grid: world.grid,
+      ground: hexGround,
+      type: u.type,
+      q: u.q, r: u.r,
+      colors: MOOD.units,
+      // What a unit carries a light for is a fact about its type; how bright it
+      // burns is a fact about the hour. The two halves meet here, which is the
+      // only place that knows both - the game says the same thing the same way.
+      tuning: { lamp: LAMPS[u.type] },
+      emerge: false,
+    }));
+    units.push(go);
+  }
 
-  terrain = [groundGO, gridGO, emptyGO, kingGO];
+  terrain = [groundGO, gridGO, emptyGO, ...units];
   for (const go of terrain) game.add(go);
 }
 
@@ -179,6 +189,7 @@ function clearTerrain() {
   // King's hex back to the grid and releases the ground's geometry.
   for (const go of terrain) game.remove(go);
   terrain = [];
+  units = [];
   hexGround = null;
 }
 
@@ -212,7 +223,10 @@ cursorGO.addComponent(new HexPicker({
   ground: { topY: (q, r) => hexGround?.topY(q, r) ?? 0 },
   onHover: (hex) => {
     hovered = hex;
-    if (painting) apply();          // a drag is the hexes it crosses
+    // A drag is the hexes it crosses - for the tools that want it. Place does
+    // not: dropping a unit on every hex the cursor passed over is not a stroke,
+    // it is a mess to undo.
+    if (painting && tool().continuous !== false) apply();
     else refreshBrush();
     refreshPanel();
   },
@@ -253,7 +267,9 @@ function brushHexes() {
 }
 
 function refreshBrush() {
-  brush.setColor(tool().color);
+  // A tool that has something to say about the hex under the cursor says it in
+  // the brush's colour, which is the only feedback that arrives before the click.
+  brush.setColor(tool().colorAt?.(ctx(), hovered) ?? tool().color);
   brush.setHexes(brushHexes());
 }
 
@@ -263,7 +279,15 @@ function refreshBrush() {
 function apply() {
   const hexes = brushHexes();
   if (!hexes.length) { refreshBrush(); return; }
-  edited(tool().paint?.(ctx(), hexes) ?? 0);
+  try {
+    edited(tool().paint?.(ctx(), hexes) ?? 0);
+    panel.clearError();
+  } catch (e) {
+    // A tool that will not do something says why. The brush was already showing
+    // the refusal in its colour; this is the sentence behind it, for the click
+    // that went ahead anyway.
+    say(e.message, true);
+  }
 }
 
 // ── Changing things ──────────────────────────────────────────────────────────
@@ -375,13 +399,20 @@ const toolbar = new ToolBar({
     refreshBrush();
     refreshPanel();
   },
-  // Settings arrive as a nudge rather than a value, so the toolbar never has to
-  // know a setting's bounds - they are declared on the tool and clamped here.
-  onSetting: (key, by) => {
+  // A change arrives as a nudge or as a value, and which one it is comes from the
+  // control the toolbar drew - so the toolbar never has to know a setting's
+  // bounds or its options. Both are declared on the tool and checked here.
+  onSetting: (key, change) => {
     const spec = tool().settings?.find(s => s.key === key);
     if (!spec) return;
-    const at = settings[activeTool][key] ?? spec.min;
-    settings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + by));
+    if (change.value !== undefined) {
+      const known = (spec.groups ?? []).some(g => g.options.some(o => o.id === change.value));
+      if (!known) return;
+      settings[activeTool][key] = change.value;
+    } else {
+      const at = settings[activeTool][key] ?? spec.min;
+      settings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + change.by));
+    }
     refreshBrush();
     refreshPanel();
   },

@@ -1,5 +1,6 @@
 import { HexGrid } from '../../engine/hex/hex_grid.js';
 import { MOOD } from '../../game/mood.js';
+import { UNIT_TYPES } from '../../game/units.js';
 
 // A level's shape, at the size of a card.
 //
@@ -49,12 +50,15 @@ export function thumbSvg(level, { width = 228, height = 96 } = {}) {
     }
   }
 
-  // The King, as a mark rather than a figure. At this size a shape would be four
-  // pixels of nothing; what reads is a warm dot in a cool board, which is what he
-  // is on the real one too.
-  const king = level.king && `<circle cx="${round(GEO.hexToWorld(level.king.q, level.king.r).x)}" ` +
-    `cy="${round(GEO.hexToWorld(level.king.q, level.king.r).z)}" r="4.4" ` +
-    `fill="${css(MOOD.kingFire.color)}" stroke="${css(0x0b1220)}" stroke-width="1.6"/>`;
+  // Who is on it, as marks rather than figures. At this size a shape would be
+  // four pixels of nothing; what reads is a dot, and what tells them apart is the
+  // one thing that tells them apart on the real board - blue is the player's and
+  // red is the enemy. The King is the largest and warmest, because he is.
+  const marks = [
+    ...(level.units ?? []).map(u => dot(u.q, u.r, 3.2,
+      UNIT_TYPES[u.type]?.hostile ? MOOD.units.spearmen.trim : MOOD.units.footman.trim)),
+    level.king ? dot(level.king.q, level.king.r, 4.4, MOOD.kingFire.color) : '',
+  ].join('');
 
   // `preserveAspectRatio` does the fitting, so a wide board and a tall one both
   // arrive centred at whatever size the card is - and the box is the level's own
@@ -68,7 +72,15 @@ export function thumbSvg(level, { width = 228, height = 96 } = {}) {
     // on the whole group rather than per tile: at this size adjacent edges are a
     // pixel apart, and one shared stroke is what keeps the hexes legible instead
     // of merging the land into a blob.
-    `<g stroke="${css(MOOD.gridColor)}" stroke-width="0.7">${shapes.join('')}</g>${king || ''}</svg>`;
+    `<g stroke="${css(MOOD.gridColor)}" stroke-width="0.7">${shapes.join('')}</g>${marks}</svg>`;
+}
+
+// Somebody on a hex, ringed in the board's own dark so it reads against grass and
+// against water alike.
+function dot(q, r, radius, color) {
+  const { x, z } = GEO.hexToWorld(q, r);
+  return `<circle cx="${round(x)}" cy="${round(z)}" r="${radius}" fill="${css(color)}" ` +
+    `stroke="${css(0x0b1220)}" stroke-width="1.4"/>`;
 }
 
 function tileColor(tile) {
