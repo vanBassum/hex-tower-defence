@@ -2,7 +2,6 @@ import { Game } from '../engine/game.js';
 import { GameObject } from '../engine/gameobject.js';
 import { CameraRig } from '../engine/components/camera_rig.js';
 import { Atmosphere } from '../engine/components/atmosphere.js';
-import { DirectionalLight } from '../engine/components/directional_light.js';
 import { HexGridRenderer } from '../engine/components/hex_grid_renderer.js';
 import { HexGround } from '../engine/components/hex_ground.js';
 import { HexOverlay } from '../engine/components/hex_overlay.js';
@@ -100,15 +99,6 @@ air.addComponent(new Atmosphere({
   exposure: MOOD.exposure,
 }));
 game.add(air);
-
-const sun = new GameObject('Sun');
-sun.position.set(...MOOD.sun.position);
-sun.addComponent(new DirectionalLight({
-  color: MOOD.sun.color,
-  intensity: MOOD.sun.intensity,
-  shadowExtent: MOOD.sun.shadowExtent,
-}));
-game.add(sun);
 
 // ── The level, and the board it describes ────────────────────────────────────
 

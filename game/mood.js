@@ -45,15 +45,19 @@ export const MOOD = {
   // everything back toward daylight.
   environmentIntensity: 0.18,
 
-  // Very late warm sunlight. Low enough to shape forms rather than illuminate
-  // the whole board. Deliberately left where it was through the brightness pass:
-  // the sun is the warm light, and lifting it competes with the lanterns.
-  sun: {
-    position: [26, 7.5, 17],
-    color: 0xffc89d,
-    intensity: 1.45,
-    shadowExtent: 42,
-  },
+  // There is no sun, and that is the hour rather than a saving. The last of a
+  // warm directional light was here for a long time to shape the forms, but the
+  // one thing it actually produced at this angle was a long hard shadow off every
+  // step and every unit - and a shadow is the most prominent thing in a frame
+  // this dark, so the board read as a study of its own shadows. What is left is
+  // the light a blue hour really has: skylight from above, the cool fill, and the
+  // lanterns. Nothing in the scene casts a shadow now, which is why there is no
+  // `shadowExtent` to state and nothing else to switch off.
+  //
+  // The two consequences to know, because both are paid for elsewhere in this
+  // file: cliff faces and rock now get all of their light from `hemisphere.ground`
+  // (see the note there), and warm is now *only* what a lantern does, which is
+  // what the pools were always bright by comparison to.
 
   ground: {
     // Slightly darker and richer than the current result.

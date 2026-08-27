@@ -2,7 +2,6 @@ import { Game } from '../engine/game.js';
 import { GameObject } from '../engine/gameobject.js';
 import { CameraRig } from '../engine/components/camera_rig.js';
 import { Atmosphere } from '../engine/components/atmosphere.js';
-import { DirectionalLight } from '../engine/components/directional_light.js';
 import { MAP_1, buildMap } from './maps.js';
 import { MOOD } from './mood.js';
 import { startPlay } from './play.js';
@@ -43,17 +42,6 @@ air.addComponent(new Atmosphere({
   exposure: MOOD.exposure,
 }));
 game.add(air);
-
-// The last of the direct light, low in the sky so shadows run long across the
-// board. Dim on purpose: it shapes the terrain, and the lanterns light it.
-const sun = new GameObject('Sun');
-sun.position.set(...MOOD.sun.position);
-sun.addComponent(new DirectionalLight({
-  color: MOOD.sun.color,
-  intensity: MOOD.sun.intensity,
-  shadowExtent: MOOD.sun.shadowExtent,
-}));
-game.add(sun);
 
 startPlay({
   game, map, rig,
