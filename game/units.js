@@ -70,10 +70,10 @@ export const UNIT_TYPES = {
     // buys something, and short enough that the island still takes a walk to
     // learn.
     viewDistance: 2,
-    // How many people are in it. Today this is only what the mesh draws - there
-    // is nothing to spend it on - but it is the number that makes the board read
-    // at the right size, so it belongs to the type rather than to the model.
-    people: 15,
+    // How many people are in it - the roster and the crowd on the tile are the
+    // same number. Three: a scouting party is a handful of men sent out ahead,
+    // and a crowd of fifteen read as an army that happened to be looking.
+    people: 3,
     // How they stand, and what they carry. Both are silhouette rather than
     // decoration: at this size a formation is read by its outline and by nothing
     // else, so the shape of the crowd and whether anything sticks up out of it
