@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Game } from '../engine/game.js';
 import { GameObject } from '../engine/gameobject.js';
 import { CameraRig } from '../engine/components/camera_rig.js';
@@ -16,6 +17,7 @@ import { MAP_1, buildMap } from './maps.js';
 import { MOOD, WIND } from './mood.js';
 import { PropLayer } from './components/prop_layer.js';
 import { Unit } from './components/unit.js';
+import { UNIT_TYPES } from './units.js';
 import { UnitControl } from './components/unit_control.js';
 import { Pickup } from './components/pickup.js';
 import { Deployment } from './components/deployment.js';
@@ -169,6 +171,27 @@ game.add(gridGO);
 // that already knows both.
 const LAMPS = { scout: MOOD.scoutLamp, king: MOOD.kingFire };
 
+// And the lamps themselves, alight from before the first frame is drawn. This is
+// the single worst piece of three.js behaviour the game has met: the number of
+// point lights in the scene is part of the *identity* of every shader program it
+// compiles, so the moment a Scout is deployed and its lamp joins the scene, every
+// material on the board is recompiled - which was a two second freeze on the
+// frame a card was played, and it looked like the deployment was broken.
+//
+// So the lights exist up front and are only ever *reparented* - onto the unit
+// that borrows one, back to here when it dies. Which parent a light has costs
+// nothing; how many there are is what three cares about. Running the pool dry
+// only means the old behaviour comes back for that one unit, so it is sized well
+// past any hand the game deals.
+const lampsGO = new GameObject('Lamps');
+const lampPool = [];
+for (let i = 0; i < 10; i++) {
+  const light = new THREE.PointLight(0xffffff, 0);
+  lampsGO.object3D.add(light);
+  lampPool.push(light);
+}
+game.add(lampsGO);
+
 // The King, and the only thing the game puts on the board itself. Everything
 // else is a card played onto a tile beside him - including the Scout the run is
 // dealt - so something has to be standing there before the first card can be.
@@ -219,15 +242,28 @@ for (const p of map.pickups) {
 // roster - it ends in this call.
 function deploy(type, q, r, { emerge = true } = {}) {
   const go = new GameObject(type);
+  // A lamp is borrowed rather than made - see the pool above. Handed over here
+  // rather than looked up in units.js, because which lights are already in the
+  // scene is a fact about the scene.
+  const lampLight = UNIT_TYPES[type]?.lamp ? lampPool.pop() ?? null : null;
   const unit = go.addComponent(new Unit({
     grid: map.grid, ground: hexGround, type, q, r,
     viewDistance: type === 'scout' ? DEBUG.scoutViewDistance : null,
-    colors: MOOD.units, tuning: { lamp: LAMPS[type] },
+    colors: MOOD.units, tuning: { lamp: LAMPS[type], lampLight },
     // Scaled up rather than switched on, for anything that was not here a moment
     // ago. What the level stands on the board at setup was always there.
     emerge,
   }));
   game.add(go);
+  // Handed back before the unit is torn down, so the scene keeps the same number
+  // of lights it has had since the first frame.
+  if (lampLight) {
+    unit.onDied(() => {
+      lampLight.intensity = 0;
+      lampsGO.object3D.add(lampLight);
+      lampPool.push(lampLight);
+    });
+  }
   // Built after the sweep at the bottom of this file, so it patches itself in -
   // culled rather than dimmed, because a unit is the one thing on the board that
   // is nothing but information.
@@ -431,3 +467,65 @@ installDebug({
 });
 
 game.start();
+
+// ── Shader warm-up ──────────────────────────────────────────────────────────
+// A material's shader program is built - and, worse, compiled by the driver the
+// first time it actually shades a pixel - and a unit arriving mid-run brings
+// seven of them with it. That landed on the exact frame the card was played:
+// about a second on a software renderer, two on a real one, and it was the
+// loudest thing in the game.
+//
+// So one of every type that could be put on the board is built here on the first
+// frame, patched exactly as a real one is, and *drawn* once. After that a card
+// lands in a couple of milliseconds.
+//
+// The draw is the part that matters, and it took three wrong turns to learn it.
+// three's `compile()` looks like the tool for this and is not: it silently skips
+// anything invisible, and a program it does build still stalls the frame that
+// first uses it. Drawing the scrap off the side of the world does not work
+// either - the draw call is issued, every vertex clips, no pixel is shaded and
+// the driver has done none of the work. It has to be drawn where it can be seen.
+//
+// Which is why the frame is thrown away instead: the scrap is put in front of the
+// camera, one render is taken and dropped, and the scrap comes straight back out
+// again - all inside a single tick, so the browser only ever composites the clean
+// frame that follows. `type.build` makes meshes and touches nothing else - no
+// grid, no occupancy, no roster - which is what makes that safe to do behind the
+// game's back.
+//
+// The overlays are the other half of the same bug: they start with no hexes in
+// them, so nothing draws them until the frame a card is armed. A hex apiece for
+// the same throwaway frame does for them what the scrap units do for themselves.
+function warmShaders() {
+  const at = map.grid.hexToWorld(DEBUG.kingStart.q, DEBUG.kingStart.r);
+  const scrap = Object.values(UNIT_TYPES).map((type) => {
+    const mesh = type.build(MOOD.units, { lamp: LAMPS[type.key], hexSize: map.grid.size });
+    mask.patch(mesh, { cull: true });
+    // Where the camera is already looking, and clear of the ground, so its
+    // fragments are really shaded rather than sorted away behind the terrain.
+    mesh.position.set(at.x, hexGround.topY(DEBUG.kingStart.q, DEBUG.kingStart.r) + 1.2, at.z);
+    game.scene.add(mesh);
+    return mesh;
+  });
+  const overlays = [pathOverlay, placeOverlay];
+  for (const o of overlays) o.setHexes([{ q: DEBUG.kingStart.q, r: DEBUG.kingStart.r }]);
+
+  game.renderer.render(game.scene, game.camera);
+
+  // The scrap geometry goes; the *materials* stay, because three counts a
+  // program's users by material and disposing them would release every program
+  // this exists to build.
+  for (const mesh of scrap) {
+    game.scene.remove(mesh);
+    mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+  }
+  for (const o of overlays) o.setHexes([]);
+}
+
+// On the first tick rather than from here: the camera is wired by
+// CameraRig.start(), which runs inside that tick, and there is nothing to draw
+// with until there is one. One shot - it takes the hook back off itself.
+game.onTick = () => {
+  game.onTick = null;
+  warmShaders();
+};

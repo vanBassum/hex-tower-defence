@@ -490,12 +490,18 @@ function buildSquad(type, colors = {}, tuning = {}) {
     group.add(bead);
     own.push(bead);
 
-    light = new THREE.PointLight(
-      tuning.lamp?.color ?? c.lampGlow,
-      tuning.lamp?.intensity ?? 2.6,
-      tuning.lamp?.distance ?? 3.4,
-      tuning.lamp?.decay ?? 2,
-    );
+    // The light itself can be handed in, and that matters far more than it looks.
+    // three bakes the number of point lights in the scene into every shader
+    // program it compiles, so one new lamp arriving with a deployed unit
+    // invalidates the program of every material on the board and recompiles the
+    // lot - two seconds of freeze on the frame a card is played. A borrowed lamp
+    // was already in the scene, so the count never moves. See the pool in
+    // main.js; making one here is the fallback when there is none left to borrow.
+    light = tuning.lampLight ?? new THREE.PointLight();
+    light.color.set(tuning.lamp?.color ?? c.lampGlow);
+    light.intensity = tuning.lamp?.intensity ?? 2.6;
+    light.distance = tuning.lamp?.distance ?? 3.4;
+    light.decay = tuning.lamp?.decay ?? 2;
     light.position.copy(bead.position);
     group.add(light);
   }

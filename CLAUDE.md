@@ -167,6 +167,18 @@ Break one of these and something three files away goes subtly wrong.
 
 ## Gotchas paid for once already
 
+- three bakes **the number of point lights in the scene** into the identity of
+  every shader program. One new lamp arriving with a deployed unit therefore
+  recompiles every material on the board - two seconds of freeze on the frame a
+  card is played. Lamps come out of a pool that has existed since before the
+  first frame and are only ever reparented (`lampPool` in `main.js`); anything
+  else that wants a light mid-run has to do the same.
+- A material's program is also built the first time it is actually **drawn**, so
+  a unit type first seen mid-run costs a stall too. `warmShaders()` in `main.js`
+  draws one of every type in a frame that is thrown away. `renderer.compile()`
+  looks like the tool for that job and is not: it skips anything invisible, and a
+  program it does build still stalls the frame that first uses it.
+
 - three.js caches shader programs on the **source text** of `onBeforeCompile`. A
   closure written once has identical text for every material, so per-material
   flags must be pushed into `customProgramCacheKey` by hand.
