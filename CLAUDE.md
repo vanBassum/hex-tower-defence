@@ -31,7 +31,8 @@ This is a prototype under rapid development. Iteration speed beats robustness.
     node tools/map.mjs                # print the board as text (--shape to paste back)
 
 `tools/check.py` is the whole verification budget for a normal change: it loads
-the page and exits non-zero on any page or console error. Its `--eval`/`--click`
+the page and exits non-zero on any page or console error. `--page
+editor/index.html` points it at the editor instead of the game. Its `--eval`/`--click`
 /`--shot` options exist for the rarer case where behaviour or appearance is the
 thing being changed - reach for them then, not by default.
 
@@ -53,6 +54,11 @@ thing being changed - reach for them then, not by default.
       components/           prop_layer, unit, unit_control, pickup, deployment
       ui/card_bar.js        the hand, in DOM
       debug.js              window.hex - developer knobs, not game UI
+    editor/                 the level editor at /editor/ - same world, no game
+      level.js              the level *as data*, and the only stored format
+      storage.js            levels in localStorage, keyed by id
+      main.js               second composition root; edits rebuild the board
+      ui/                   panel (readout + shaping tools), levels (library)
     tools/                  map.mjs (authoring), check.py (verification)
 
 ## Invariants
@@ -151,6 +157,7 @@ Break one of these and something three files away goes subtly wrong.
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
 | A wire between components | `game/main.js`, never inside either component |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |
+| An editor tool | a mutator in `editor/level.js`, a control in `editor/ui/panel.js`, one `act()` in `editor/main.js` ending in `rebuild()` |
 
 ## Conventions
 

@@ -39,6 +39,19 @@ export function newId() {
 // fourth string here.
 export const TERRAIN = ['land', 'crag', 'water'];
 
+// What a tile is when nothing has been said about it. A new tile is plain
+// ground at the height the board starts from, because sketching a shape and
+// choosing what is on it are two different jobs and only the first one exists
+// yet.
+export const DEFAULT_TERRAIN = 'land';
+export const DEFAULT_ELEVATION = 0;
+
+// How far a tile may be pushed. Elevation is an integer count of steps and the
+// renderer will draw any of them, so this is only here to keep a held-down
+// button from putting a tile a hundred steps up where nothing can be seen -
+// generous enough that no hill anybody draws will meet it.
+export const ELEVATION_RANGE = [-8, 12];
+
 // The level the editor opens on: a small patch of plain ground with the King
 // standing in the middle of it. Small because the first thing anybody does with
 // an editor is click a tile, and a board you have to fly across to find one is
@@ -221,4 +234,52 @@ export function buildLevel(level) {
 // it is here rather than open-coded at the call site.
 export function tileAt(level, q, r) {
   return level.tiles.find(t => t.q === q && t.r === r) ?? null;
+}
+
+// ── Editing ─────────────────────────────────────────────────────────────────
+// Every change the editor makes to a board is one of these three. They live here
+// rather than in main.js because they are what a level *is* - the same file that
+// says a tile has a terrain and a height says how one is added, so the two
+// cannot describe different shapes. Each one changes the level object and
+// nothing else; putting the result on screen and in storage is the caller's job.
+
+// A new tile, or null if that hex is taken. Two tiles at one coordinate is the
+// one thing this model cannot represent - the grid, the ground and every lookup
+// key it by q,r - so the refusal is here rather than in whatever asked.
+//
+// The envelope grows to hold it. `radius` is the box the board is drawn inside,
+// not the board, and a level that refused to be extended past the radius it
+// happened to start with would be a level with an invisible wall around it.
+export function addTile(level, q, r) {
+  if (tileAt(level, q, r)) return null;
+  const tile = { q, r, terrain: DEFAULT_TERRAIN, level: DEFAULT_ELEVATION };
+  level.tiles.push(tile);
+  level.radius = Math.max(level.radius, ring(q, r));
+  return tile;
+}
+
+export function removeTile(level, q, r) {
+  const i = level.tiles.findIndex(t => t.q === q && t.r === r);
+  if (i < 0) return false;
+  level.tiles.splice(i, 1);
+  // The envelope is deliberately *not* shrunk. It costs nothing to leave it
+  // wide - it is a bound, not a board - and pulling it in behind a delete would
+  // silently drop tiles on the far side of the level.
+  return true;
+}
+
+// Up or down by whole steps, clamped, and it returns the height it ended at.
+// Terrain is untouched: raising a crag leaves a crag, which is what makes this
+// an elevation tool rather than a tile tool.
+export function raiseTile(level, q, r, by) {
+  const tile = tileAt(level, q, r);
+  if (!tile) return null;
+  const [lo, hi] = ELEVATION_RANGE;
+  tile.level = Math.min(hi, Math.max(lo, (tile.level ?? 0) + by));
+  return tile.level;
+}
+
+// How far a hex is from the middle, which is what `radius` bounds.
+function ring(q, r) {
+  return Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
 }

@@ -98,6 +98,12 @@ export class LevelLibrary {
     this._status.textContent = text ?? '';
     this._status.classList.toggle('is-error', !!isError);
   }
+
+  // See the note on EditorPanel.clearError: a refused file must not still be
+  // being complained about after the next thing works.
+  clearError() {
+    if (this._status.classList.contains('is-error')) this.setStatus(null);
+  }
 }
 
 function card(entry, isOpen) {

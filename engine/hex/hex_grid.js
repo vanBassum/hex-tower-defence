@@ -8,6 +8,11 @@ const NEIGHBORS = [
   [-1,  0], [-1, +1], [ 0, +1],
 ];
 
+// The same six as axial offsets, for anything that needs a direction rather than
+// a neighbour. `neighbors()` only yields hexes that exist, which is the right
+// answer for walking a board and the wrong one for growing it.
+export const HEX_DIRECTIONS = NEIGHBORS.map(([q, r]) => ({ q, r }));
+
 export class HexGrid {
   // `radius` is the envelope the grid iterates. `hexes`, when given, is the
   // board inside that envelope - the set of hexes that actually exist - which is

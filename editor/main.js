@@ -9,7 +9,11 @@ import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { MOOD } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
-import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
+import {
+  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt,
+  addTile, removeTile, raiseTile,
+} from './level.js';
+import { HEX_DIRECTIONS } from '../engine/hex/hex_grid.js';
 import { downloadLevel, readFile } from './files.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
@@ -187,10 +191,29 @@ function loadLevel(next) {
   refreshPanel();
 }
 
+// A change to the board, rather than a change of board. The scene is thrown away
+// and built again from the level - which is the same thing `loadLevel` does, and
+// on purpose: a tile added at the coast changes the cliff faces of the three
+// tiles beside it, and a partial update is where stale side walls and holes in
+// the ground come from. On boards this size the whole mesh is cheaper to rebuild
+// than to reason about.
+//
+// The selection survives, which is the whole difference from `loadLevel`: raising
+// a tile four times in a row is four clicks on the same button, not four clicks
+// and three reselections. It only survives if there is still a tile there - a
+// delete takes its own selection with it.
+function rebuild(keep = selected) {
+  clearBoard();
+  buildBoard();
+  selected = keep && tileAt(level, keep.q, keep.r) ? { q: keep.q, r: keep.r } : null;
+  selectionOverlay.setHexes(selected ? [selected] : []);
+  commit();
+}
+
 // What every edit ends in, and the reason there is no Save button. It is one
-// function so that the day tiles can be painted, elevation raised or a unit
-// moved, the persistence is already written and the tool only has to say that it
-// changed something.
+// function so that the day terrain can be painted or a unit moved, the
+// persistence is already written and the tool only has to say that it changed
+// something.
 function commit() {
   try {
     storage.save(level);
@@ -220,6 +243,18 @@ function refreshPanel() {
     level,
     hex: selected,
     tile: selected ? tileAt(level, selected.q, selected.r) : null,
+    // The King cannot be deleted out from under himself. He is the one thing on
+    // the board that is not terrain and every level has to have one somewhere,
+    // so the tile he is standing on is not a tile to remove - and the button
+    // says so by being dead rather than by refusing when pressed.
+    canDelete: !!selected && !(level.king.q === selected.q && level.king.r === selected.r),
+    // Which of the six neighbours are already board, so the rose can show where
+    // there is still room.
+    taken: selected
+      ? HEX_DIRECTIONS
+          .map(d => ({ q: selected.q + d.q, r: selected.r + d.r }))
+          .filter(h => tileAt(level, h.q, h.r))
+      : [],
   });
   // The library is repainted out of storage rather than told what changed, so a
   // rename, a duplicate and an import all land the same way.
@@ -233,10 +268,13 @@ function refreshPanel() {
 function act(fn) {
   return async (...args) => {
     try {
-      // Nothing back means nothing happened - a cancelled prompt - and the panel
-      // is left saying whatever it was already saying.
+      // Nothing back means the action had nothing to report - a cancelled
+      // prompt, or an edit that speaks for itself by changing the board. The
+      // panel keeps whatever it was saying, except a refusal: that one is about
+      // an action that has now been replaced by one that worked.
       const said = await fn(...args);
       if (said != null) say(said);
+      else ui()?.clearError();
     } catch (e) {
       say(e.message, true);
     }
@@ -244,16 +282,60 @@ function act(fn) {
   };
 }
 
-// Said in whichever of the two is in front of the person. The library covers the
-// panel, so a message about an import that went there would be a message nobody
+// Whichever of the two is in front of the person. The library covers the panel,
+// so a message about an import that went to the panel would be a message nobody
 // read.
+function ui() {
+  return library?.isOpen ? library : panel;
+}
+
 function say(text, isError = false) {
-  (library?.isOpen ? library : panel)?.setStatus(text, isError);
+  ui()?.setStatus(text, isError);
 }
 
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
   onLevels: () => library.open(levelList(), level.id),
+
+  // ── The shaping tools ────────────────────────────────────────────────────
+  // Three of them, and all three are the same shape: change the level, rebuild
+  // from it, say what happened. Nothing here touches a mesh.
+
+  // The new tile becomes the selected one, which is what makes drawing a passage
+  // a run of clicks on the same button rather than click-select-click-select.
+  onAdd: act((dq, dr) => {
+    if (!selected) return null;
+    const q = selected.q + dq, r = selected.r + dr;
+    if (!addTile(level, q, r)) return null;      // the rose already knew; a stale click
+    rebuild({ q, r });
+    return null;
+  }),
+
+  onDelete: act(() => {
+    if (!selected) return null;
+    const { q, r } = selected;
+    if (level.king.q === q && level.king.r === r) {
+      throw new Error('the King is standing there');
+    }
+    if (!removeTile(level, q, r)) return null;
+    // Somewhere sensible to carry on from: a neighbour that is still board, so
+    // the tools stay live and the next delete is one click away. `grid` is the
+    // old one until the rebuild, which is exactly what is wanted here - it still
+    // knows the shape the deleted tile was part of.
+    const next = HEX_DIRECTIONS
+      .map(d => ({ q: q + d.q, r: r + d.r }))
+      .find(h => tileAt(level, h.q, h.r)) ?? null;
+    rebuild(next);
+    return null;
+  }),
+
+  onRaise: act((by) => {
+    if (!selected) return null;
+    const at = raiseTile(level, selected.q, selected.r, by);
+    if (at === null) return null;
+    rebuild();
+    return null;
+  }),
 });
 
 const library = new LevelLibrary({
@@ -387,6 +469,12 @@ window.hex = {
   select,
   loadLevel,
   commit,
+  rebuild,
+  // The editing verbs, so a shape can be sketched from the console or the check
+  // script without twenty clicks - the same calls the buttons make.
+  addTile:    (q, r) => { addTile(level, q, r); rebuild({ q, r }); },
+  removeTile: (q, r) => { if (removeTile(level, q, r)) rebuild(); },
+  raiseTile:  (q, r, by) => { raiseTile(level, q, r, by); rebuild(); },
   storage,
   panel, library,
   // The file format, reachable from the console and from the check script, so a

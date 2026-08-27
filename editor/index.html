@@ -37,6 +37,64 @@
     #panel .k { color: #7f93a4; }
     #panel .v { justify-self: end; color: #dcecf6; font-variant-numeric: tabular-nums; }
 
+    /* The shaping tools. A rule above them, because the rows are what the tile
+       *is* and this is what can be done to it. */
+    #panel .tools {
+      margin-top: 11px;
+      padding-top: 11px;
+      border-top: 1px solid rgba(143, 216, 232, 0.14);
+      transition: opacity 160ms ease;
+    }
+    /* Nothing selected, nothing to shape. Held back rather than hidden: a block
+       that disappears makes the panel jump every time a click lands on the sea. */
+    #panel .tools.is-idle { opacity: 0.4; }
+
+    /* Six buttons where the six neighbours are. Named grid areas rather than
+       coordinates, so the shape is legible in the CSS as well as on screen -
+       flat-top hexes put two neighbours straight up and down and four on the
+       diagonals, which is exactly what this reads as. */
+    #panel .rose {
+      display: grid;
+      grid-template-areas:
+        ".  n  ."
+        "nw .  ne"
+        "sw .  se"
+        ".  s  .";
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      justify-items: stretch;
+      margin-bottom: 8px;
+    }
+    #panel .rose .hub {
+      grid-area: 2 / 2 / 4 / 3;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.05);
+      border: 1px dashed rgba(143, 216, 232, 0.16);
+    }
+    #panel .rose button {
+      font: inherit;
+      line-height: 1;
+      color: #9fd8ee;
+      padding: 6px 0;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.10);
+      border: 1px solid rgba(143, 216, 232, 0.18);
+      cursor: pointer;
+      transition: background 160ms ease;
+    }
+    #panel .rose button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.22); }
+    /* Disabled because there is nothing selected, and disabled because that hex
+       is already board, are two different things and should not look the same:
+       the second is a wall you can see, and the first is just off. */
+    #panel .rose button:disabled { cursor: default; opacity: 0.3; }
+    #panel .rose button.is-there {
+      opacity: 1;
+      color: #55697c;
+      background: none;
+      border-style: dashed;
+      border-color: rgba(143, 216, 232, 0.12);
+    }
+
     /* A rule above the button: the rows are what the level *is* and the button
        is everything that can be done to it, which now lives behind the one
        word. */
@@ -59,7 +117,14 @@
       cursor: pointer;
       transition: background 160ms ease;
     }
-    #panel button:hover { background: rgba(143, 216, 232, 0.20); }
+    #panel button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.20); }
+    #panel button:disabled { opacity: 0.4; cursor: default; }
+    #panel .tools .bar { margin-top: 0; padding-top: 0; border-top: 0; }
+    #panel .tools .bar + .bar { margin-top: 6px; }
+    /* The one control that removes work, so it is the one control that is not
+       the panel's blue. */
+    #panel .is-danger { color: #d99184; border-color: rgba(217, 145, 132, 0.28); }
+    #panel .is-danger:hover:not(:disabled) { background: rgba(217, 145, 132, 0.14); }
 
     /* Empty until something has happened, and it collapses when it is - a status
        line reserving space for a message nobody has been given yet is a gap in
