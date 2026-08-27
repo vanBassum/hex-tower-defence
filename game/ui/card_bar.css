@@ -52,13 +52,14 @@
      footer stay pinned - fifteen words on one card must not make the card
      next to it a different height. */
   display: grid;
+  position: relative;      /* for the strike across a card that has been lost */
   grid-template-rows: 44px auto 1fr auto auto;
   gap: 6px;
   width: 122px;
   padding: 11px 11px 9px;
   border-radius: 9px;
   background: linear-gradient(180deg, rgba(30, 27, 24, 0.88), rgba(16, 20, 30, 0.92));
-  border: 1px solid rgba(224, 160, 92, 0.28);
+  border: 1px solid rgba(224, 160, 92, 0.42);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
   color: #d8c3a6;
   font-family: inherit;
@@ -79,13 +80,36 @@
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 22px rgba(255, 160, 70, 0.28);
 }
 
+/* ── Three cards, three readings ────────────────────────────────────────────
+   The one thing the player scans this bar for is which of these they can still
+   play, and for a long time all three states answered it the same way: dim. A
+   card in hand, a card whose unit is standing on the board and a card whose unit
+   is dead were separated by an opacity and a small word, in a UI where
+   everything is already dark.
+
+   They are told apart by colour now, and the vocabulary is the one the rest of
+   the game already uses. Warm is live - a card you can play, the way an armed
+   card and the active tool are warm. Cool is information - a unit on the board
+   reporting how it is doing, which is the same blue every readout on this
+   project is. Red is gone.
+
+   A spent card is deliberately *not* faded much. It carries the only strength
+   readout this game has - there are no health bars over anything, by design - so
+   greying it to a third of its contrast was hiding the number it exists to show. */
 .card.is-spent {
-  opacity: 0.34;
   cursor: default;
-  filter: grayscale(0.7);
   transform: none;
   box-shadow: none;
+  opacity: 0.78;
+  /* Flatter and cooler than a card in hand: it has stopped being a button. */
+  background: linear-gradient(180deg, rgba(19, 24, 33, 0.86), rgba(14, 18, 27, 0.92));
+  border-color: rgba(143, 216, 232, 0.16);
 }
+.card.is-spent .card-art { color: #93a8bd; }
+.card.is-spent .card-name { color: #cddceb; }
+.card.is-spent .card-role { color: #7f93a4; }
+.card.is-spent .card-fill { background: rgba(143, 216, 232, 0.14); }
+.card.is-spent .card-fill i { background: #9fd8ee; }
 
 .card-art {
   display: grid;
@@ -116,7 +140,6 @@
   background: #e0a05c;
   transition: width 240ms ease;
 }
-.card.is-lost .card-fill i { background: #7c5a4a; }
 
 .card-state {
   font-size: 10px;
@@ -125,12 +148,36 @@
   color: #e0a05c;
   padding-top: 5px;
 }
-.card.is-spent .card-state { color: #8b8478; }
-/* Spent is dim; lost is dim *and* said. A card the player can no longer act
-   on still has to be legible, because what it is telling them is that the
-   thing they found is not on the board any more. */
-.card.is-lost { opacity: 0.5; }
-.card.is-lost .card-state { color: #a8564b; }
+.card.is-spent .card-state { color: #9fd8ee; }
+
+/* Lost, and said three ways at once, because this is the state that must never be
+   mistaken for either of the others: the colour goes out of it, the accents turn
+   red, and a line is drawn across it. A card the player can no longer act on
+   still has to be legible - what it is telling them is that the thing they found
+   is not on the board any more - so it is desaturated rather than faded away. */
+.card.is-lost {
+  opacity: 0.5;
+  filter: grayscale(0.6);
+  border-color: rgba(217, 145, 132, 0.3);
+}
+.card.is-lost .card-art { color: #8a7f7c; }
+.card.is-lost .card-name { color: #bdaca7; }
+.card.is-lost .card-state { color: #d99184; }
+.card.is-lost .card-fill { background: rgba(217, 145, 132, 0.18); }
+/* The line. It is the one signal that needs no colour vision and no reading, and
+   it is drawn over the whole card rather than through the name because what is
+   struck out is the card, not its title. */
+.card.is-lost::after {
+  content: '';
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 50%;
+  height: 1px;
+  background: rgba(217, 145, 132, 0.5);
+  transform: rotate(-7deg);
+  pointer-events: none;
+}
 
 @keyframes card-in {
   from { opacity: 0; transform: translateY(26px) scale(0.94); }
