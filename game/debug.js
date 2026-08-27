@@ -26,7 +26,7 @@ export const DEBUG = {
 
 const VISION_COLOR = 0xffc07a;
 
-export function installDebug({ game, grid, ground, rig, control, visibility,
+export function installDebug({ game, grid, ground, rig, mask, control, visibility,
                                spawn = null, pickups = [], deployment = null, enemies = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
@@ -56,7 +56,7 @@ export function installDebug({ game, grid, ground, rig, control, visibility,
 
   const api = {
     DEBUG,
-    game, grid, ground, control, visibility,
+    game, grid, ground, mask, control, visibility,
     // What is on the board to be found, so a reward can be taken without walking
     // to it: `hex.pickups[0].collect()`. It grants exactly what standing on it
     // would, because the pickup calls the same hook either way.
@@ -96,6 +96,12 @@ export function installDebug({ game, grid, ground, rig, control, visibility,
     },
 
     revealAll() { return visibility.revealAll(); },
+
+    // Where the air in the dark actually lands. `hex.airDebug(1)` paints it cyan
+    // at full strength, `hex.airDebug(2)` paints every night fragment magenta -
+    // which is a picture of what geometry is under the dark at all - and
+    // `hex.airDebug(0)` puts it back.
+    airDebug(v = 1) { mask?.setAirDebug(v); return v; },
 
     // Puts a unit on the board without finding it first. The force can be
     // recruited properly now - walk onto the cache - so this is for the two

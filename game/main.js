@@ -423,7 +423,7 @@ for (const go of [propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask.patch(go.o
 // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
 // far a scout sees is a number that has to be tried, not a feature.
 installDebug({
-  game, grid: map.grid, ground: hexGround, rig, control, visibility,
+  game, grid: map.grid, ground: hexGround, rig, mask, control, visibility,
   pickups, deployment, enemies,
   // How a unit gets built, handed over rather than rebuilt in the debug module -
   // it is the same call a collected pickup goes through.

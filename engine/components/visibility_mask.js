@@ -75,6 +75,14 @@ export class VisibilityMask extends Component {
   // Debug: stop the world hiding itself, without touching what has been explored.
   setStrength(v) { this._u.uMaskStrength.value = v; }
 
+  // Where the air actually lands, and on what. 1 paints the raw noise in cyan at
+  // full strength with the band and the boundary hold both bypassed; 2 paints
+  // every fragment whose own hex is night flat magenta, which is a map of what
+  // geometry exists under the dark at all. Both go through the rest of the frame
+  // untouched - tone curve, distance haze - so what reaches the screen is what
+  // the real term would have had done to it.
+  setAirDebug(v) { this._u.uMaskAirDebug.value = v; }
+
   // Unscaled, like the swell and the sway: the debug speed slider is for watching
   // a fight at a tenth, not for changing the weather while you do it.
   update(_dt, rawDt) { this._u.uMaskTime.value += rawDt; }
@@ -186,6 +194,9 @@ function airUniforms(air, drift) {
     uMaskAirTint:   { value: new THREE.Color(a.tint) },
     uMaskAirScale:  { value: a.scale },
     uMaskAirBand:   { value: new THREE.Vector2(a.band[0], a.band[1]) },
+    // 0 off, 1 the air itself in cyan at full strength, 2 every night fragment
+    // flat magenta. See setAirDebug.
+    uMaskAirDebug:  { value: 0 },
     uMaskAirSpeed:  { value: a.speed * flow },
     // Never zero: it divides a smoothstep.
     uMaskAirHold:   { value: Math.max(a.hold, 1e-4) },
@@ -221,6 +232,7 @@ uniform float uMaskAirAmount;
 uniform vec3  uMaskAirTint;
 uniform float uMaskAirScale;
 uniform vec2  uMaskAirBand;
+uniform float uMaskAirDebug;
 uniform float uMaskAirSpeed;
 uniform float uMaskAirHold;
 uniform vec2  uMaskAirDriftA;
@@ -234,6 +246,8 @@ varying vec3  vMaskWorld;
 // compressive is what makes that true of every material at once, where keeping a
 // flat fraction of the colour left bright things showing as bright pinpricks.
 vec3 maskNight( vec3 rgb, float air ) {
+  if ( uMaskAirDebug > 1.5 ) return vec3( 1.0, 0.0, 1.0 );
+  if ( uMaskAirDebug > 0.5 ) return vec3( 0.0, air, air );
   float lum = dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
   return uMaskColor
     + uMaskKeep * ( 1.0 - exp( -10.0 * lum ) )
@@ -264,7 +278,7 @@ float maskNoise( vec2 p ) {
 float maskAirAt( vec2 xz ) {
   vec2 a = ( xz + uMaskAirDriftA * ( uMaskTime * uMaskAirSpeed        ) ) / uMaskAirScale;
   vec2 b = ( xz + uMaskAirDriftB * ( uMaskTime * uMaskAirSpeed * 0.55 ) ) / ( uMaskAirScale * 0.42 );
-  return smoothstep( uMaskAirBand.x, uMaskAirBand.y, 0.65 * maskNoise( a ) + 0.35 * maskNoise( b ) );
+  return 0.65 * maskNoise( a ) + 0.35 * maskNoise( b );
 }
 
 // HexGrid.worldToHex, in GLSL: flat-top axial, then cube rounding. Kept in step
@@ -362,8 +376,10 @@ ${cull ? `
     // as the night gets further from the light, so the edge of the lit region is
     // plain dark on both sides of itself - the fade on one side and nothing on
     // the other - and no drifting shape can put a lip on it.
-    maskAir = maskAirAt( vMaskWorld.xz )
+    float maskRaw = maskAirAt( vMaskWorld.xz );
+    maskAir = smoothstep( uMaskAirBand.x, uMaskAirBand.y, maskRaw )
       * smoothstep( 0.0, uMaskAirHold, maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0 ) );
+    if ( uMaskAirDebug > 0.5 ) maskAir = maskRaw;
   } else {
     maskHide = 1.0 - smoothstep( 0.0, uMaskFade, maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0 ) );
   }
