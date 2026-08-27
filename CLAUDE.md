@@ -2,9 +2,9 @@
 
 A real-time tactical exploration game on a hex grid - hexes are the spatial
 rule, not a turn structure. Plain ES modules, no build step, three.js from a
-CDN import map. `readme.md` is the long-form design record and is worth reading
-*before changing something it explains*; this file is the short version - the
-map, the rules that must not be broken, and where to add things.
+CDN import map. This file is the record: the map, the rules that must not be
+broken, and where to add things. `readme.md` is deliberately a page - what the
+game is and how to run it - and `docs/reasoning/` is how the design got here.
 
 ## How to work here
 
