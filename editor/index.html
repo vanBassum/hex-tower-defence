@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Hex Tactics - Editor</title>
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../game/ui/card_bar.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; }
@@ -242,6 +243,13 @@
       max-width: 150px;
     }
 
+    /* Out of the way while a fight is on. The tools mean nothing during a
+       playtest and the board wants the room. */
+    #tools.is-hidden { display: none; }
+    /* And the panel says what it is: warm all over, because the whole of it is
+       now about the thing that is running. */
+    #panel.is-playing { border-color: rgba(224, 160, 92, 0.34); }
+
     /* The library. A <dialog>, so Escape closes it and the board behind stops
        taking clicks without any of that being written here. Its own surface is a
        shade lighter than the panels and it carries a shadow, because it is the
@@ -430,6 +438,7 @@
 </head>
 <body>
   <div id="tools"></div>
+  <div id="hand" class="is-empty"></div>
   <div id="panel"></div>
   <dialog id="levels"></dialog>
   <div id="controls">
@@ -438,6 +447,7 @@
     <kbd>Right-drag</kbd><span>Rotate</span>
     <kbd>Middle-drag</kbd><span>Pan</span>
     <kbd>P</kbd><span>Play this level</span>
+    <kbd>Esc</kbd><span>Stop playing</span>
   </div>
   <script type="module" src="main.js"></script>
 </body>

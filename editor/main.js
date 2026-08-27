@@ -13,7 +13,9 @@ import { Unit } from '../game/components/unit.js';
 import { defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt } from './level.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
-import { play, takeView, fogWanted, setFogWanted } from './playtest.js';
+import { startPlay } from '../game/play.js';
+import { buildMap } from '../game/maps.js';
+import { fogWanted, setFogWanted } from './prefs.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
 import { ToolBar } from './ui/toolbar.js';
@@ -211,46 +213,69 @@ const brush = brushGO.addComponent(new HexOverlay(geometry, [], {
 }));
 game.add(brushGO);
 
-// Built once and never rebuilt, so a stroke that started is a stroke that
-// finishes. It is handed views of the current envelope and ground rather than the
-// objects themselves, because both are replaced on every edit and a captured
-// reference would be pointing at the board as it was two tiles ago.
-const cursorGO = new GameObject('Cursor');
-cursorGO.addComponent(new HexPicker({
-  grid: {
-    worldToHex: (x, z) => envelope.worldToHex(x, z),
-    inBounds: (q, r) => envelope.inBounds(q, r),
-  },
-  ground: { topY: (q, r) => hexGround?.topY(q, r) ?? 0 },
-  onHover: (hex) => {
-    hovered = hex;
-    // A drag is the hexes it crosses - for the tools that want it. Place does
-    // not: dropping a unit on every hex the cursor passed over is not a stroke,
-    // it is a mess to undo.
-    if (painting && tool().continuous !== false) apply();
-    else refreshBrush();
-    refreshPanel();
-  },
-  onDown: (hex) => {
-    hovered = hex;
-    painting = true;
-    apply();
-  },
-  onUp: () => { painting = false; },
-  // The wheel is the tool's only if the tool wants it and there is something
-  // under the cursor to use it on. Everything else - which is every notch spent
-  // off the board, and every notch spent with a tool that has no use for one -
-  // falls through to the camera's zoom.
-  onWheel: (hex, deltaY) => {
-    if (!hex || !tool().wheel) return false;
-    hovered = hex;
-    const hexes = tool().brush(ctx(), hex);
-    if (!hexes.length) return false;
-    edited(tool().wheel(ctx(), hexes, deltaY < 0 ? +1 : -1));
-    return true;                    // consumed: the camera does not zoom
-  },
-}));
-game.add(cursorGO);
+// The editor's mouse. It survives every *edit* - tearing the picker down mid-drag
+// would take the listener running the drag with it - and it is taken off the page
+// entirely while a playtest is on, because the game puts its own picker there and
+// two things reading every click is one too many.
+//
+// Built by a function rather than held in a variable for a reason that cost a
+// bug: removing a GameObject destroys its components, so the same object cannot
+// be added back. It is made again instead.
+//
+// It is handed views of the current envelope and ground rather than the objects
+// themselves, because both are replaced on every edit and a captured reference
+// would be pointing at the board as it was two tiles ago.
+let cursorGO = null;
+
+function buildCursor() {
+  cursorGO = new GameObject('EditorCursor');
+  cursorGO.addComponent(new HexPicker({
+    grid: {
+      worldToHex: (x, z) => envelope.worldToHex(x, z),
+      inBounds: (q, r) => envelope.inBounds(q, r),
+    },
+    ground: { topY: (q, r) => hexGround?.topY(q, r) ?? 0 },
+    onHover: (hex) => {
+      hovered = hex;
+      // A drag is the hexes it crosses - for the tools that want it. Place does
+      // not: dropping a unit on every hex the cursor passed over is not a stroke,
+      // it is a mess to undo.
+      if (painting && tool().continuous !== false) apply();
+      else refreshBrush();
+      refreshPanel();
+    },
+    onDown: (hex) => {
+      hovered = hex;
+      painting = true;
+      apply();
+    },
+    onUp: () => { painting = false; },
+    // The wheel is the tool's only if the tool wants it and there is something
+    // under the cursor to use it on. Everything else - which is every notch spent
+    // off the board, and every notch spent with a tool that has no use for one -
+    // falls through to the camera's zoom.
+    onWheel: (hex, deltaY) => {
+      if (!hex || !tool().wheel) return false;
+      hovered = hex;
+      const hexes = tool().brush(ctx(), hex);
+      if (!hexes.length) return false;
+      edited(tool().wheel(ctx(), hexes, deltaY < 0 ? +1 : -1));
+      return true;                    // consumed: the camera does not zoom
+    },
+  }));
+  game.add(cursorGO);
+}
+
+function editorMouse(on) {
+  if (on && !cursorGO) buildCursor();
+  else if (!on && cursorGO) {
+    game.remove(cursorGO);
+    cursorGO = null;
+    hovered = null;
+    painting = false;
+  }
+  brush.setHexes(on ? brushHexes() : []);
+}
 
 function tool() {
   return TOOL_BY_ID[activeTool];
@@ -278,6 +303,7 @@ function refreshBrush() {
 // changed anything. A drag across ground that is already drawn reports zero and
 // costs nothing, which is what keeps a long stroke cheap.
 function apply() {
+  if (session) return;
   const hexes = brushHexes();
   if (!hexes.length) { refreshBrush(); return; }
   try {
@@ -353,7 +379,9 @@ function refreshPanel() {
     hex: hovered,
     tile: hovered ? tileAt(level, hovered.q, hovered.r) : null,
     fog: fogWanted(),
+    playing: !!session,
   });
+  document.getElementById('tools').classList.toggle('is-hidden', !!session);
   toolbar.update(tool(), settings[activeTool]);
   // The library is repainted out of storage rather than told what changed, so a
   // rename, a duplicate and an import all land the same way.
@@ -422,7 +450,7 @@ const toolbar = new ToolBar({
 
 const panel = new EditorPanel({
   root: document.getElementById('panel'),
-  onLevels: () => library.open(levelList(), level.id),
+  onLevels: () => { if (!session) library.open(levelList(), level.id); },
   onPlay: act(() => { start(); return null; }),
   onFog: (on) => { setFogWanted(on); refreshPanel(); },
 });
@@ -435,9 +463,47 @@ const panel = new EditorPanel({
 // No confirmation, no dialog, no loading screen. The loop this exists for is
 // change something, fight for twenty seconds, change it again, and every step
 // that has to be dismissed is spent twice a minute.
+// ── Playing it ──────────────────────────────────────────────────────────────
+// The game, started in this page, in this scene, through the same `startPlay`
+// the game page calls - so there is no second simulation and nothing about a
+// playtest that a real run does not do. What it plays is a *copy*, parsed out of
+// the level's own JSON: the same bytes a file would carry, so nothing that
+// happens in the fight can reach back into what is being edited. The dead come
+// back and the fog closes because the board that was played was never this one.
+//
+// The camera, the sky and the sun are not touched. They belong to the page rather
+// than to the level, which is why they are built once at the top of this file -
+// and it is what makes Play a change of what is on the board rather than a
+// journey. Stop puts the editor's board back where it was, at the same zoom, with
+// the same tool still held.
+let session = null;
+
 function start() {
+  if (session) return stop();
   commit();
-  play(level, rig.snapshot(), { fog: fogWanted() });
+  clearTerrain();
+  editorMouse(false);
+  session = startPlay({
+    game, map: buildMap(parseLevel(stringifyLevel(level))), rig,
+    fog: fogWanted(),
+    hand: document.getElementById('hand'),
+    // `window.hex` is the editor's here, and the developer keys are the game
+    // page's business - R and V would fight the tools for the keyboard.
+    debug: false,
+    // Stay exactly where the board is being looked at. Flying to the King is
+    // right when a run opens and wrong when this is the fifth time in a minute.
+    focus: false,
+  });
+  refreshPanel();
+}
+
+function stop() {
+  if (!session) return;
+  session.teardown();
+  session = null;
+  buildTerrain();
+  editorMouse(true);
+  refreshPanel();
 }
 
 const library = new LevelLibrary({
@@ -548,24 +614,24 @@ function anyStoredLevel() {
     try { opening = storage.load(wanted); } catch { /* deleted, or no longer reads */ }
   }
   loadLevel(opening ?? anyStoredLevel() ?? defaultLevel());
+  editorMouse(true);
 }
 
-// Where to look. Back from a playtest it is exactly where the camera was when Play
-// was pressed; otherwise the middle of the board.
+// Open looking at the middle of the board. Nothing ever moves the camera again -
+// not a load, not a playtest - because where somebody is looking is a fact about
+// them and not about the level.
 {
-  const view = takeView();
-  if (view) rig.restore(view);
-  else {
-    const { x, z } = geometry.hexToWorld(0, 0);
-    rig.focusOn(x, z);
-  }
+  const { x, z } = geometry.hexToWorld(0, 0);
+  rig.focusOn(x, z);
 }
 
-// One key, and it is the other half of Escape in the game. Ignored while a field
-// or the library has the keyboard, so typing a level name does not launch a
-// playtest halfway through the word.
+// P to play, Escape to stop. Ignored while a field or the library has the
+// keyboard, so typing a level name does not launch a playtest halfway through the
+// word - except Escape while playing, which has nothing else to mean.
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyP' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (session && e.code === 'Escape') { stop(); return; }
+  if (e.code !== 'KeyP') return;
   if (library.isOpen || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
   start();
 });
@@ -588,6 +654,8 @@ window.hex = {
   loadLevel,
   commit,
   play: start,
+  stop,
+  get session() { return session; },
   storage,
   panel, toolbar, library,
   // The tools, driven the way the mouse drives them, so a shape can be sketched

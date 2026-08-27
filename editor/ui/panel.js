@@ -17,7 +17,7 @@ export class EditorPanel {
     root.innerHTML = `
       <div class="rows"></div>
       <div class="bar">
-        <button type="button" data-act="play" class="is-primary">Play <kbd>P</kbd></button>
+        <button type="button" data-act="play" class="is-primary"><b>Play</b> <kbd>P</kbd></button>
       </div>
       <label class="check">
         <input type="checkbox" data-act="fog">
@@ -34,18 +34,33 @@ export class EditorPanel {
     root.querySelector('[data-act=play]').onclick = () => onPlay();
     this._fog = root.querySelector('[data-act=fog]');
     this._fog.onchange = () => onFog(this._fog.checked);
+    this._play = root.querySelector('[data-act=play]');
+    this._levels = root.querySelector('[data-act=levels]');
   }
 
   // `hex` is what the cursor is over, or null, and `tile` is the level's tile
   // there - null for a hex the board does not reach.
-  update({ level, hex, tile, fog = true }) {
+  update({ level, hex, tile, fog = true, playing = false }) {
     if (this._fog.checked !== fog) this._fog.checked = fog;
-    const rows = [
-      ['Level', esc(level.name)],
-      ['Tiles', String(level.tiles.length)],
-      ['Hex', hex ? `${hex.q}, ${hex.r}` : '—'],
-      ['Height', tile ? String(tile.level ?? 0) : hex ? 'no ground' : '—'],
-    ];
+
+    // The same button both ways round, because it is one thing with two states
+    // rather than two things - and because the loop this is for is pressing it
+    // twice a minute, which is not a loop you want to be finding a second
+    // control for. The library and the fog switch go quiet while a fight is on:
+    // neither means anything until it stops.
+    this._play.querySelector('b').textContent = playing ? 'Stop' : 'Play';
+    this._play.querySelector('kbd').textContent = playing ? 'Esc' : 'P';
+    this._levels.disabled = playing;
+    this._fog.disabled = playing;
+    this._root.classList.toggle('is-playing', playing);
+    const rows = playing
+      ? [['Level', esc(level.name)], ['Playing', 'a copy - edits are safe']]
+      : [
+          ['Level', esc(level.name)],
+          ['Tiles', String(level.tiles.length)],
+          ['Hex', hex ? `${hex.q}, ${hex.r}` : '—'],
+          ['Height', tile ? String(tile.level ?? 0) : hex ? 'no ground' : '—'],
+        ];
     this._rows.innerHTML = rows
       .map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`)
       .join('');

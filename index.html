@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Hex Tactics</title>
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="game/ui/card_bar.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; }
@@ -46,130 +47,6 @@
       border: 1px solid rgba(143, 216, 232, 0.18);
     }
 
-    /* The hand. Bottom centre, because that is where a hand of cards is, and
-       because the middle of the bottom edge is the one place a wide board can
-       spare - the island is looked at from above and the camera keeps it in the
-       upper two thirds.
-
-       It is warm where the rest of the interface is cool. Every other piece of
-       chrome on this page borrows the sky's blue on purpose; a card is a thing
-       the player *found*, and the level already spent warm light to mean that. */
-    #hand {
-      position: fixed;
-      left: 50%;
-      bottom: 18px;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 9px;
-      user-select: none;
-      transition: opacity 260ms ease, transform 260ms ease;
-    }
-    /* Nothing to say before the first card is found. */
-    #hand.is-empty {
-      opacity: 0;
-      transform: translateX(-50%) translateY(14px);
-      pointer-events: none;
-    }
-
-    .hand-hint {
-      font-size: 12px;
-      letter-spacing: 0.02em;
-      color: #e6c79a;
-      opacity: 0;
-      transition: opacity 200ms ease;
-      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
-    }
-    .hand-hint.is-on { opacity: 0.85; }
-
-    .hand-cards { display: flex; gap: 10px; align-items: flex-end; }
-
-    .card {
-      /* Grid rather than flow, so the note can stretch and the name and the
-         footer stay pinned - fifteen words on one card must not make the card
-         next to it a different height. */
-      display: grid;
-      grid-template-rows: 44px auto 1fr auto auto;
-      gap: 6px;
-      width: 122px;
-      padding: 11px 11px 9px;
-      border-radius: 9px;
-      background: linear-gradient(180deg, rgba(30, 27, 24, 0.88), rgba(16, 20, 30, 0.92));
-      border: 1px solid rgba(224, 160, 92, 0.28);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
-      color: #d8c3a6;
-      font-family: inherit;
-      text-align: left;
-      cursor: pointer;
-      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-      animation: card-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    }
-    .card:hover:not(:disabled) { transform: translateY(-4px); border-color: rgba(240, 180, 108, 0.5); }
-    .card:focus-visible { outline: 1px solid rgba(240, 180, 108, 0.7); outline-offset: 2px; }
-
-    /* Armed reads as *picked out of the hand*: lifted, warm, and lit. It has to
-       survive being looked at while the eye is on the board, so it is the lift
-       that carries it rather than the colour. */
-    .card.is-armed {
-      transform: translateY(-12px);
-      border-color: rgba(255, 190, 118, 0.85);
-      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 22px rgba(255, 160, 70, 0.28);
-    }
-
-    .card.is-spent {
-      opacity: 0.34;
-      cursor: default;
-      filter: grayscale(0.7);
-      transform: none;
-      box-shadow: none;
-    }
-
-    .card-art {
-      display: grid;
-      place-items: center;
-      border-radius: 6px;
-      background: rgba(8, 12, 20, 0.55);
-      color: #b9c6d6;
-    }
-    .card-art svg { width: 46px; height: 30px; }
-
-    .card-name { font-size: 13px; color: #f0dcc0; letter-spacing: 0.01em; }
-    .card-role { font-size: 10.5px; line-height: 1.35; color: #9d9382; }
-    /* How the unit this card played is doing. It replaces the border the footer
-       used to draw, so a card that has been played gains a reading rather than a
-       decoration - and an unplayed one draws an empty track, which is the line
-       that was there before. */
-    .card-fill {
-      display: block;
-      height: 2px;
-      border-radius: 1px;
-      background: rgba(224, 160, 92, 0.16);
-      overflow: hidden;
-    }
-    .card-fill i {
-      display: block;
-      height: 100%;
-      width: 0;
-      background: #e0a05c;
-      transition: width 240ms ease;
-    }
-    .card.is-lost .card-fill i { background: #7c5a4a; }
-
-    .card-state {
-      font-size: 10px;
-      letter-spacing: 0.09em;
-      text-transform: uppercase;
-      color: #e0a05c;
-      padding-top: 5px;
-    }
-    .card.is-spent .card-state { color: #8b8478; }
-    /* Spent is dim; lost is dim *and* said. A card the player can no longer act
-       on still has to be legible, because what it is telling them is that the
-       thing they found is not on the board any more. */
-    .card.is-lost { opacity: 0.5; }
-    .card.is-lost .card-state { color: #a8564b; }
-
     /* Something on screen while the island is built and the shaders are compiled.
        It is a word rather than a progress bar on purpose: there is nothing being
        fetched to measure, only a couple of seconds of work with no honest
@@ -199,43 +76,6 @@
       50%      { opacity: 0.9; }
     }
 
-    /* The way out of a playtest. Top left, out of the hand's way, and it is not
-       in the page at all unless the level came from the editor - so the game as
-       a game has no editor chrome on it. Warm, because it is the one control
-       here that is not part of the world. */
-    #back {
-      position: fixed;
-      left: 16px; top: 16px;
-      display: none;
-      align-items: center;
-      gap: 8px;
-      font: inherit;
-      font-size: 12px;
-      line-height: 1;
-      color: #f0dcc0;
-      padding: 9px 12px;
-      border-radius: 7px;
-      background: rgba(9, 16, 30, 0.62);
-      border: 1px solid rgba(224, 160, 92, 0.38);
-      cursor: pointer;
-      z-index: 11;
-      transition: background 160ms ease;
-    }
-    #back.is-live { display: flex; }
-    #back:hover { background: rgba(224, 160, 92, 0.18); }
-    #back kbd {
-      font: inherit;
-      color: #b9cfe0;
-      padding: 2px 5px;
-      border-radius: 4px;
-      background: rgba(143, 216, 232, 0.10);
-      border: 1px solid rgba(143, 216, 232, 0.18);
-    }
-
-    @keyframes card-in {
-      from { opacity: 0; transform: translateY(26px) scale(0.94); }
-      to   { opacity: 1; transform: none; }
-    }
   </style>
   <script type="importmap">
   {
@@ -256,7 +96,6 @@
     <kbd>Wheel</kbd><span>Zoom</span>
     <kbd>Q / E</kbd><span>Turn a hex face</span>
   </div>
-  <button type="button" id="back">← Editor <kbd>Esc</kbd></button>
   <div id="hand" class="is-empty"></div>
   <script type="module" src="game/main.js"></script>
 </body>

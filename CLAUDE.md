@@ -47,7 +47,8 @@ thing being changed - reach for them then, not by default.
       components/           camera, atmosphere, lights, terrain, water, overlays,
                             visibility_mask (what the unknown looks like)
     game/                   this game: what is on the island and what plays on it
-      main.js               composition root - every wire between components is here
+      play.js               the game as a callable - every wire between components
+      main.js               the game as a *page*: renderer, hour, camera, one level
       maps.js               the level: outline, elevation, props, pickups
       mood.js               every colour and the one wind, in one place
       props.js / units.js / pickups.js / cards.js     what things are
@@ -57,8 +58,9 @@ thing being changed - reach for them then, not by default.
     editor/                 the level editor at /editor/ - same world, no game
       level.js              the level *as data*, and the only stored format
       storage.js            levels in localStorage, keyed by id
+      tools.js              what the mouse can do; entities.js what it can place
       main.js               second composition root; edits rebuild the board
-      ui/                   panel (readout + shaping tools), levels (library)
+      ui/                   toolbar (tools + settings), panel, levels (library)
     tools/                  map.mjs (authoring), check.py (verification)
 
 ## Invariants
@@ -140,6 +142,18 @@ Break one of these and something three files away goes subtly wrong.
   whatever steps next to it. `'hunt'` chases inside `aggro` and returns to its
   post. Spearmen hold, because a Scout has to be able to see a thing and choose
   not to touch it. A new kind is an entry in `UNIT_TYPES`, not a new system.
+- **There is one game and both pages call it.** `startPlay()` in `game/play.js`
+  builds everything that plays on a board and returns a `teardown`; `game/main.js`
+  and the editor's Play button are its two callers. The editor plays a *copy* of
+  its level - `parseLevel(stringifyLevel(level))` - so a fight cannot reach back
+  into what is being edited, and the camera, sky and sun belong to the page rather
+  than to the session, which is why Play is a change of what is on the board and
+  not a journey. A second, simpler simulation living in the editor is the thing
+  this arrangement exists to make unnecessary.
+- **`buildMap` reads two dialects of the same map.** An authored level draws its
+  outline as text with hills as regions; an editor level is a list of tiles each
+  carrying its own terrain and height. Both land in the same built map. Adding a
+  third way to describe a board means teaching `buildMap`, not writing a loader.
 - **Gameplay is discrete, drawing is not.** Rules run on hexes; the hexagon is
   thrown away in `VisibilityField` (hexes → texture → blur → opacity).
 
@@ -155,7 +169,8 @@ Break one of these and something three files away goes subtly wrong.
 | An enemy kind | `UNIT_TYPES` with `hostile` + a behaviour field; place it in `maps.js` `enemies` |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
-| A wire between components | `game/main.js`, never inside either component |
+| A wire between components | `game/play.js`, never inside either component |
+| Something the *page* owns, not the level | `game/main.js` (or `editor/main.js`) |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |
 | An editor tool | a mutator in `editor/level.js`, a control in `editor/ui/panel.js`, one `act()` in `editor/main.js` ending in `rebuild()` |
 
