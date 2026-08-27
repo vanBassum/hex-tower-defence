@@ -524,6 +524,42 @@ export function removePropsAt(level, q, r) {
   return before - level.props.length;
 }
 
+// The most recent one on a hex, which is what pairs with the Object tool putting
+// one there per press: the right button takes back the tree you just stood, not
+// the whole clump. Highest salt is newest - see `addProp`.
+export function removeLastPropAt(level, q, r) {
+  const here = propsAt(level, q, r);
+  if (!here.length) return 0;
+  const last = here.reduce((m, o) => ((o.salt ?? 0) >= (m.salt ?? 0) ? o : m), here[0]);
+  level.props.splice(level.props.indexOf(last), 1);
+  return 1;
+}
+
+// Only what carries a light, which is the Light tool's own inverse: a hex holds a
+// lantern and a tree at once, and taking the lamp back should not fell the tree.
+export function removeLightsAt(level, q, r) {
+  const lamps = propsAt(level, q, r).filter(o => PROP_TYPES[o.type]?.flicker);
+  if (!lamps.length) return 0;
+  level.props = level.props.filter(o => !lamps.includes(o));
+  return lamps.length;
+}
+
+// What is on a hex, in a few words, or null for a hex the board does not reach.
+// One answer, so the Select tool and the panel cannot disagree about what is
+// standing there - and it is in the order the layers are stacked, because what
+// you have selected is the thing on top.
+export function describeAt(level, q, r) {
+  const here = entityAt(level, q, r);
+  if (here) return here.kind === 'king' ? 'the King' : (UNIT_TYPES[here.unit.type]?.name ?? here.unit.type);
+  const props = propsAt(level, q, r);
+  if (props.length) {
+    const name = PROP_TYPES[props[0].type]?.name ?? props[0].type;
+    return props.length === 1 ? name : `${name} ×${props.length}`;
+  }
+  const tile = tileAt(level, q, r);
+  return tile ? `${tile.terrain} at ${tile.level ?? 0}` : null;
+}
+
 // Re-tunes the lights already on a hex instead of adding another lamp to it.
 // Placing a light where one stands is somebody adjusting that light, which is
 // the only bit of "edit the thing that is already there" this pass needs.

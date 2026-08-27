@@ -288,23 +288,39 @@
     }
     #levels .hint, #settings .hint { color: #6d8195; }
 
+    /* Wider than the settings sheet, and only because of the cards: the board on
+       one is the thing the library is read by, and it is worth the room. */
+    #levels { width: min(1160px, calc(100vw - 32px)); }
+
     /* Cards, and they wrap: a library of three is three across and a library of
        twenty scrolls, without either case needing a different layout. */
     #levels .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
       gap: 10px;
       padding: 14px 18px;
       overflow-y: auto;
     }
     #levels .empty { color: #6d8195; padding: 6px 0 10px; }
 
+    /* `.card` is *also* the hand's playing card - card_bar.css is loaded here for
+       the playtest bar - and that rule is a fixed 122px grid with a lift on
+       hover. That is what was holding these to a third of their track however
+       wide the track got, so the parts of it that are about a card in a hand are
+       put back here. */
     #levels .card {
-      padding: 11px 12px 9px;
+      display: block;
+      width: auto;
+      padding: 12px 13px 10px;
       border-radius: 7px;
       background: rgba(143, 216, 232, 0.05);
       border: 1px solid rgba(143, 216, 232, 0.12);
+      box-shadow: none;
+      animation: none;
+      cursor: default;
+      color: inherit;
     }
+    #levels .card:hover { transform: none; }
     /* The level on screen behind the modal, and it is said twice - a warm border
        and the word - because "which one am I in" is the question the library is
        opened with. */

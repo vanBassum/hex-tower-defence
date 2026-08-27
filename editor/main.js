@@ -12,7 +12,7 @@ import { MOOD, WIND } from '../game/mood.js';
 import { Unit } from '../game/components/unit.js';
 import { PropLayer } from '../game/components/prop_layer.js';
 import {
-  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt,
+  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt, describeAt,
   addCard, removeCard, setDeckLimit, deckLimit,
 } from './level.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
@@ -219,6 +219,7 @@ function clearTerrain() {
 
 let hovered = null;          // the hex under the cursor, or null
 let painting = false;        // a left button held down, mid-stroke
+let selected = null;         // the hex the arrow has picked, or null
 
 // The brush: the footprint the active tool would act on, in that tool's colour.
 // One overlay for every tool, because there is only ever one brush - and it is
@@ -231,6 +232,17 @@ const brush = brushGO.addComponent(new HexOverlay(geometry, [], {
   heightAt: (q, r) => hexGround?.topY(q, r) ?? 0,
 }));
 game.add(brushGO);
+
+// And what the arrow has picked. A second overlay rather than a second colour on
+// the brush: the two say different things - what the mouse is about to do, and
+// what is being held - and they are usually on different hexes. It is the only
+// thing on screen that outlives the cursor leaving the canvas.
+const selectGO = new GameObject('Selection');
+const selection = selectGO.addComponent(new HexOverlay(geometry, [], {
+  color: 0xf0dcc0, opacity: 0.2, y: 0.05, additive: true,
+  heightAt: (q, r) => hexGround?.topY(q, r) ?? 0,
+}));
+game.add(selectGO);
 
 // The editor's mouse. It survives every *edit* - tearing the picker down mid-drag
 // would take the listener running the drag with it - and it is taken off the page
@@ -269,6 +281,16 @@ function buildCursor() {
       apply();
     },
     onUp: () => { painting = false; },
+    // The right button, and it is the same intention for every tool: take away
+    // what this tool puts down. A right *drag* is the camera's rotate and a right
+    // *press* is the removal, and the rig is the one that knows which just
+    // happened - so a press at the end of a drag is thrown away here.
+    onOrder: (hex) => {
+      if (rig.consumedRightPress) return;
+      hovered = hex;
+      removeAt();
+      refreshPanel();
+    },
     // The wheel is the tool's only if the tool wants it and there is something
     // under the cursor to use it on. Everything else - which is every notch spent
     // off the board, and every notch spent with a tool that has no use for one -
@@ -294,6 +316,7 @@ function editorMouse(on) {
     painting = false;
   }
   brush.setHexes(on ? brushHexes() : []);
+  refreshSelection();
 }
 
 function tool() {
@@ -323,6 +346,9 @@ function refreshBrush() {
 // costs nothing, which is what keeps a long stroke cheap.
 function apply() {
   if (session) return;
+  // The arrow changes nothing, so it never reaches a tool - see `select` in
+  // tools.js.
+  if (tool().select) return pick();
   const hexes = brushHexes();
   if (!hexes.length) { refreshBrush(); return; }
   try {
@@ -336,6 +362,40 @@ function apply() {
   }
 }
 
+// The right button: whatever the active tool's `erase` is, on the press only.
+// Every tool's own inverse rather than one shared delete, so taking a lamp back
+// does not fell the tree beside it - the pairing is written on the tool.
+function removeAt() {
+  if (session) return;
+  const hexes = brushHexes();
+  if (!hexes.length) return;
+  try {
+    edited(tool().erase?.(ctx(), hexes) ?? 0);
+    panel.clearError();
+  } catch (e) {
+    say(e.message, true);
+  }
+}
+
+// What the arrow does. A hex with something on it becomes the selection and a
+// bare one clears it; the level is not touched, so there is nothing to rebuild
+// and nothing to store - a selection is something the editor is holding, not
+// something the level says.
+function pick() {
+  const what = hovered && describeAt(level, hovered.q, hovered.r);
+  selected = what ? { ...hovered } : null;
+  refreshSelection();
+  say(what ? `Selected ${what} at ${hovered.q}, ${hovered.r}.` : null);
+  refreshPanel();
+}
+
+// A selection cannot outlive the thing it is on: whatever was picked may have
+// just been erased, or the whole level replaced.
+function refreshSelection() {
+  if (selected && !describeAt(level, selected.q, selected.r)) selected = null;
+  selection.setHexes(selected && !session ? [selected] : []);
+}
+
 // ── Changing things ──────────────────────────────────────────────────────────
 
 // The one way the level on screen changes. Everything derived from it is rebuilt,
@@ -347,6 +407,8 @@ function loadLevel(next) {
   buildTerrain();
   commit();
   storage.setOpenId(level.id);
+  selected = null;
+  refreshSelection();
   refreshBrush();
   refreshPanel();
 }
@@ -364,6 +426,7 @@ function edited(changed) {
   clearTerrain();
   buildTerrain();
   commit();
+  refreshSelection();
   refreshBrush();
 }
 
@@ -397,6 +460,9 @@ function refreshPanel() {
     level,
     hex: hovered,
     tile: hovered ? tileAt(level, hovered.q, hovered.r) : null,
+    selected: selected
+      ? `${describeAt(level, selected.q, selected.r)} at ${selected.q}, ${selected.r}`
+      : null,
     fog: fogWanted(),
     playing: !!session,
   });

@@ -10,7 +10,9 @@ import { esc } from './dom.js';
 // is left here is a readout and the way to the library.
 //
 // The readout follows the *cursor* rather than a selection, for the same reason:
-// while painting, the interesting hex is the one under the brush.
+// while painting, the interesting hex is the one under the brush. The arrow tool
+// adds one row that does not - what it has picked - because that is the whole of
+// what that tool has to say.
 export class EditorPanel {
   constructor({ root, onLevels, onSettings, onPlay, onFog }) {
     this._root = root;
@@ -42,7 +44,7 @@ export class EditorPanel {
 
   // `hex` is what the cursor is over, or null, and `tile` is the level's tile
   // there - null for a hex the board does not reach.
-  update({ level, hex, tile, fog = true, playing = false }) {
+  update({ level, hex, tile, selected = null, fog = true, playing = false }) {
     if (this._fog.checked !== fog) this._fog.checked = fog;
 
     // The same button both ways round, because it is one thing with two states
@@ -68,6 +70,10 @@ export class EditorPanel {
           ['Deck', level.deck ? `${level.deck.length} / ${level.deckLimit ?? 6}` : 'not chosen'],
           ['Hex', hex ? `${hex.q}, ${hex.r}` : '—'],
           ['Height', tile ? String(tile.level ?? 0) : hex ? 'no ground' : '—'],
+          // The one row that follows a selection rather than the cursor, and it is
+          // only there when there is one - see the note above about why the rest
+          // of this readout does not.
+          ...(selected ? [['Selected', esc(selected)]] : []),
         ];
     this._rows.innerHTML = rows
       .map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`)

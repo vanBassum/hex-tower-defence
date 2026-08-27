@@ -1,6 +1,6 @@
 import {
-  addTile, removeTile, raiseTile, tileAt, removeEntityAt,
-  propsAt, removePropsAt, tuneLights, isStandable,
+  addTile, removeTile, raiseTile, tileAt, removeEntityAt, entityAt, describeAt,
+  propsAt, removePropsAt, removeLastPropAt, removeLightsAt, tuneLights, isStandable,
 } from './level.js';
 import { PLACEABLES, PLACEABLE_BY_ID, placeableGroups, refusal } from './entities.js';
 import {
@@ -36,19 +36,49 @@ import {
 //   brush(ctx, hex)   the hexes the tool would affect, for preview and for use
 //   paint(ctx, hexes) left press and drag; returns how many hexes changed, or
 //                     throws with a sentence about why it did nothing
+//   erase(ctx, hexes) the right button: the inverse of whatever this tool places,
+//                     and nothing wider - taking a lamp back must not fell the
+//                     tree beside it. Same contract as `paint`. The press only,
+//                     because a right *drag* is the camera's rotate
+//   select            true for a tool that picks rather than changes; main.js
+//                     keeps the hex and nothing is handed to the tool
 //   wheel(ctx, hexes, dir)  the wheel over the board; returns how many changed
 //
 // `ctx` is `{ level, envelope, s }` - the level being edited, the lattice of
 // hexes that can be pointed at, and this tool's own settings values.
 
 const HEX = 'M8 1.2 13.9 4.6 13.9 11.4 8 14.8 2.1 11.4 2.1 4.6Z';
+const ARROW = 'M3.4 1.9 3.4 12.9 6.4 10.1 8.5 14.3 10.4 13.4 8.3 9.3 12.3 9.3Z';
 
 export const TOOLS = [
+  {
+    id: 'select',
+    name: 'Select',
+    group: 'Edit',
+    hint: 'Click to pick what is on a hex. Right-click takes it away.',
+    color: 0xf0dcc0,
+    icon: `<svg viewBox="0 0 16 16"><path d="${ARROW}" fill="currentColor"/></svg>`,
+
+    // It places nothing, so it paints nothing: main.js sees `select` and keeps
+    // the hex rather than handing it to a tool. What the tool *is* is the readout
+    // in the panel and the right button, which is the same right button every
+    // other tool has - so "point at the thing and get rid of it" needs no mode
+    // of its own.
+    select: true,
+    continuous: false,
+
+    brush: (ctx, hex) => (hex ? [hex] : []),
+    // Warm where there is something to pick and cold where there is not, so the
+    // arrow says whether a click will find anything before it is spent.
+    colorAt: (ctx, hex) => (hex && describeAt(ctx.level, hex.q, hex.r) ? 0xf0dcc0 : 0x6d8195),
+    erase: (ctx, hexes) => eraseTop(ctx, hexes),
+  },
+
   {
     id: 'ground',
     name: 'Ground',
     group: 'Terrain',
-    hint: 'Drag to draw ground.',
+    hint: 'Drag to draw ground. Right-click clears a hex.',
     color: 0x9fe8b0,
     icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="currentColor" opacity="0.85"/></svg>`,
     settings: [{ key: 'radius', label: 'Brush', min: 1, max: 3 }],
@@ -67,6 +97,8 @@ export const TOOLS = [
       for (const h of hexes) if (addTile(ctx.level, h.q, h.r)) changed++;
       return changed;
     },
+
+    erase: (ctx, hexes) => eraseTop(ctx, hexes),
   },
 
   {
@@ -105,7 +137,7 @@ export const TOOLS = [
     id: 'erase',
     name: 'Erase',
     group: 'Terrain',
-    hint: 'Drag to remove ground.',
+    hint: 'Drag to clear hexes, a layer at a time.',
     color: 0xe8a09a,
     icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
       `stroke-width="1.3" stroke-dasharray="2.4 2" opacity="0.75"/></svg>`,
@@ -117,29 +149,17 @@ export const TOOLS = [
     brush: (ctx, hex) => spread(ctx, hex, ctx.s.radius).filter(h =>
       tileAt(ctx.level, h.q, h.r) && !isKing(ctx.level, h)),
 
-    // One layer per pass, from the top down: the decoration on a hex, then
-    // whoever is standing on it, then the ground itself. One tool rather than
-    // three because it is one intention - "take this away" - and it is also the
-    // only order that keeps the level buildable, since nothing may be left
-    // standing in mid-air. Dragging over a wood clears the wood; dragging over
-    // it again clears the ground under it.
-    paint: (ctx, hexes) => {
-      let changed = 0;
-      for (const h of hexes) {
-        if (isKing(ctx.level, h)) continue;      // the brush already left him out
-        changed += removePropsAt(ctx.level, h.q, h.r)
-          || (removeEntityAt(ctx.level, h.q, h.r) ? 1 : 0)
-          || (removeTile(ctx.level, h.q, h.r) ? 1 : 0);
-      }
-      return changed;
-    },
+    // The same layered removal every tool's right button does, with a brush on
+    // it - which is the one thing the right button cannot have, because a right
+    // drag is the camera's rotate. That is what this tool is still for.
+    paint: (ctx, hexes) => eraseTop(ctx, hexes),
   },
 
   {
     id: 'place',
     name: 'Place',
     group: 'Forces',
-    hint: 'Click a hex to place. The King moves rather than doubles.',
+    hint: 'Click to place, right-click to remove. The King moves rather than doubles.',
     color: 0xf0dcc0,
     icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
       `stroke-width="1.2" opacity="0.5"/><circle cx="8" cy="6.6" r="1.9" fill="currentColor"/>` +
@@ -172,13 +192,25 @@ export const TOOLS = [
       if (no) throw new Error(`Cannot place the ${entry.name} here - ${no}.`);
       return entry.put(ctx.level, hex) ? 1 : 0;
     },
+
+    // Whoever is standing there, and nothing under them: a unit tool that took
+    // the ground away with the unit would be two tools. The King is refused out
+    // loud rather than ignored - a level with no player start cannot be opened,
+    // and a click that silently does nothing reads as the tool being broken.
+    erase: (ctx, hexes) => {
+      const hex = hexes[0];
+      if (entityAt(ctx.level, hex.q, hex.r)?.kind === 'king') {
+        throw new Error('The King cannot be removed - place him somewhere else instead.');
+      }
+      return removeEntityAt(ctx.level, hex.q, hex.r) ? 1 : 0;
+    },
   },
 
   {
     id: 'object',
     name: 'Object',
     group: 'Decor',
-    hint: 'Click to stand one here. Click again for another.',
+    hint: 'Click to stand one here, again for another. Right-click takes the last back.',
     color: 0x9fe8b0,
     icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
       `stroke-width="1.1" opacity="0.45"/><path d="M8 13V8.4" stroke="currentColor" ` +
@@ -202,13 +234,17 @@ export const TOOLS = [
       if (!canStand(ctx, hex)) throw new Error('Objects need a tile that is not water.');
       return placeObject(ctx.level, object(ctx), hex.q, hex.r);
     },
+
+    // One per press either way round, so a clump is built and unbuilt at the same
+    // rate. Clearing the whole hex is what the Erase brush is for.
+    erase: (ctx, hexes) => removeLastPropAt(ctx.level, hexes[0].q, hexes[0].r),
   },
 
   {
     id: 'scatter',
     name: 'Scatter',
     group: 'Decor',
-    hint: 'Drag to paint. Density is a ceiling, not a count.',
+    hint: 'Drag to paint, right-click to clear a hex. Density is a ceiling.',
     color: 0x8fd8a8,
     icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
       `stroke-width="1.1" opacity="0.4"/><circle cx="5.4" cy="6.4" r="1.5" fill="currentColor"/>` +
@@ -236,13 +272,21 @@ export const TOOLS = [
       for (const h of hexes) added += scatterOnto(ctx.level, object(ctx), h.q, h.r, ctx.s.density);
       return added;
     },
+
+    // A brush's inverse is a brush: what it painted onto a hex it takes off the
+    // same hex, all of it, because nothing here placed a countable number.
+    erase: (ctx, hexes) => {
+      let gone = 0;
+      for (const h of hexes) gone += removePropsAt(ctx.level, h.q, h.r);
+      return gone;
+    },
   },
 
   {
     id: 'light',
     name: 'Light',
     group: 'Decor',
-    hint: 'Click to set a lamp. Click a lamp again to re-tune it.',
+    hint: 'Click to set a lamp, again to re-tune it. Right-click puts it out.',
     color: 0xf0c88c,
     icon: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4" fill="currentColor"/>` +
       `<circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.1" ` +
@@ -276,6 +320,10 @@ export const TOOLS = [
       if (propsAt(ctx.level, hex.q, hex.r).some(o => OBJECT_BY_ID[o.type]?.lights)) return 0;
       return placeObject(ctx.level, OBJECT_BY_ID.lantern, hex.q, hex.r, light);
     },
+
+    // The lamps only. A hex holds a lantern and the tree beside it, and putting
+    // the light out is not clearing the corner.
+    erase: (ctx, hexes) => removeLightsAt(ctx.level, hexes[0].q, hexes[0].r),
   },
 ];
 
@@ -311,6 +359,24 @@ export function defaultSettings() {
 function spread(ctx, hex, radius = 1) {
   if (!hex) return [];
   return [...ctx.envelope.hexesInRange(hex.q, hex.r, Math.max(0, radius - 1))];
+}
+
+// Take the top layer off a hex: the decoration on it, then whoever is standing on
+// it, then the ground itself. One intention - "this goes" - and it is also the
+// only order that keeps the level buildable, since nothing may be left standing
+// in mid-air. Right-clicking a wood clears the wood; again clears the ground.
+//
+// The King is skipped rather than refused here: this runs under a brush as well
+// as under one press, and a stroke that threw would abandon the rest of it.
+function eraseTop(ctx, hexes) {
+  let changed = 0;
+  for (const h of hexes) {
+    if (isKing(ctx.level, h)) continue;
+    changed += removePropsAt(ctx.level, h.q, h.r)
+      || (removeEntityAt(ctx.level, h.q, h.r) ? 1 : 0)
+      || (removeTile(ctx.level, h.q, h.r) ? 1 : 0);
+  }
+  return changed;
 }
 
 function isKing(level, hex) {
