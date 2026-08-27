@@ -61,6 +61,10 @@ const maskGO = new GameObject('Visibility');
 const mask = maskGO.addComponent(new VisibilityMask(map.grid, visibility, {
   hexes: [...map.grid.allHexes(), ...map.water],
   hexSize: map.grid.size,
+  // The air in the dark drifts on the level's one breeze, for the reason the
+  // swell and the sway share theirs: three effects with private weather look
+  // like three effects, and one direction reads as a night with a wind on it.
+  drift: { angle: WIND.angle, flow: WIND.strength },
   ...MOOD.hidden,
 }));
 game.visibilityMask = mask;

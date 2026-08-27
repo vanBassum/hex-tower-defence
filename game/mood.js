@@ -95,6 +95,23 @@ export const MOOD = {
     // cannot lift an unwatched one - which is what keeps the softening cosmetic
     // and the rule binary. Past about a quarter it starts eating whole tiles.
     fade:  0.18,
+
+    // And the air out in it, so the unknown is deep rather than empty. Every
+    // number here is small for the same reason keep is: it is added to a
+    // near-black colour in linear light, where a hundredth is already something
+    // you can see.
+    //
+    // It is meant to read as darkness at a glance and as weather only once you
+    // have watched it for a few seconds. If it reads as fog on sight, amount is
+    // too high; if it reads as a texture sliding past, scale is too small.
+    air: {
+      amount: 0.008,
+      // Blue-weighted rather than grey: the night gets deeper, never smokier.
+      tint:   0x4d80ff,
+      scale:  17.0,      // world units across one shape - about a third of the board
+      speed:  0.17,      // world units a second, so a hex takes most of a minute
+      hold:   1.1,       // how far into the dark the air stays out of the boundary
+    },
   },
 
   // A unit has to survive being the smallest thing in a dark frame. The cloak is

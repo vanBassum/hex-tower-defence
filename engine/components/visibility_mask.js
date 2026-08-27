@@ -4,11 +4,15 @@ import { Component } from '../gameobject.js';
 // What the player cannot see, unlit - and the whole of the fog of war for now.
 //
 // `VisibilityMap` is the truth: a set of hexes, each unexplored, explored or
-// visible. This is the first and simplest thing built on top of it - a tile the
-// force is looking at right now renders exactly as it always did, and every
-// other tile collapses to the night the island is standing in. No mist, no blur,
-// no reveal animation: the hexagon survives all the way into the fragment shader
-// on purpose, so what is on screen is precisely what the rules say.
+// visible. A tile the force is looking at right now renders exactly as it always
+// did, and every other tile collapses to the night the island is standing in.
+//
+// Three things happen on top of that, in this order, and the order is the point:
+// the hex decides (binary, no softness), the night is laid down, and only then is
+// anything cosmetic allowed - the fade that laps the dark over the edge of the
+// light, and the slow air drifting out in the dark. Neither of the two can lift a
+// hex the player is not watching, which is the one property this file exists to
+// keep.
 //
 // ── Why the hex is rebuilt in the shader ────────────────────────────────────
 // The obvious way to get a hex mask to a material is a world-space texture, and
@@ -34,6 +38,12 @@ export class VisibilityMask extends Component {
     // away from a tile the player can see, so no amount of it can lift a hex the
     // player cannot. See the note over `maskFragment`.
     fade  = 0.18,
+    // The weather in the dark - see `maskAirAt`. Off unless a level asks for it.
+    air   = null,          // { amount, tint, scale, speed, hold }
+    // Which way it drifts, and how hard. The level's one wind, handed in rather
+    // than picked here: three effects with private weather look like three
+    // effects.
+    drift = null,          // { angle, flow }
   } = {}) {
     super();
     this._grid = grid;
@@ -55,6 +65,7 @@ export class VisibilityMask extends Component {
       uMaskColor:    { value: new THREE.Color(color) },
       uMaskKeep:     { value: keep },
       uMaskStrength: { value: 1 },
+      ...airUniforms(air, drift),
     };
 
     this._refresh();
@@ -63,6 +74,10 @@ export class VisibilityMask extends Component {
 
   // Debug: stop the world hiding itself, without touching what has been explored.
   setStrength(v) { this._u.uMaskStrength.value = v; }
+
+  // Unscaled, like the swell and the sway: the debug speed slider is for watching
+  // a fight at a tenth, not for changing the weather while you do it.
+  update(_dt, rawDt) { this._u.uMaskTime.value += rawDt; }
 
   // ── The table ─────────────────────────────────────────────────────────────
 
@@ -157,6 +172,26 @@ export class VisibilityMask extends Component {
   }
 }
 
+// Two fields at different scales drifting on the same wind at different speeds -
+// the second one turned well off the first, because two shapes crossing is what
+// stops the pair reading as one texture being pulled across the board.
+function airUniforms(air, drift) {
+  const a = { amount: 0, tint: 0x4d80ff, scale: 16, speed: 0.16, hold: 1.0, ...(air || {}) };
+  const angle = drift?.angle ?? 0;
+  const flow  = drift?.flow ?? 1;
+  return {
+    uMaskTime:      { value: 0 },
+    uMaskAirAmount: { value: a.amount },
+    uMaskAirTint:   { value: new THREE.Color(a.tint) },
+    uMaskAirScale:  { value: a.scale },
+    uMaskAirSpeed:  { value: a.speed * flow },
+    // Never zero: it divides a smoothstep.
+    uMaskAirHold:   { value: Math.max(a.hold, 1e-4) },
+    uMaskAirDriftA: { value: new THREE.Vector2(Math.cos(angle), Math.sin(angle)) },
+    uMaskAirDriftB: { value: new THREE.Vector2(Math.cos(angle + 2.2), Math.sin(angle + 2.2)) },
+  };
+}
+
 // World position, taken the same way three takes it, instancing included - the
 // hex is worked out from it, so every reader has to agree where it is.
 const MASK_VERTEX = /* glsl */`
@@ -179,18 +214,53 @@ uniform float uMaskFade;
 uniform vec3  uMaskColor;
 uniform float uMaskKeep;
 uniform float uMaskStrength;
+uniform float uMaskTime;
+uniform float uMaskAirAmount;
+uniform vec3  uMaskAirTint;
+uniform float uMaskAirScale;
+uniform float uMaskAirSpeed;
+uniform float uMaskAirHold;
+uniform vec2  uMaskAirDriftA;
+uniform vec2  uMaskAirDriftB;
 varying vec3  vMaskWorld;
 
-// What a fragment on an unwatched hex is worth. The night, plus a trace of the
-// surface's own *brightness* and nothing of its colour: out there the player is
-// meant to be able to make out that the land keeps going, not to read what is
-// standing on it. Monochrome and compressive is what makes that true of every
-// material at once - a lantern bulb on an undiscovered tile is worth about what
-// the grass beside it is worth, where keeping a flat fraction of the colour left
-// bright things showing as bright pinpricks in the dark.
-vec3 maskNight( vec3 rgb ) {
+// What a fragment on an unwatched hex is worth. The night, a trace of the
+// surface's own *brightness* and nothing of its colour, and whatever the air out
+// there is doing. Out there the player is meant to be able to make out that the
+// land keeps going, not to read what is standing on it - monochrome and
+// compressive is what makes that true of every material at once, where keeping a
+// flat fraction of the colour left bright things showing as bright pinpricks.
+vec3 maskNight( vec3 rgb, float air ) {
   float lum = dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
-  return uMaskColor + uMaskKeep * ( 1.0 - exp( -10.0 * lum ) );
+  return uMaskColor
+    + uMaskKeep * ( 1.0 - exp( -10.0 * lum ) )
+    + uMaskAirAmount * air * uMaskAirTint;
+}
+
+float maskHash( vec2 p ) {
+  return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+}
+
+float maskNoise( vec2 p ) {
+  vec2 i = floor( p ), f = fract( p );
+  vec2 u = f * f * ( 3.0 - 2.0 * f );
+  return mix( mix( maskHash( i ),                  maskHash( i + vec2( 1.0, 0.0 ) ), u.x ),
+              mix( maskHash( i + vec2( 0.0, 1.0 ) ), maskHash( i + vec2( 1.0, 1.0 ) ), u.x ), u.y );
+}
+
+// The weather in the dark. Two very large fields crossing each other slowly: one
+// field drifting on its own reads as a texture being pulled across the board,
+// and two at different scales and angles never repeat their arrangement, which is
+// what turns a moving pattern into air. It is sampled in *world* space, so it
+// stays put when the camera turns.
+//
+// The remap is what keeps it out of the way. Most of the field sits at nothing at
+// all and only the tops of it come through, so the region reads as darkness first
+// and as weather only once you have watched it for a while.
+float maskAirAt( vec2 xz ) {
+  vec2 a = ( xz + uMaskAirDriftA * ( uMaskTime * uMaskAirSpeed        ) ) / uMaskAirScale;
+  vec2 b = ( xz + uMaskAirDriftB * ( uMaskTime * uMaskAirSpeed * 0.55 ) ) / ( uMaskAirScale * 0.42 );
+  return smoothstep( 0.40, 0.95, 0.65 * maskNoise( a ) + 0.35 * maskNoise( b ) );
 }
 
 // HexGrid.worldToHex, in GLSL: flat-top axial, then cube rounding. Kept in step
@@ -221,13 +291,28 @@ vec2 maskCenter( vec2 ax ) {
 }
 
 // How far inside the edge shared with this neighbour the fragment sits - but only
-// when there is night on the other side of it, and out of reach otherwise. A
-// watched neighbour never enters the minimum the fade is taken over, which is
-// what makes the band follow the perimeter of the whole region rather than the
-// outline of each hex in it.
-float maskEdgeDepth( vec2 ax, vec2 off, vec2 nb, vec2 dir ) {
-  if ( maskWatched( ax + nb ) > 0.5 ) return 1000.0;
+// when the neighbour is on the far side of the boundary being measured - 'want' is
+// what that side is worth - and out of reach otherwise. A neighbour on our own
+// side never enters the minimum below, which is what makes the distance follow
+// the perimeter of the whole region rather than the outline of each hex in it.
+float maskEdgeDepth( vec2 ax, vec2 off, vec2 nb, vec2 dir, float want ) {
+  if ( abs( maskWatched( ax + nb ) - want ) > 0.5 ) return 1000.0;
   return uMaskInradius - dot( off, dir );
+}
+
+// How far this fragment is from the nearest boundary with the other side. Both
+// directions are the same question asked twice: 'want' 0.0 measures a watched
+// fragment's distance in from the night, and 1.0 measures a night fragment's
+// distance in from the light.
+float maskBoundaryDepth( vec2 ax, vec2 xz, float want ) {
+  vec2 off = xz - maskCenter( ax );
+  float d =        maskEdgeDepth( ax, off, vec2(  1.0,  0.0 ), vec2(  0.8660254,  0.5 ), want );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  1.0, -1.0 ), vec2(  0.8660254, -0.5 ), want ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0, -1.0 ), vec2(  0.0,       -1.0 ), want ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2( -1.0,  0.0 ), vec2( -0.8660254, -0.5 ), want ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2( -1.0,  1.0 ), vec2( -0.8660254,  0.5 ), want ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,  1.0 ), vec2(  0.0,        1.0 ), want ) );
+  return d;
 }
 `;
 
@@ -267,18 +352,19 @@ ${cull ? `
   // with the ground he is standing on instead of blinking out of existence.
   if ( maskHide > 0.5 ) discard;
 ` : ''}
-  if ( maskHide < 0.5 ) {
-    vec2 maskOff = vMaskWorld.xz - maskCenter( maskAx );
-    float maskDepth = maskEdgeDepth( maskAx, maskOff, vec2(  1.0,  0.0 ), vec2(  0.8660254,  0.5 ) );
-    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2(  1.0, -1.0 ), vec2(  0.8660254, -0.5 ) ) );
-    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2(  0.0, -1.0 ), vec2(  0.0,       -1.0 ) ) );
-    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2( -1.0,  0.0 ), vec2( -0.8660254, -0.5 ) ) );
-    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2( -1.0,  1.0 ), vec2( -0.8660254,  0.5 ) ) );
-    maskDepth = min( maskDepth, maskEdgeDepth( maskAx, maskOff, vec2(  0.0,  1.0 ), vec2(  0.0,        1.0 ) ) );
-    maskHide = 1.0 - smoothstep( 0.0, uMaskFade, maskDepth );
+  float maskAir = 0.0;
+  if ( maskHide > 0.5 ) {
+    // Weather, held out of the boundary. The air builds up over 'uMaskAirHold'
+    // as the night gets further from the light, so the edge of the lit region is
+    // plain dark on both sides of itself - the fade on one side and nothing on
+    // the other - and no drifting shape can put a lip on it.
+    maskAir = maskAirAt( vMaskWorld.xz )
+      * smoothstep( 0.0, uMaskAirHold, maskBoundaryDepth( maskAx, vMaskWorld.xz, 1.0 ) );
+  } else {
+    maskHide = 1.0 - smoothstep( 0.0, uMaskFade, maskBoundaryDepth( maskAx, vMaskWorld.xz, 0.0 ) );
   }
   maskHide *= uMaskStrength;
-  gl_FragColor.rgb = mix( gl_FragColor.rgb, maskNight( gl_FragColor.rgb ), maskHide );
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, maskNight( gl_FragColor.rgb, maskAir ), maskHide );
   // Anything that draws by *adding* light - a firefly, a lantern's halo, a grid
   // seam - has to go out rather than go dark, because a dark colour added to the
   // night is still a mark on it. Opaque materials do not blend, so this costs
