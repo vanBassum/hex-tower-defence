@@ -105,10 +105,10 @@ export const UNIT_TYPES = {
   king: {
     key: 'king',
     name: 'King',
-    // One ring, like the Footmen. He is not here to see; he is here to be
-    // somewhere, and a base that scouted as well as a Scout would make the Scout
-    // a card nobody plays.
-    viewDistance: 1,
+    // Two rings, as far as a Scout. He is not here to see - he is here to be
+    // somewhere - but a King who could only see the tiles he was touching left
+    // the opening camp with nothing around it to make a first move towards.
+    viewDistance: 2,
     // A retinue rather than a company - nine guards and the man himself, which
     // reads as fewer people than a unit and is exactly the point.
     people: 9,
