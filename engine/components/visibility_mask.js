@@ -176,7 +176,8 @@ export class VisibilityMask extends Component {
 // the second one turned well off the first, because two shapes crossing is what
 // stops the pair reading as one texture being pulled across the board.
 function airUniforms(air, drift) {
-  const a = { amount: 0, tint: 0x4d80ff, scale: 16, speed: 0.16, hold: 1.0, ...(air || {}) };
+  const a = { amount: 0, tint: 0x4d80ff, scale: 16, speed: 0.16, band: [0.4, 0.95], hold: 1.0,
+              ...(air || {}) };
   const angle = drift?.angle ?? 0;
   const flow  = drift?.flow ?? 1;
   return {
@@ -184,6 +185,7 @@ function airUniforms(air, drift) {
     uMaskAirAmount: { value: a.amount },
     uMaskAirTint:   { value: new THREE.Color(a.tint) },
     uMaskAirScale:  { value: a.scale },
+    uMaskAirBand:   { value: new THREE.Vector2(a.band[0], a.band[1]) },
     uMaskAirSpeed:  { value: a.speed * flow },
     // Never zero: it divides a smoothstep.
     uMaskAirHold:   { value: Math.max(a.hold, 1e-4) },
@@ -218,6 +220,7 @@ uniform float uMaskTime;
 uniform float uMaskAirAmount;
 uniform vec3  uMaskAirTint;
 uniform float uMaskAirScale;
+uniform vec2  uMaskAirBand;
 uniform float uMaskAirSpeed;
 uniform float uMaskAirHold;
 uniform vec2  uMaskAirDriftA;
@@ -254,13 +257,14 @@ float maskNoise( vec2 p ) {
 // what turns a moving pattern into air. It is sampled in *world* space, so it
 // stays put when the camera turns.
 //
-// The remap is what keeps it out of the way. Most of the field sits at nothing at
-// all and only the tops of it come through, so the region reads as darkness first
-// and as weather only once you have watched it for a while.
+// uMaskAirBand is what decides whether this is patches or haze: it is the slice
+// of the noise that becomes air at all. Its low end is where the dark still goes
+// black between shapes, and its high end is where a shape tops out - so widening
+// it lifts the whole region and narrowing it leaves only the peaks.
 float maskAirAt( vec2 xz ) {
   vec2 a = ( xz + uMaskAirDriftA * ( uMaskTime * uMaskAirSpeed        ) ) / uMaskAirScale;
   vec2 b = ( xz + uMaskAirDriftB * ( uMaskTime * uMaskAirSpeed * 0.55 ) ) / ( uMaskAirScale * 0.42 );
-  return smoothstep( 0.40, 0.95, 0.65 * maskNoise( a ) + 0.35 * maskNoise( b ) );
+  return smoothstep( uMaskAirBand.x, uMaskAirBand.y, 0.65 * maskNoise( a ) + 0.35 * maskNoise( b ) );
 }
 
 // HexGrid.worldToHex, in GLSL: flat-top axial, then cube rounding. Kept in step

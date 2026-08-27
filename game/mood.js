@@ -105,12 +105,21 @@ export const MOOD = {
     // have watched it for a few seconds. If it reads as fog on sight, amount is
     // too high; if it reads as a texture sliding past, scale is too small.
     air: {
-      amount: 0.008,
+      // Deliberately on the strong side of right, so it can be judged and dialled
+      // back. Small numbers here still go a long way: this lands on a near-black
+      // colour in linear light and then through the tone curve, where a fortieth
+      // is already a shape you can point at on a still frame.
+      amount: 0.045,
       // Blue-weighted rather than grey: the night gets deeper, never smokier.
       tint:   0x4d80ff,
       scale:  17.0,      // world units across one shape - about a third of the board
       speed:  0.17,      // world units a second, so a hex takes most of a minute
-      hold:   1.1,       // how far into the dark the air stays out of the boundary
+      // Which part of the noise becomes air. Narrow, and only the extreme peaks
+      // come through and the region reads as flat black between them; wide, and
+      // the whole dark lifts evenly and stops having shapes in it at all. This is
+      // the knob that decides whether it is patches or haze.
+      band:   [0.28, 0.82],
+      hold:   1.4,       // how far into the dark the air stays out of the boundary
     },
   },
 
