@@ -452,8 +452,12 @@ float maskShown( vec2 ax ) {
   return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).g;
 }
 
-float maskWatched( vec2 ax ) {
-  return step( 0.5, maskShown( ax ) );
+// How much of a *side* a neighbour is, for whichever side is being measured
+// from: 'want' 0 asks how much night it is, 1 how much light. Continuous, and
+// that matters - see maskEdgeDepth.
+float maskSide( vec2 ax, float want ) {
+  float shown = maskShown( ax );
+  return want > 0.5 ? shown : 1.0 - shown;
 }
 
 vec2 maskCenter( vec2 ax ) {
@@ -482,14 +486,23 @@ float maskCloudAt( vec2 xz ) {
   return smoothstep( uMaskCloudBand.x, uMaskCloudBand.y, n );
 }
 
-// How far inside the edge shared with this neighbour the fragment sits - but only
-// when the neighbour is on the far side of the boundary being measured - 'want' is
-// what that side is worth - and out of reach otherwise. A neighbour on our own
-// side never enters the minimum below, which is what makes the distance follow
-// the perimeter of the whole region rather than the outline of each hex in it.
-float maskEdgeDepth( vec2 ax, vec2 off, vec2 nb, vec2 dir, float want ) {
-  if ( abs( maskWatched( ax + nb ) - want ) > 0.5 ) return 1000.0;
-  return uMaskInradius - dot( off, dir );
+// How far inside the edge shared with this neighbour the fragment sits, and out
+// of reach when the neighbour is not on the far side at all - so a neighbour on
+// our own side never enters the minimum below, which is what makes the distance
+// follow the perimeter of the whole region rather than the outline of each hex in
+// it.
+//
+// The neighbour's share of that side *weights* the distance instead of gating it,
+// and that is not a nicety. Thresholding it left a black line standing along the
+// edge of a hex that had already opened: the hex counted as night to its
+// neighbour for the first half of its reveal, so the neighbour painted a full
+// fade band there, while the hex's own front had already cleared the same edge -
+// bright, dark line, bright. Dividing by the weight fades the band out as the
+// neighbour lightens, and leaves the settled ends exactly where they were, since
+// a weight of one changes nothing and a weight of zero is out of reach.
+float maskEdgeDepth( vec2 ax, vec2 off, vec2 dir, float weight ) {
+  if ( weight < 0.004 ) return 1000.0;
+  return ( uMaskInradius - dot( off, dir ) ) / weight;
 }
 
 // How far this fragment is from the nearest boundary with the other side. Both
@@ -498,12 +511,12 @@ float maskEdgeDepth( vec2 ax, vec2 off, vec2 nb, vec2 dir, float want ) {
 // distance in from the light.
 float maskBoundaryDepth( vec2 ax, vec2 xz, float want ) {
   vec2 off = xz - maskCenter( ax );
-  float d =        maskEdgeDepth( ax, off, vec2(  1.0,  0.0 ), vec2(  0.8660254,  0.5 ), want );
-  d = min( d, maskEdgeDepth( ax, off, vec2(  1.0, -1.0 ), vec2(  0.8660254, -0.5 ), want ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0, -1.0 ), vec2(  0.0,       -1.0 ), want ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2( -1.0,  0.0 ), vec2( -0.8660254, -0.5 ), want ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2( -1.0,  1.0 ), vec2( -0.8660254,  0.5 ), want ) );
-  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,  1.0 ), vec2(  0.0,        1.0 ), want ) );
+  float d =        maskEdgeDepth( ax, off, vec2(  0.8660254,  0.5 ), maskSide( ax + vec2(  1.0,  0.0 ), want ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.8660254, -0.5 ), maskSide( ax + vec2(  1.0, -1.0 ), want ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,       -1.0 ), maskSide( ax + vec2(  0.0, -1.0 ), want ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2( -0.8660254, -0.5 ), maskSide( ax + vec2( -1.0,  0.0 ), want ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2( -0.8660254,  0.5 ), maskSide( ax + vec2( -1.0,  1.0 ), want ) ) );
+  d = min( d, maskEdgeDepth( ax, off, vec2(  0.0,        1.0 ), maskSide( ax + vec2(  0.0,  1.0 ), want ) ) );
   return d;
 }
 `;
