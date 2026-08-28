@@ -254,6 +254,14 @@ const playerStart = {
   ghost: () => null,
 };
 
+// The one line a palette card gets to say about a body of men, and it is the
+// three numbers that decide where you would put them: how many there are, how
+// far they reach, and how far they walk. Sight is left out for want of room - it
+// is the Scout's whole point and it is also the number an author is least likely
+// to be choosing between two assets on.
+const unitNote = (type) =>
+  `${type.people} men · reach ${type.range ?? 1} · moves ${type.moveRange ?? 4}`;
+
 // ── What is waiting on the board ────────────────────────────────────────────
 // The other side, and only the other side. Which side a type is on comes from
 // `hostile` on it - see the invariant in CLAUDE.md - so there is no side field in
@@ -272,7 +280,7 @@ const enemy = {
     .map(([key, type]) => ({
       id: key,
       name: type.name,
-      note: `${type.people} men · sees ${type.viewDistance}`,
+      note: unitNote(type),
       preview: { kind: 'unit', type: key },
     })),
 
@@ -328,7 +336,7 @@ const troops = {
     .map(([key, type]) => ({
       id: key,
       name: type.name,
-      note: `${type.people} men · sees ${type.viewDistance}`,
+      note: unitNote(type),
       preview: { kind: 'unit', type: key },
     })),
 

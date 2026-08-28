@@ -309,6 +309,39 @@ Break one of these and something three files away goes subtly wrong.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.
+- **A unit type is the whole of a unit, and no system names one.** Six of them
+  now, and what they differ in is what the player does with the board: `range`
+  (Archers three, Spearmen two), `moveRange` (Heavy Infantry two, Cavalry seven),
+  `viewDistance` (the Scout, alone, three), `traits` (`mounted`), `damageVs`
+  (a *trait*, never a type), `provokesReaction`, `charge`. Every one of those is
+  read by exactly one line somewhere else - `Battle` asks the unit what a frame
+  of fighting costs, `ActionLoop` asks for an allowance and whether a group
+  `provokes`, `EnemyForce` asks the same second question - so the list of units
+  exists in one file. The rule this replaces is the one worth stating: there is no
+  `if (unit.type.key === ...)` anywhere outside `units.js`, and the day one is
+  needed the answer is a field. `COMBAT` at the top of `units.js` holds what a
+  *relationship* between two units is worth, because a counter's number is not a
+  fact about either of them.
+- **A counter names a trait, and a trait is a word.** Spearmen have `damageVs:
+  { mounted: COMBAT.antiMounted }` and have never heard of Cavalry; Cavalry has
+  `traits: ['mounted']` and has never heard of Spearmen. So the second mounted
+  thing is countered on the day it is written. `damageRate` in `units.js` is the
+  whole implementation and it is nine lines.
+- **A charge is about how a unit arrived, so it lives on the unit.** `Unit`
+  counts the tiles an order commits (`_steps`), arms on the one that makes the
+  ride long enough, and `strike` applies the bonus - which is why `Battle` is
+  handed `u.strike(v, dt)` rather than reading `u.attack`: Battle knows two
+  positions and a frame, and *how* one of them got there is not a fact it holds.
+  A charge ends two ways and both are needed - the window is spent by the
+  fighting it boosts, and the hold runs out if the ride never reaches anything.
+  Without the second, a horseman who once rode two hexes has a permanent bonus.
+- **The Scout's reaction rule is one field and two `continue`s.**
+  `provokesReaction: false` keeps him out of `_relevant` and out of `_nearest`,
+  in both `ActionLoop` and `EnemyForce` - the second half matters, because an
+  enemy that set off for somebody else must not arrive at the Scout instead. It
+  says nothing about combat: walk him next to something and Battle fights him,
+  because Battle asks where things are standing and has never heard of this. He
+  is not invisible; nothing *leaves its post* for him.
 - **How far an attack carries is `range` on the type, and Battle asks each half
   of a pair separately.** It defaults to the one hex everything assumed before
   Archers, so nothing that predates them changed. What it introduces is the first
@@ -350,7 +383,7 @@ Break one of these and something three files away goes subtly wrong.
   `EnemyForce` and fought by `Battle` (adjacency → casualties, both directions,
   no turn). `'hold'` never moves and costs EnemyForce nothing - Battle fights
   whatever steps next to it. `'hunt'` chases inside `aggro` and returns to its
-  post. Spearmen hold, because a Scout has to be able to see a thing and choose
+  post. Raiders hold, because a Scout has to be able to see a thing and choose
   not to touch it. A new kind is an entry in `UNIT_TYPES`, not a new system.
 - **There is one game and both pages call it.** `startPlay()` in `game/play.js`
   builds everything that plays on a board and returns a `teardown`; `game/main.js`
@@ -401,7 +434,7 @@ Break one of these and something three files away goes subtly wrong.
 
 | Adding | Touch |
 | --- | --- |
-| A unit type | `game/units.js` (+ its palette block in `MOOD.units`) - the `troops` or `enemy` palette picks it up from `hostile` |
+| A unit type | `game/units.js` (+ its palette block in `MOOD.units`) - the `troops` or `enemy` palette picks it up from `hostile`, and a card in `game/cards.js` is what lets the player field one |
 | Troops a level hides until they are found | `dormant: true` on the unit, or the editor's Troops palette |
 | A troop that kills at a distance | `range` on its type - Battle already asks, and `_relevant` already makes the target notice |
 | What a unit carries | `spears` / `bows` on its type - one InstancedMesh, one geometry swapped, never a fourth pass |
@@ -422,7 +455,12 @@ Break one of these and something three files away goes subtly wrong.
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
 | A level that ships with the game | the exported JSON in `levels/`, plus a line in `SYSTEM_LEVELS` in `game/levels.js` - the menu picks it up |
 | Something the menu shows about a board | `catalogue()` in `game/levels.js`, then the card in `game/ui/menu.js` |
-| A reaction rule, or how far a group moves | `TACTICS` in `game/components/action_loop.js` |
+| How far one unit moves, sees or reaches | `moveRange` / `viewDistance` / `range` on its type |
+| A reaction rule that is about the whole board | `TACTICS` in `game/components/action_loop.js` |
+| A unit nothing leaves its post for | `provokesReaction: false` on its type |
+| A counter against a kind of unit | a word in `traits` on the target's type, and `damageVs: { word: ... }` on the counter's - never a type name |
+| What a counter or a charge is worth | `COMBAT` at the top of `game/units.js` |
+| A unit that hits harder for having arrived | `charge: COMBAT.charge` on its type - `Unit` counts the tiles and `strike` spends it |
 | A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
 | A way of marking hexes | a subclass of `HexOverlay` overriding `_rebuild` - the picker finds any of them |
 | Anything the player can act on | draw it in `MOOD.interact`, and never spend that yellow on the world |

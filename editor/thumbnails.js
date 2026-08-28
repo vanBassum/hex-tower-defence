@@ -282,7 +282,7 @@ function buildPropModel(type) {
 // because it is what the asset is. A single soldier would be a clearer picture of
 // something the editor cannot place: what a click puts on the board is the body of
 // men, and at this size the shape of the block is exactly what tells a scout from
-// a line of footmen.
+// a line of swordsmen.
 function buildUnitModel(type) {
   const unit = UNIT_TYPES[type];
   if (!unit) throw new Error(`no unit type "${type}"`);

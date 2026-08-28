@@ -96,7 +96,7 @@ export class LevelSettings {
     this._count.classList.toggle('is-full', deck.length >= limit && limit > 0);
 
     // The cards in hand, in the order they were added, one chip each - so three
-    // Footmen are three chips rather than a number, which is what a hand of cards
+    // Swordsmen are three chips rather than a number, which is what a hand of cards
     // actually is.
     this._hold.innerHTML = deck.length
       ? deck.map((key, i) => `<button type="button" class="held" data-card="${esc(key)}"

@@ -5,15 +5,15 @@ import { UNIT_TYPES } from './units.js';
 // That "once" is the whole of the rule and it is worth stating plainly: a card
 // is spent when it is played, so a hand of three cards is three units and the
 // second copy of a card is what lets you field two of something. The concept doc
-// builds its entire progression on that arithmetic - finding another Footmen
-// card is not an upgrade to the Footmen, it is a second body of Footmen - so the
+// builds its entire progression on that arithmetic - finding another Swordsmen
+// card is not an upgrade to the Swordsmen, it is a second body of them - so the
 // hand is a list of cards rather than a table of counts. Two entries that happen
 // to name the same unit are two cards, and nothing has to special-case it.
 //
 // The table is thin because a card is currently a name, a unit type and a job.
 // What it is *not* is a copy of the unit's stats: `unit` points into UNIT_TYPES
 // and the card carries nothing the unit already knows, so there is exactly one
-// place to change how far Footmen see.
+// place to change how far Swordsmen see.
 //
 // ── `role` says what a troop is for, never what its numbers are ─────────────
 // "Sees one hex" is a stat wearing a sentence, and it is the wrong thing to put
@@ -25,7 +25,7 @@ import { UNIT_TYPES } from './units.js';
 // The numbers have their own place on the card now - see `cardStats` at the
 // bottom of this file - because there are finally enough of them to compare.
 // That is the condition this was always waiting on: one number is trivia, and
-// three is a decision. They are a row of figures under the role rather than a
+// a handful of them is a decision. They are a row of figures under the role rather than a
 // sentence pretending to be one, and they are still the quieter half of the
 // card, because what a troop is *for* is what you read first.
 // How many cards a run may open with, unless a level says otherwise. It is
@@ -61,9 +61,12 @@ export const CARD_TYPES = {
     role: 'Goes where nothing is known.',
   },
 
-  footman: {
-    key: 'footman',
-    unit: 'footman',
+  // The six the roster is, and every one of them says what it is *for*. Read
+  // them as a set: three of them are answers to "where should this stand", and
+  // that is the point of the roster.
+  swordsmen: {
+    key: 'swordsmen',
+    unit: 'swordsmen',
     role: 'Holds the ground the King takes.',
   },
 
@@ -74,6 +77,27 @@ export const CARD_TYPES = {
     key: 'archers',
     unit: 'archers',
     role: 'Kills what it never has to reach.',
+  },
+
+  // Two hexes, so they fight from behind the men in front of them - and the job
+  // is stated as the formation rather than as the number, because "reaches over
+  // the front rank" is what the player does with them.
+  spearmen: {
+    key: 'spearmen',
+    unit: 'spearmen',
+    role: 'Fights over the shoulders of the front.',
+  },
+
+  heavy: {
+    key: 'heavy',
+    unit: 'heavy',
+    role: 'Put here, and the ground is theirs.',
+  },
+
+  cavalry: {
+    key: 'cavalry',
+    unit: 'cavalry',
+    role: 'Arrives where nobody was ready.',
   },
 };
 
@@ -95,10 +119,13 @@ export function cardName(card) {
 // no copy of anything the unit already knows, so there is one place `attack` is
 // written down and a card cannot go stale against the thing it plays.
 //
-// Three, and only three, because they are the three that differ in a way the
-// player can act on. `viewDistance` is left out - it is a real difference and it
-// is not one you spend while choosing where to put somebody down - and there is
-// no defence or armour here because there is none in the game: a stat row that
+// Four now, and the fourth is `move`. It was left out while every troop walked
+// about the same distance and a card that printed it was printing a constant;
+// with Heavy Infantry at two hexes and Cavalry at seven it is the *first* thing
+// the player is choosing between, so a card that hid it would be hiding the
+// decision. `viewDistance` is still left out - it is a real difference and not
+// one you spend while choosing where to put somebody down - and there is no
+// defence or armour here because there is none in the game: a stat row that
 // listed one would be describing rules that do not exist.
 //
 // A unit with no `range` has one hex, which is what everything assumed before
@@ -110,10 +137,12 @@ export function cardStats(card) {
     { key: 'people', text: String(t.people ?? 1),
       label: 'People - how many are in it, and the only health it has' },
     // The one that has to be spelled to a decimal: 1.1 and 2.2 are the whole
-    // difference between Archers and Footmen, and rounding it hides that.
+    // difference between Archers and Swordsmen, and rounding it hides that.
     { key: 'attack', text: (t.attack ?? 0).toFixed(1),
       label: 'Attack - people it kills a second while it is fighting' },
     { key: 'range', text: String(t.range ?? 1),
       label: 'Range - how many hexes away it can hurt something' },
+    { key: 'move', text: String(t.moveRange ?? 4),
+      label: 'Move - how many hexes it may walk on one action' },
   ];
 }

@@ -1,6 +1,6 @@
 {
   "format": "hex-tower-defence.level",
-  "version": 7,
+  "version": 8,
   "id": "skirmish-0001-test-encounter",
   "name": "Skirmish",
   "hexSize": 1,
@@ -9,11 +9,11 @@
   "deck": [],
   "king": { "q": -3, "r": 1 },
   "units": [
-    { "type": "footman", "q": -1, "r": 2, "dormant": true },
+    { "type": "swordsmen", "q": -1, "r": 2, "dormant": true },
     { "type": "archers", "q": -1, "r": -3, "dormant": true },
-    { "type": "spearmen", "q": 2, "r": -2 },
-    { "type": "spearmen", "q": 2, "r": 2 },
-    { "type": "spearmen", "q": 4, "r": -1 }
+    { "type": "raiders", "q": 2, "r": -2 },
+    { "type": "raiders", "q": 2, "r": 2 },
+    { "type": "raiders", "q": 4, "r": -1 }
   ],
   "props": [],
   "detail": [],

@@ -178,7 +178,7 @@ export const MOOD = {
   // The shared keys are the level's; a block under a unit type's own name wins
   // over them. Two units have to be told apart at a distance where each of them
   // is about ten pixels tall, and colour alone will not do it - the Scout is a
-  // hooded crowd carrying a light and the Footmen are a helmeted block carrying
+  // hooded crowd carrying a light and the Swordsmen are a helmeted block carrying
   // steel - but colour is what stops them being the same *material* as well as
   // the same shape.
   units: {
@@ -209,14 +209,14 @@ export const MOOD = {
       lampGlow: 0xffa855,
     },
 
-    footman: {
+    swordsmen: {
       cloak: 0x3a5c8a,
       trim:  0x9db4d0,
       steel: 0x9db4d0,
     },
 
     // Paler and greener than the line, and the bow is the warm thing on them.
-    // Both halves of that are the same read: Footmen are the blue with the
+    // Both halves of that are the same read: Swordsmen are the blue with the
     // bright steel over it, so Archers have to be the blue *without* it - the
     // staves are dull wood, which at blue hour is the only warm note the player
     // owns that is not a lamp.
@@ -229,7 +229,35 @@ export const MOOD = {
       arrow: 0xf0e3c4,
     },
 
+    // The player's three later troops, and they are all the same blue on purpose:
+    // one family told apart by silhouette, which is the rule the Scout and the
+    // line already follow. What each block does is push one note - the hedge is
+    // the coldest and its steel the brightest, because a wall of points is the
+    // thing it has to read as; the slab is the darkest cloth with dull heavy
+    // steel over it; the horsemen are the lightest of the three, because they
+    // are the ones seen at a distance and moving.
     spearmen: {
+      cloak: 0x35557f,
+      trim:  0xa9c3dc,
+      steel: 0xb6cadd,
+    },
+
+    heavy: {
+      cloak: 0x2b4368,
+      trim:  0x7d93ac,
+      steel: 0x7f8c99,
+    },
+
+    cavalry: {
+      cloak: 0x4a6fa2,
+      trim:  0xb3c6da,
+      steel: 0xa8bccf,
+    },
+
+    // The only red on the board, and the only warm thing on it that is not a
+    // lamp. It was called `spearmen` while the mob was the only body of spears
+    // in the game; the name follows the type.
+    raiders: {
       cloak: 0x6e2b2b,
       trim:  0xb0554a,
       steel: 0x8a6f66,

@@ -1,13 +1,26 @@
 import * as THREE from 'three';
 import { hashHex } from '../engine/hex/hex_noise.js';
 
-// What kinds of thing can stand on a hex.
+// What kinds of thing can stand on a hex, and what each of them is for.
 //
-// The table is deliberately almost empty. A unit right now is a position, a type
-// and how far it can see, because that is every stat the exploration milestone
-// can actually spend - and a `health: 10` written down before anything can take
-// damage is a number nobody has ever had to defend. Combat stats arrive with
-// combat, in this table, without moving anything else.
+// ── A unit is a way of using the board ──────────────────────────────────────
+// The roster is six, and what they are meant to differ in is not their numbers.
+// Each of them changes where the player wants to be standing: the Scout buys
+// ground nobody has seen and nothing leaves its post for him, Archers reach
+// three hexes so the line in front of them matters, Spearmen reach two so
+// *depth* matters, Heavy Infantry moves so little that where it stands is a
+// decision taken before the fight, and Cavalry moves far enough to arrive
+// somewhere that was safe a moment ago. Swordsmen are the one with nothing
+// special about them, on purpose: something has to be the thing the rest are
+// read against, and being dependable is a role.
+//
+// ── The fields are capabilities, never names ────────────────────────────────
+// Nothing downstream asks what a unit *is*. Battle asks for `range` and for a
+// damage rate; ActionLoop asks for `moveRange` and whether a unit `provokes`; a
+// damage modifier names a *trait* and never a type. So an entry here is the
+// whole of a unit, and the seventh one is this table and nothing else - which is
+// the property that has to survive, because the alternative is five systems each
+// carrying its own copy of the list.
 //
 // ── Casualties are the count, and that is the only health there is ──────────
 // A unit *is* fifteen people, so it loses them. There is no hit-point pool
@@ -17,18 +30,17 @@ import { hashHex } from '../engine/hex/hex_noise.js';
 // already on the board, in the place the player is already looking, and it needs
 // no UI at all.
 //
-// `attack` is the other half and it is a *rate* - people killed per second while
-// two units stand next to each other. Not a die roll and not a turn's worth of
-// damage, because there are no turns yet and a number that assumed them would be
-// a number that has to be rewritten the day they arrive.
+// Which means "survivability" is a headcount and nothing else. Heavy Infantry
+// takes more killing because there are twenty of them; there is no armour, no
+// defence number and no damage reduction anywhere on this board, and a stat that
+// listed one would be describing a rule that does not exist.
 //
-// There are two entries now rather than one, and the second is the whole point
-// of the first pickup: the Scout finds a set of colours somebody left on the
-// island and the Footmen who follow them join the force. What separates them is
-// what a unit is *for* - the Scout sees two rings and the Footmen see one - and
-// that is the entire difference the game can express today. It is enough to make
-// the pair behave differently on the board, which is what a second unit type has
-// to earn before it is worth having.
+// `attack` is the other half and it is a *rate* - people killed per second while
+// two units are in reach of each other. Not a die roll and not a turn's worth of
+// damage, because there are no turns yet and a number that assumed them would be
+// a number that has to be rewritten the day they arrive. It is also why a charge
+// is worth a *window* of seconds rather than a first blow: there is no discrete
+// attack here for one to be the first of.
 //
 // ── Scale ────────────────────────────────────────────────────────────────────
 // A hex holds an army unit - about fifteen people - and that single fact sets
@@ -71,15 +83,51 @@ const DEATH_SLIDE = 0.28;    // how far the fall carries him back off the line
 // at these speeds cannot happen and would only cost one arrow vanishing early.
 export const ARROWS = 10;
 
+// ── Tuning that is about more than one unit ─────────────────────────────────
+// What a *relationship* between two units is worth. It lives here rather than
+// inside the entries because that is what these numbers are - a type below opts
+// into a mechanic and names what it applies to, and how much it is worth is
+// turned in one place. All of it is provisional.
+export const COMBAT = {
+  // What a hedge of spears is worth against a horse. A type opts in by naming
+  // the trait - `damageVs: { mounted: COMBAT.antiMounted }` - and never by
+  // naming Cavalry, so the second mounted thing this game gets is countered on
+  // the day it is written and not on the day somebody remembers to come back
+  // here.
+  antiMounted: 1.6,
+
+  // A charge is the one rule on this board that is about *how* a unit arrived
+  // rather than where it is standing. Four numbers and no more: how far it has
+  // to have ridden, what the arrival is worth, how long it is worth it for, and
+  // how long it keeps looking for something to hit before the moment has passed.
+  //
+  // `window` is in seconds because a fight is a rate and not a turn - there is
+  // no first blow to multiply, so the first second and a bit of the fight stands
+  // in for one. `hold` is the other half of the same guarantee, and it is the
+  // important half: a charge that never finds anything still has to end, or a
+  // horseman who once rode two hexes is a horseman with a permanent bonus.
+  charge: { steps: 2, bonus: 1.5, window: 1.2, hold: 4.0 },
+};
+
 export const UNIT_TYPES = {
+  // ── The player's six ───────────────────────────────────────────────────────
+  // Information, and almost nothing else.
+  //
+  // It sees further than anything on the board, walks further than anything but
+  // a horse, and cannot fight - which is the trade stated three times over. The
+  // fourth statement is the one that makes it a *scouting* unit rather than a
+  // fast weak one: nothing leaves its post for a Scout. See `provokesReaction`.
   scout: {
     key: 'scout',
     name: 'Scout',
-    // The one gameplay stat this milestone has. Two rings is enough to see a
-    // step past where you are standing, which is what makes moving feel like it
-    // buys something, and short enough that the island still takes a walk to
-    // learn.
-    viewDistance: 2,
+    // Three rings, and it is the only thing on the island that sees that far.
+    // Two was the number when the Scout was the only unit and everything was
+    // read against it; with six of them the eyes have to be *distinctly* the
+    // eyes, or the reason to keep one alive is a stat nobody can feel.
+    viewDistance: 3,
+    // Furthest of the foot troops. Looking is what it is for, and a look costs a
+    // move like everything else - so the reach of a look is this number.
+    moveRange: 6,
     // How many people are in it - the roster and the crowd on the tile are the
     // same number. Three: a scouting party is a handful of men sent out ahead,
     // and a crowd of fifteen read as an army that happened to be looking.
@@ -94,11 +142,23 @@ export const UNIT_TYPES = {
     // It can defend itself and that is all. A Scout that fights is a Scout being
     // used wrong, and the number says so without a rule having to.
     attack: 0.4,
+    // Nothing comes for him. An enemy that would leave its post because
+    // Swordsmen came inside its threat ring does not move for this one - and
+    // that is the whole of the rule. He is not invisible, he is not unfightable,
+    // and walking him onto the tile next to something starts exactly the fight
+    // it always did. What he does not do is *pull*.
+    //
+    // Without it the Scout has no job. The point of him is to look at a picket
+    // and decide, and a picket that sets off the moment he is three hexes out
+    // has already taken the decision. Which is why it is one field on the type
+    // read by two lines of the reaction code, rather than a Scout-shaped hole in
+    // the AI: see `provokes` below and `_relevant` in action_loop.js.
+    provokesReaction: false,
     build: (colors, tuning) => buildSquad(UNIT_TYPES.scout, colors, tuning),
   },
 
   // The one the army arrives around, and the one thing on the board that is
-  // always there. A run begins with a King and a Scout and nothing else.
+  // always there. A run begins with a King and nothing else.
   //
   // He is a *base*, and a base that walks. Every card is played onto a tile next
   // to him, so where he is standing is the whole of the force's reach - and
@@ -115,10 +175,13 @@ export const UNIT_TYPES = {
   king: {
     key: 'king',
     name: 'King',
-    // Two rings, as far as a Scout. He is not here to see - he is here to be
-    // somewhere - but a King who could only see the tiles he was touching left
-    // the opening camp with nothing around it to make a first move towards.
+    // Two rings. He is not here to see - he is here to be somewhere - but a King
+    // who could only see the tiles he was touching left the opening camp with
+    // nothing around it to make a first move towards.
     viewDistance: 2,
+    // The least of anybody, and for the same reason he is worth the most: moving
+    // him moves where the whole army is allowed to arrive.
+    moveRange: 3,
     // A retinue rather than a company - nine guards and the man himself, which
     // reads as fewer people than a unit and is exactly the point.
     people: 9,
@@ -128,8 +191,8 @@ export const UNIT_TYPES = {
     // silhouette rather than colour: a figure half again as tall as anyone else
     // at the middle of the group, and a standard flying over the whole tile. The
     // standard is the taller of the two and is what actually finds him on a dark
-    // board - a Scout is found by its lamp, Footmen by their spears, and the
-    // King by the flag.
+    // board - a Scout is found by its lamp, the line by its steel, and the King
+    // by the flag.
     leader: true,
     standard: true,
     // And a torch, which is the one place the palette rule gets bent on purpose.
@@ -147,33 +210,34 @@ export const UNIT_TYPES = {
     build: (colors, tuning) => buildSquad(UNIT_TYPES.king, colors, tuning),
   },
 
-  // The first thing the player finds, and the first unit that is not a Scout.
+  // The baseline, and deliberately the only one with nothing to explain.
   //
-  // It sees one ring rather than two, and that is only part of its cost. The
-  // rest is that it cannot bring anyone in - only a Scout anchors a deployment -
-  // so Footmen marched off on their own are Footmen with nothing behind them,
-  // and the Scout keeps a job long after the escort has arrived.
-  // Everything else about them - what they hit, what they can take - waits for
-  // combat, because a number written before there is anything to spend it on is
-  // a number nobody has had to defend.
-  footman: {
-    key: 'footman',
-    name: 'Footmen',
+  // They walk into the fight and hold the front of it. No reach, no trait, no
+  // charge, no reaction rule - and the temptation to give them something because
+  // everybody else has something is the whole reason this comment exists. Five
+  // units that each change the shape of a formation are only legible against one
+  // that does not, and *being the dependable answer* is a role a player uses:
+  // the question "where do the Swordsmen go" has a boring answer, which is what
+  // makes it a question you can stop thinking about.
+  //
+  // They are also what the other five are balanced against. Every number in this
+  // file is a comparison with this entry.
+  swordsmen: {
+    key: 'swordsmen',
+    name: 'Swordsmen',
     viewDistance: 1,
+    moveRange: 4,
     people: 15,
-    // Ranks rather than rings, tighter jitter, and spears. A hooded crowd and a
-    // helmeted block are nearly the same shape at 0.26 units tall; the bristle
-    // of shafts standing above the heads is what actually reads from the game's
-    // camera, and it reads instantly.
+    // Ranks rather than rings, tighter jitter, and steel above the heads. A
+    // hooded crowd and a helmeted block are nearly the same shape at 0.26 units
+    // tall; the bristle of shafts standing above them is what actually reads
+    // from the game's camera, and it reads instantly.
     formation: 'block',
     jitter: 0.12,
     spears: true,
     lamp: false,
-    // What they are for. One body of Footmen beats one body of Spearmen with a
-    // third of itself left standing, and loses to two - which is the encounter
-    // the concept doc asks the first map to open with.
     attack: 2.2,
-    build: (colors, tuning) => buildSquad(UNIT_TYPES.footman, colors, tuning),
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.swordsmen, colors, tuning),
   },
 
   // The first troop that kills something it is not standing next to.
@@ -191,8 +255,8 @@ export const UNIT_TYPES = {
   // had more people; a body of Archers two hexes off takes nothing back, so the
   // question becomes whether the thing being shot can reach them before it dies.
   // The answer is usually yes - which is the point. They are thin, they hit for
-  // half what Footmen do, and the only thing standing between them and a
-  // Spearmen unit that has noticed them is somebody else.
+  // half what the line does, and the only thing standing between them and
+  // something that has noticed them is somebody else.
   //
   // Being shot is what makes an enemy notice: see `_relevant` in action_loop.js.
   // Without that the range simply outruns a picket's threat ring and a volley
@@ -203,6 +267,9 @@ export const UNIT_TYPES = {
     // Far enough to see most of what they can hit. Not all of it - shooting into
     // ground somebody else is watching is the rest of the force doing its job.
     viewDistance: 2,
+    // As far as the line walks. They have to keep up with the men in front of
+    // them, or the formation they exist to stand behind leaves them.
+    moveRange: 4,
     people: 12,
     // Three hexes. Two was the other candidate and it is a worse number for one
     // reason: at two, every enemy that can be shot is already inside its own
@@ -211,10 +278,10 @@ export const UNIT_TYPES = {
     // hurting something that has not started walking yet, and deciding whether
     // to stand in it is the whole of what this unit is for.
     range: 3,
-    // Half of what Footmen hit for. They are not a better line, they are damage
-    // that arrives from somewhere the line is not.
+    // Half of what the line hits for. They are not a better front, they are
+    // damage that arrives from somewhere the front is not.
     attack: 1.1,
-    // Ranks like Footmen, because they are a body of troops and not a party -
+    // Ranks like the line, because they are a body of troops and not a party -
     // what tells them apart is above the heads rather than in the outline of the
     // crowd. A row of short curves standing upright reads as instantly *not* the
     // bristle of straight shafts leaning forward, at any zoom and in any light.
@@ -227,13 +294,136 @@ export const UNIT_TYPES = {
     build: (colors, tuning) => buildSquad(UNIT_TYPES.archers, colors, tuning),
   },
 
+  // Reach, and the reason a formation has a back row.
+  //
+  // Two hexes, through exactly the same `range` field Archers use - this is not
+  // shooting, and it does not have to be a different mechanic in order not to be
+  // shooting. A body of men with twelve-foot spears standing behind another body
+  // of men is fighting the same enemy over their shoulders, and Battle's rule -
+  // a fight is a fact about where things are standing - already says so once the
+  // number is 2.
+  //
+  // What it buys is *depth*. Every formation on this board was one rank deep
+  // because the second rank could not do anything; a unit that reaches over the
+  // one in front of it makes the order of a column matter, and that is the first
+  // thing here that makes the shape of an army a decision rather than a
+  // consequence of who walked where.
+  //
+  // The second half is the anti-mounted modifier, and it is the game's first
+  // explicit counter. Note what it names: `mounted`, which is a trait on a type,
+  // and not Cavalry, which is a type. Spearmen have never heard of Cavalry and
+  // never should - see COMBAT.antiMounted. And they have to be worth fielding on
+  // a board with no horses on it at all, which the reach alone does.
+  spearmen: {
+    key: 'spearmen',
+    name: 'Spearmen',
+    viewDistance: 1,
+    // Slower than the line. A hedge is a thing you form and then hold, and
+    // walking it about is not what it is for.
+    moveRange: 3,
+    people: 14,
+    range: 2,
+    // Just under the line, which is the right place for them: on their own they
+    // are slightly worse Swordsmen, and behind Swordsmen they are damage that
+    // costs nothing.
+    attack: 1.9,
+    damageVs: { mounted: COMBAT.antiMounted },
+    formation: 'block',
+    jitter: 0.10,
+    spears: true,
+    // Levelled rather than shouldered. The shafts are the read here - a wall of
+    // points leaning out at the enemy is what two hexes of reach looks like.
+    spearTilt: 0.45,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.spearmen, colors, tuning),
+  },
+
+  // A decision taken before the fight starts.
+  //
+  // Two hexes a move and twenty men. There is no defensive stance, no armour and
+  // no blocking rule - the identity is entirely in those two numbers, and it is
+  // the plainest thing in this file: they are very hard to shift and they can
+  // hardly be repositioned, so the question they ask the player is *where do
+  // these want to be standing*, once, rather than *what should these chase*.
+  //
+  // The temptation is to give them a defence stat. There is no defence anywhere
+  // in this game - survivability is a headcount - and inventing one for a single
+  // unit would put a rule in the game that exists for one unit. Twenty men is
+  // the same idea and it is already drawn on the tile.
+  heavy: {
+    key: 'heavy',
+    name: 'Heavy Infantry',
+    viewDistance: 1,
+    // The least of the fighting troops, and the whole of what they cost.
+    moveRange: 2,
+    // Half again the line. On this board that *is* their armour.
+    people: 20,
+    attack: 2.8,
+    formation: 'block',
+    // The tightest block on the board and the largest men in it, which is the
+    // only read available without a new mesh: everything else the player owns is
+    // looser or smaller, so a dense slab of slightly bigger figures is
+    // unmistakably these.
+    jitter: 0.06,
+    spears: true,
+    spearTilt: 0.18,
+    stature: 1.12,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.heavy, colors, tuning),
+  },
+
+  // Distance, and what arriving is worth.
+  //
+  // Seven hexes a move is almost twice the line, and on a board where a move is
+  // the thing you spend, that is the whole unit: they are the answer to
+  // something the player noticed on the far side of the field. Everything else
+  // about them is ordinary - one hex of reach, one ring of sight, they pull a
+  // reaction like anybody else - because a unit that moves like this needs
+  // nothing else to be worth a card.
+  //
+  // The charge is the one exception and it is deliberately one readable rule:
+  // ride two hexes, reach something, and the arrival is worth half again for a
+  // second. No facing, no lanes, no momentum, no trample. What it produces on
+  // the board is the only thing being tested - the same unit standing beside an
+  // enemy is a normal fight, and the same unit crossing open ground into one is
+  // not - and the counterweight is that Spearmen were written to make riding at
+  // them a mistake.
+  cavalry: {
+    key: 'cavalry',
+    name: 'Cavalry',
+    // Normal. They are fast, not far-seeing, and a mounted unit that also saw
+    // three rings would have taken the Scout's job as well as its own.
+    viewDistance: 1,
+    moveRange: 7,
+    // Fewer than the line, which is most of what the mobility costs: they arrive
+    // anywhere and they do not survive being ground down once they are there.
+    people: 10,
+    // The hardest hit on the board per man, and it has to be: ten men at the
+    // line's rate lose a straight fight to fifteen of anything, and a shock unit
+    // that cannot win the fight it chose is a fast unit with nothing to do. At
+    // 3.0 the arithmetic says the thing the unit is supposed to say - charging
+    // Swordsmen it beats them by a hair, standing next to the same Swordsmen it
+    // loses - so the charge is the whole difference between those two fights.
+    attack: 3.0,
+    // What Spearmen are good against. The word is the whole of the coupling.
+    traits: ['mounted'],
+    charge: COMBAT.charge,
+    // A loose fast body rather than a formation, with the lances down. Rings and
+    // the tallest figures on the board, because there is no horse to draw yet
+    // and the read has to come out of the two knobs there are.
+    formation: 'rings',
+    jitter: 0.30,
+    spears: true,
+    spearTilt: 0.95,
+    stature: 1.30,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.cavalry, colors, tuning),
+  },
+
   // ── The other side ─────────────────────────────────────────────────────────
   // The first thing on this island that is not the player's, and the shape the
   // rest of them will be poured into: a type with `hostile` on it and a
   // behaviour, so a second kind that keeps its distance or runs for help is a
   // new entry here and a new branch in EnemyForce, not a new system.
   //
-  // Spearmen hold. They do not come for you, they do not follow you, and nothing
+  // Raiders hold. They do not come for you, they do not follow you, and nothing
   // happens until something is standing on the tile next to them - at which
   // point Battle costs both sides people for as long as that stays true.
   //
@@ -244,11 +434,18 @@ export const UNIT_TYPES = {
   // to be a move the player can make. The machinery for the other kind is still
   // in EnemyForce under `stance: 'hunt'`, because the next sort along will want
   // it - this one is `'hold'`.
-  spearmen: {
-    key: 'spearmen',
-    name: 'Spearmen',
+  //
+  // They were called Spearmen until the player got a body of Spearmen of their
+  // own, and one name for a friendly formation and a hostile mob is one name too
+  // few. Nothing else about them changed: same men, same numbers, same post. Old
+  // levels naming the old key are brought forward - see LEGACY_KEYS in
+  // editor/level.js.
+  raiders: {
+    key: 'raiders',
+    name: 'Raiders',
     hostile: true,
     viewDistance: 1,
+    moveRange: 4,
     people: 12,
     attack: 1.8,
     stance: 'hold',
@@ -260,9 +457,45 @@ export const UNIT_TYPES = {
     jitter: 0.55,
     spears: true,
     spearTilt: 0.7,
-    build: (colors, tuning) => buildSquad(UNIT_TYPES.spearmen, colors, tuning),
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.raiders, colors, tuning),
   },
 };
+
+// ── What the systems ask of a type ──────────────────────────────────────────
+// Three questions, asked by Battle, ActionLoop and EnemyForce, and every one of
+// them answered out of the table above. This is the seam that keeps the unit
+// list out of the rules: none of those files names a unit, and none of them has
+// to be opened the day a seventh one is written.
+
+// Whether a unit carries a word. Traits are categories a *rule* may name -
+// `mounted` is the only one so far - and they exist so a counter can be written
+// against a kind of thing rather than against a type.
+export function hasTrait(unit, trait) {
+  return !!unit?.type?.traits?.includes(trait);
+}
+
+// Whether an enemy will leave its post because this one came near. True of
+// everything except the Scout, and it is a property of the unit because the
+// alternative is the same sentence written into every place an enemy looks at
+// the roster.
+export function provokes(unit) {
+  return unit?.type?.provokesReaction !== false;
+}
+
+// How fast one unit takes people off another: its own rate, times whatever its
+// type says about the *kind* of thing it is hitting. Everything true of the pair
+// rather than of the attacker goes here; what is true of this moment - a charge -
+// is Unit's, because Unit is the only thing that knows how the attacker arrived.
+// See `Unit.strike`.
+export function damageRate(attacker, target) {
+  let rate = attacker.attack ?? 0;
+  const vs = attacker.type?.damageVs;
+  if (!vs) return rate;
+  for (const [trait, mult] of Object.entries(vs)) {
+    if (hasTrait(target, trait)) rate *= mult;
+  }
+  return rate;
+}
 
 const DEFAULT_COLORS = {
   cloak: 0x5a6b84,
@@ -289,19 +522,23 @@ const DEFAULT_COLORS = {
 //
 // The Scout's lamp is not decoration. It is the one thing that makes a unit
 // findable on a board lit at blue hour, and a scout carrying its own light is
-// also the reason it is the thing that reveals the map. The Footmen do not get
+// also the reason it is the thing that reveals the map. The line does not get
 // one: two lamps walking the island would say the two units do the same job, and
 // the thing that makes them findable instead is the steel above their heads.
 //
 // Colours come in per type as well as per scene - `colors[type.key]` wins over
-// `colors` - so the mood file can say what a Scout looks like and what Footmen
+// `colors` - so the mood file can say what a Scout looks like and what Swordsmen
 // look like without a second palette being threaded through the constructor.
 function buildSquad(type, colors = {}, tuning = {}) {
   const c = { ...DEFAULT_COLORS, ...colors, ...(colors[type.key] ?? {}) };
   const hexSize = tuning.hexSize ?? 1;
   const inradius = hexSize * Math.sqrt(3) / 2;
   const reach = inradius * FOOTPRINT;
-  const h = SOLDIER * hexSize;
+  // A man's height, and the one knob a type has over how big its people are.
+  // It exists because there is no horse mesh and no plate armour: Heavy Infantry
+  // and Cavalry have to be told apart from the line by the two things a
+  // formation is read by, which are its outline and how tall it stands.
+  const h = SOLDIER * hexSize * (type.stature ?? 1);
   const n = type.people ?? 12;
 
   const group = new THREE.Group();
@@ -476,7 +713,7 @@ function buildSquad(type, colors = {}, tuning = {}) {
     // A rank that is exactly a rank reads as a fence. Jitter is keyed to the
     // index so a squad looks the same every time it is drawn, and how much of it
     // a unit gets is the type's business: a scouting party stands about, and a
-    // line of Footmen is supposed to look like it was told where to stand.
+    // line of Swordsmen is supposed to look like it was told where to stand.
     const jx = (hashHex(i, 0, 11) - 0.5) * reach * spread;
     const jz = (hashHex(i, 0, 17) - 0.5) * reach * spread;
     // They face the way the unit does, but not to the degree - people in a
@@ -708,7 +945,7 @@ function ringSpot(i, n, reach) {
 }
 
 // Ranks abreast, front rank toward +Z, which is the direction the unit walks and
-// turns to face. A block has a front, and that is the point of it: the Footmen
+// turns to face. A block has a front, and that is the point of it: Swordsmen
 // are the thing you put between the Scout and whatever is out there, so which
 // way they are pointed has to be visible before there is any combat to prove it.
 function blockSpot(i, n, reach) {

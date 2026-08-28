@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Component } from '../../engine/gameobject.js';
-import { UNIT_TYPES, ARROWS } from '../units.js';
+import { UNIT_TYPES, ARROWS, damageRate } from '../units.js';
 import { hashHex } from '../../engine/hex/hex_noise.js';
 
 // Something standing on a hex.
@@ -132,6 +132,13 @@ export class Unit extends Component {
     // makes something an enemy is what it is, not where the level put it.
     this.hostile = !!this.type.hostile;
     this.attack = this.type.attack ?? 0;
+    // How the unit got where it is standing, which is the only thing on this
+    // board that anything cares about besides where that is. Both are here
+    // rather than in Battle because Battle is handed two positions and a frame -
+    // it cannot know that one of them arrived at a gallop.
+    this._steps = 0;      // tiles committed on the current order
+    this._charge = null;  // { left, idle } while an arrival is still worth something
+    this._chargeUsed = false;
     this.people = this.type.people ?? 1;
     this.dead = false;
     this._deathListeners = new Set();
@@ -155,6 +162,54 @@ export class Unit extends Component {
     // whatever spends the movement point - so it is a list rather than one slot.
     this._moveListeners = new Set();
     if (onMoved) this._moveListeners.add(onMoved);
+  }
+
+  // ── What one frame of fighting costs somebody ────────────────────────────
+  // Asked by Battle for each half of a pair. It is here rather than there for
+  // one reason: what a blow is worth depends on the *kind* of thing being hit
+  // (the type's own business, in `damageRate`) and on how the attacker arrived
+  // (this unit's business, and nobody else's).
+  //
+  // The charge is only marked as used. Spending it happens once a frame in
+  // `_spendCharge`, because a horseman with two enemies beside him is asked this
+  // twice and would otherwise burn his window at double rate.
+  strike(target, dt) {
+    let rate = damageRate(this, target);
+    if (this._charge) {
+      rate *= this.type.charge.bonus;
+      this._chargeUsed = true;
+    }
+    return rate * dt;
+  }
+
+  // Whether an arrival is still worth something. Read by nothing yet but
+  // `hex.loop` and the tests - it is here because "is this unit charged" is a
+  // question about the unit and the answer should not be a private field.
+  get charged() { return !!this._charge; }
+
+  // A charge is a moment, and a moment has to end. Two ways, and both are
+  // needed: the window is spent by the fighting it boosts, and the hold runs out
+  // if the ride never reaches anything. Without the second, a horseman who once
+  // rode two hexes and then stood in a field for a minute would still be
+  // charging whatever eventually walked up to him.
+  //
+  // The window only ticks on frames the bonus was actually applied, which is
+  // what makes it a window of *fighting* rather than of wall-clock time.
+  _spendCharge(dt) {
+    const c = this._charge;
+    if (!c) return;
+    if (this._chargeUsed) { c.left -= dt; this._chargeUsed = false; }
+    else if (!this.isMoving) c.idle -= dt;
+    if (c.left <= 0 || c.idle <= 0) this._charge = null;
+  }
+
+  // Armed on the tile that makes the ride long enough, so a horseman who runs
+  // into something halfway through a long route is charging when he gets there -
+  // the trigger is the distance covered, not having finished the order.
+  _armCharge() {
+    const c = this.type.charge;
+    if (!c || this._steps < c.steps) return;
+    this._charge = { left: c.window, idle: c.hold };
   }
 
   // Fires once, when the unit has nobody left. Returns an unsubscribe function.
@@ -343,6 +398,10 @@ export class Unit extends Component {
     if (!hexes || hexes.length < 2) return;
     this._route = hexes.slice(1);
     this._walked = 0;
+    // A new order is a new ride. The count starts again, and whatever the last
+    // one was worth is gone - a charge belongs to the arrival it was earned by.
+    this._steps = 0;
+    this._charge = null;
     // Measured from where the unit actually *is*, not from the tile it belongs
     // to, so a new order given mid-stride cuts the corner instead of snapping
     // back to the tile centre first.
@@ -383,6 +442,8 @@ export class Unit extends Component {
     this._grid.free(this.q, this.r);
     this.q = next.q; this.r = next.r;
     this._grid.occupy(this.q, this.r);
+    this._steps++;
+    this._armCharge();
 
     const to = this._worldAt(this.q, this.r);
     // Length is measured flat. Height is a separate curve below, so counting the
@@ -676,6 +737,7 @@ export class Unit extends Component {
   }
 
   update(dt) {
+    this._spendCharge(dt);
     // Corpses are pinned to the world, so they have to be rewritten for as long
     // as they exist - the unit standing over them can still walk away.
     if (this._fights || this._aim || this._settling || this._corpses) this._writeMelee(dt);

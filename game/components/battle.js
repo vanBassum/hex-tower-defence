@@ -43,6 +43,15 @@ import { Component } from '../../engine/gameobject.js';
 // action_loop.js - and deliberately so, because it is a question about the enemy
 // rather than about the fight.
 //
+// ── What a blow is worth is the unit's answer, not this file's ──────────────
+// `u.strike(v, dt)` rather than `u.attack * dt`, and the difference is that the
+// rate can now depend on the pair and on the moment: Spearmen hit a *mounted*
+// target harder, and Cavalry that has just ridden two hexes hits anything
+// harder for a second. Neither of those is a fact about where things are
+// standing, which is the only kind of fact this file is willing to hold - so
+// both live on the type and on the unit, and adjacency-with-casualties is still
+// the whole of what is written down here.
+//
 // Only a pair standing next to each other forms a front line. At range there is
 // nothing to form one against, so the shooters are handed a *direction* instead
 // and do nothing with it but turn onto it - which is the only thing on screen
@@ -141,8 +150,13 @@ export class Battle extends Component {
         }
         // Both at once, so two units that would kill each other do, rather than
         // whichever this loop reaches first surviving on a technicality.
-        const fromU = uReaches ? u.attack * dt : 0;
-        const fromV = vReaches ? v.attack * dt : 0;
+        //
+        // What a frame of it costs is asked of the unit rather than read off it:
+        // a rate can depend on the kind of thing being hit and on how the
+        // attacker arrived, and neither of those is a fact this file has any
+        // business knowing. See `Unit.strike`.
+        const fromU = uReaches ? u.strike(v, dt) : 0;
+        const fromV = vReaches ? v.strike(u, dt) : 0;
         if (fromU) v.damage(fromU);
         if (fromV) u.damage(fromV);
         if (u.dead) break;

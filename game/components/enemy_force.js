@@ -1,4 +1,5 @@
 import { Component } from '../../engine/gameobject.js';
+import { provokes } from '../units.js';
 
 // The other side of the board: who is out there, and what they do about you.
 //
@@ -15,7 +16,7 @@ import { Component } from '../../engine/gameobject.js';
 //   'hunt'  come for the nearest player unit inside `aggro` hexes, stop one
 //           short, and walk back to its post when there is nobody left in range.
 //
-// Spearmen hold, and the reason is the Scout. Its whole job is to see a thing
+// Raiders hold, and the reason is the Scout. Its whole job is to see a thing
 // before the thing is a problem, and an enemy that sets off the moment you are
 // three hexes out takes that away - looking at a picket and deciding to go round
 // it has to be a move the player can make. Hunters are for the kind that is
@@ -109,10 +110,15 @@ export class EnemyForce extends Component {
   }
 
   // The nearest thing worth going for, if it is inside this one's aggro range.
+  //
+  // A group that does not `provoke` is not one of them. It is the same line
+  // ActionLoop uses and it has to be here too, or the Scout is unnoticed under
+  // the experiment and hunted in the real-time game - one rule, stated on the
+  // unit, read by both things that decide to walk.
   _nearest(enemy) {
     let best = null, bestD = Infinity;
     for (const u of this._control?.units ?? []) {
-      if (u.dead) continue;
+      if (u.dead || !provokes(u)) continue;
       const d = this._grid.hexDistance(enemy.q, enemy.r, u.q, u.r);
       if (d < bestD) { bestD = d; best = u; }
     }

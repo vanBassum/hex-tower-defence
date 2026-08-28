@@ -114,10 +114,10 @@ export const MAP_1 = {
     { type: 'lantern', q:  2, r:  3, spread: 0.2 },   // the southern headland
   ],
 
-  // Who is out there. Two bodies of Spearmen holding the neck of the island,
+  // Who is out there. Two bodies of Raiders holding the neck of the island,
   // north of the cache and south of everything the causeway leads to - which is
   // the encounter the concept doc asks the first map to open with. One body of
-  // Footmen beats one of these and loses to both, so the first time the player
+  // Swordsmen beats one of these and loses to both, so the first time the player
   // comes up here they lose, and the second time they come up here with more.
   //
   // Where they stand took two corrections, and the second one is the interesting
@@ -137,8 +137,8 @@ export const MAP_1 = {
   // see with your own Scout that the way is held, and go and find something that
   // gets you through it. The cache is the other direction.
   enemies: [
-    { type: 'spearmen', q: -3, r: 1 },
-    { type: 'spearmen', q: -3, r: 0 },
+    { type: 'raiders', q: -3, r: 1 },
+    { type: 'raiders', q: -3, r: 0 },
   ],
 
   // What is out there to be found. One cache, and where it sits is the whole of

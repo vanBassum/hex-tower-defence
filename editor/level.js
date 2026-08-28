@@ -29,7 +29,22 @@ import { CARD_TYPES, HAND_LIMIT } from '../game/cards.js';
 // in the middle of building a scene; the version is here so the day the shape
 // changes, a file written before it can say so.
 export const LEVEL_FORMAT = 'hex-tower-defence.level';
-export const LEVEL_VERSION = 7;
+export const LEVEL_VERSION = 8;
+
+// Names that changed, and what they changed to. The keys of a unit type and of a
+// card are stored in every file, so renaming one is a migration - and this is the
+// whole of it, applied to files written before version 8 and to nothing else.
+//
+// Two happened at once, when the roster went from three troops to six. `footman`
+// became `swordsmen` because the player-facing name did; `spearmen` became
+// `raiders` because the player got a body of Spearmen of their own and the
+// hostile mob could not keep the name. The second is the reason this is
+// version-gated rather than an alias applied to everything: from 8 on,
+// `spearmen` in a file means the player's Spearmen, and there is no way to read
+// the same word two ways without knowing which editor wrote it.
+const LEGACY_KEYS = { footman: 'swordsmen', spearmen: 'raiders' };
+const legacyKey = (version, key) =>
+  (version <= 7 ? LEGACY_KEYS[key] ?? key : key);
 
 // A level's identity, and the reason it is not the name: a name is a label a
 // person changes their mind about, and everything that has to keep pointing at
@@ -204,7 +219,7 @@ export function parseLevel(text) {
   // the version number doing harm rather than work. Anything newer was written by
   // an editor that knows something this one does not, so that is refused rather
   // than guessed at.
-  if (![1, 2, 3, 4, 5, 6, LEVEL_VERSION].includes(raw.version)) {
+  if (![1, 2, 3, 4, 5, 6, 7, LEVEL_VERSION].includes(raw.version)) {
     throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
                     `(this editor reads version ${LEVEL_VERSION})`);
   }
@@ -224,15 +239,15 @@ export function parseLevel(text) {
   let deck = null;
   if (raw.deck !== undefined && raw.deck !== null) {
     if (!Array.isArray(raw.deck)) throw new Error('"deck" must be an array or null');
-    for (const key of raw.deck) {
+    deck = raw.deck.map(k => legacyKey(raw.version, k));
+    for (const key of deck) {
       if (!CARD_TYPES[key] || key === 'king') {
         throw new Error(`the deck holds ${JSON.stringify(key)}, which is not a card that can be dealt`);
       }
     }
-    if (raw.deck.length > deckLimit) {
-      throw new Error(`the deck holds ${raw.deck.length} cards and the limit is ${deckLimit}`);
+    if (deck.length > deckLimit) {
+      throw new Error(`the deck holds ${deck.length} cards and the limit is ${deckLimit}`);
     }
-    deck = [...raw.deck];
   }
 
   if (!Array.isArray(raw.tiles) || !raw.tiles.length) throw new Error('"tiles" must be a non-empty array');
@@ -268,7 +283,8 @@ export function parseLevel(text) {
   for (const [i, u] of (raw.units ?? []).entries()) {
     const at = `units[${i}]`;
     if (!u || typeof u !== 'object') throw new Error(`${at} is not an object`);
-    if (!UNIT_TYPES[u.type]) {
+    const type = legacyKey(raw.version, u.type);
+    if (!UNIT_TYPES[type]) {
       throw new Error(`${at} is a ${JSON.stringify(u.type ?? null)}, which is not a unit type`);
     }
     if (!Number.isInteger(u.q) || !Number.isInteger(u.r)) throw new Error(`${at} needs whole "q" and "r"`);
@@ -285,7 +301,7 @@ export function parseLevel(text) {
     // no version of its own: a file that does not mention it means what it always
     // meant. Anything other than `true` is not dormant rather than an error,
     // because the absence of a flag is the common case and has to stay cheap.
-    const unit = { type: u.type, q: u.q, r: u.r };
+    const unit = { type, q: u.q, r: u.r };
     if (u.dormant === true) unit.dormant = true;
     units.push(unit);
   }
@@ -558,8 +574,8 @@ export function raiseTile(level, q, r, by) {
 }
 
 // ── The deck it is tested against ───────────────────────────────────────────
-// A list of card keys rather than a table of counts, because two Footmen cards
-// are two bodies of Footmen - see the note at the top of cards.js. Duplicates are
+// A list of card keys rather than a table of counts, because two Swordsmen cards
+// are two bodies of them - see the note at the top of cards.js. Duplicates are
 // the point.
 
 export function deckLimit(level) {

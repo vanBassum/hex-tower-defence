@@ -1,4 +1,5 @@
 import { Component } from '../../engine/gameobject.js';
+import { provokes } from '../units.js';
 
 const key = (h) => `${h.q},${h.r}`;
 
@@ -45,10 +46,12 @@ export const STATE = {
 // are expected to be rewritten several times before this is either kept or
 // deleted, and hunting them through the methods below is not the way to do that.
 export const TACTICS = {
-  // How far a group may walk on one action, by unit type. A Scout goes furthest
-  // because looking is what it is for; the King the least, because the whole
-  // force is deployed around him and moving him moves where the army can arrive.
-  move: { scout: 5, king: 3, footman: 4, archers: 3, spearmen: 4 },
+  // How far a group may walk on one action is `moveRange` on its own type, not a
+  // table here. It moved there when the roster grew to six, and the reason is
+  // that it stopped being a tuning knob and became half of what a unit *is* -
+  // Heavy Infantry at two hexes and Cavalry at seven are two ways of using the
+  // board, and a number that describes a unit belongs with the unit. What is
+  // left here is the fallback for anything that does not say.
   moveDefault: 4,
 
   // How close you have to come before an enemy answers, by stance. This is the
@@ -137,7 +140,7 @@ export class ActionLoop extends Component {
   canCommand() { return true; }
 
   allowance(unit) {
-    return TACTICS.move[unit?.type?.key] ?? TACTICS.moveDefault;
+    return unit?.type?.moveRange ?? TACTICS.moveDefault;
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
@@ -233,6 +236,13 @@ export class ActionLoop extends Component {
   // things, and the second is not a nicety: somebody has come inside its own
   // threat ring, *or* somebody is close enough to be shooting it.
   //
+  // And one exception, which is a property of the unit rather than a case here:
+  // a group that does not `provoke` is not counted, so a Scout standing three
+  // hexes off moves nobody. That is the whole of the Scout's reaction rule and
+  // it deliberately says nothing about combat - walk him onto the tile next to
+  // something and Battle fights him, because Battle asks where things are
+  // standing and has never heard of this.
+  //
   // Archers outrange a picket's ring, so without the second half a volley from
   // three hexes is free damage forever and the thing being shot stands there
   // being killed. That is not a difficulty knob, it is a rhythm with a hole in
@@ -241,17 +251,26 @@ export class ActionLoop extends Component {
   _relevant(enemy) {
     const ring = TACTICS.react[enemy.type.stance] ?? TACTICS.reactDefault;
     for (const u of this._control?.units ?? []) {
-      if (u.dead) continue;
+      if (u.dead || !provokes(u)) continue;
       const d = this._grid.hexDistance(enemy.q, enemy.r, u.q, u.r);
       if (d <= Math.max(ring, u.type.range ?? 1)) return true;
     }
     return false;
   }
 
+  // Who a relevant enemy walks at, and it is the same filter for the same
+  // reason: a picket that would not set off for a Scout must not set off for
+  // somebody else and then pick the Scout as the nearer target on arrival.
+  //
+  // Both halves are `provokes(u)` and nothing else - no unit is named here, and
+  // the day a second kind of thing goes unnoticed it is a field on its type.
+  // Nothing about *fighting* reads this: something standing next to a Scout is
+  // in a fight with it, because Battle asks where things are standing and never
+  // asks this question at all.
   _nearest(enemy) {
     let best = null, bestD = Infinity;
     for (const u of this._control?.units ?? []) {
-      if (u.dead) continue;
+      if (u.dead || !provokes(u)) continue;
       const d = this._grid.hexDistance(enemy.q, enemy.r, u.q, u.r);
       if (d < bestD) { bestD = d; best = u; }
     }

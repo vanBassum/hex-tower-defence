@@ -14,10 +14,9 @@ export const DEBUG = {
   // the only thing the game puts on the board itself, because every card is
   // played onto a tile beside him and something has to be there first.
   kingStart: { q: -3, r: 4 },
-  scoutViewDistance: 2,
 
   // What the run is dealt on top of the King, and it is nothing: every card the
-  // player holds is one they walked onto. Putting `'scout'` or `'footman'` back
+  // player holds is one they walked onto. Putting `'scout'` or `'swordsmen'` back
   // here is how you play the second half of a run without playing the first.
   startingHand: [],
 
@@ -80,7 +79,7 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     // this milestone actually needs tried: whether a card is worth walking back
     // to camp for depends entirely on how far camp is, and answering that by
     // walking to the cache every time is answering it twice a minute.
-    card(key = 'footman') { return deployment?.addCard(key) ?? null; },
+    card(key = 'swordsmen') { return deployment?.addCard(key) ?? null; },
 
     toggleVision(on = !DEBUG.showVision) {
       DEBUG.showVision = on;
@@ -92,7 +91,6 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     // is the version you want while deciding what the number should be.
     setViewDistance(n, unit = null) {
       for (const u of unit ? [unit] : control.units) u.viewDistance = n;
-      DEBUG.scoutViewDistance = n;
       control.refreshVision();
       refreshVision();
       return n;
@@ -117,7 +115,7 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     // recruited properly now - walk onto the cache - so this is for the two
     // things that are still worth checking by hand: that fog is the union over
     // the force, and what a unit type looks like without walking to the tile it
-    // is granted on. `hex.spawn(q, r, 'footman')`.
+    // is granted on. `hex.spawn(q, r, 'swordsmen')`.
     spawn(q, r, type = 'scout') {
       if (!spawn) return null;
       const u = spawn(type, q, r);

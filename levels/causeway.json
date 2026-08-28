@@ -1,21 +1,21 @@
 {
   "format": "hex-tower-defence.level",
-  "version": 7,
+  "version": 8,
   "id": "causeway",
   "name": "The Causeway",
   "hexSize": 1,
   "radius": 16,
   "deckLimit": 6,
-  "deck": ["footman", "archers"],
+  "deck": ["swordsmen", "archers"],
   "king": { "q": -10, "r": 5 },
   "units": [
-    { "type": "spearmen", "q": -7, "r": 4 },
-    { "type": "spearmen", "q": 0, "r": 0 },
-    { "type": "spearmen", "q": 3, "r": -2 },
+    { "type": "raiders", "q": -7, "r": 4 },
+    { "type": "raiders", "q": 0, "r": 0 },
+    { "type": "raiders", "q": 3, "r": -2 },
     { "type": "scout", "q": -3, "r": 1, "dormant": true },
-    { "type": "footman", "q": 5, "r": -2, "dormant": true },
-    { "type": "spearmen", "q": 10, "r": -4 },
-    { "type": "spearmen", "q": 12, "r": -6 }
+    { "type": "swordsmen", "q": 5, "r": -2, "dormant": true },
+    { "type": "raiders", "q": 10, "r": -4 },
+    { "type": "raiders", "q": 12, "r": -6 }
   ],
   "props": [
     {"type": "tree", "q": -11, "r": 4, "salt": 5, "spread": 0.35},

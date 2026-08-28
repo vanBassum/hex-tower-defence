@@ -51,7 +51,7 @@ import { DEBUG, installDebug } from './debug.js';
 //   rig       the camera to look through
 //   fog       false to play with the whole board visible - see the note below
 //   deck      the cards the run opens with, as card keys - a list rather than a
-//             table of counts, because two Footmen cards are two bodies
+//             table of counts, because two Swordsmen cards are two bodies
 //   hand      the element the card bar draws into
 //   debug     whether to install `window.hex` and the developer keys
 //   focus     whether to point the camera at the King on the way in
@@ -233,7 +233,7 @@ export function startPlay({
 
   // What is out there to be found. One cache of somebody's colours on the small
   // hill east of the start, and the first thing on this board that is neither
-  // terrain nor the player: walk onto it and the Footmen it belonged to join the
+  // terrain nor the player: walk onto it and the Swordsmen it belonged to join the
   // force.
   //
   // It gets its own GameObject each rather than a layer, which is the opposite of
@@ -273,7 +273,6 @@ export function startPlay({
     const lampLight = UNIT_TYPES[type]?.lamp ? lampPool.pop() ?? null : null;
     const unit = go.addComponent(new Unit({
       grid: map.grid, ground: hexGround, type, q, r,
-      viewDistance: type === 'scout' ? DEBUG.scoutViewDistance : null,
       colors: MOOD.units, tuning: { lamp: LAMPS[type], lampLight },
       // Scaled up rather than switched on, for anything that was not here a moment
       // ago. What the level stands on the board at setup was always there.

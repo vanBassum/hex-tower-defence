@@ -73,11 +73,11 @@ export function thumbSvg(level, { width = 228, height = 96 } = {}) {
 
 // Somebody on a hex, drawn from the same three facts about their type that the
 // board itself is read by: what shape the crowd stands in, whether anything
-// sticks up out of it, and whether it carries a light. So a Footman is a rank
-// with a shaft over it, Spearmen are a mob with theirs going every way, a Scout
-// is a small crowd with a glow, and the King has the flag - the four of them tell
-// apart at ten pixels for the reason they tell apart on the board, which is
-// silhouette rather than hue.
+// sticks up out of it, and whether it carries a light. So a body of Swordsmen is
+// a rank with a shaft over it, Raiders are a mob with theirs going every way, a
+// Scout is a small crowd with a glow, and the King has the flag - they tell apart
+// at ten pixels for the reason they tell apart on the board, which is silhouette
+// rather than hue.
 //
 // Nothing here has a table of unit ids in it. A type added to the game gets a
 // mark out of its own `formation`, `spears`, `standard` and `lamp`, and the only
@@ -85,7 +85,7 @@ export function thumbSvg(level, { width = 228, height = 96 } = {}) {
 function mark(q, r, type, color = null) {
   if (!type) return '';
   const { x, z } = GEO.hexToWorld(q, r);
-  const tint = css(color ?? (type.hostile ? MOOD.units.spearmen.trim : MOOD.units.footman.trim));
+  const tint = css(color ?? (type.hostile ? MOOD.units.raiders.trim : MOOD.units.swordsmen.trim));
   const dark = css(0x0b1220);
   const parts = [];
 

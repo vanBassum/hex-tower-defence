@@ -130,11 +130,14 @@ function name(card) {
 
 // Kept here rather than imported from units.js so the bar has no opinion about
 // the scene: it is handed cards and draws them.
-const NAMES = { king: 'King', scout: 'Scout', footman: 'Footmen', archers: 'Archers' };
+const NAMES = {
+  king: 'King', scout: 'Scout', swordsmen: 'Swordsmen', archers: 'Archers',
+  spearmen: 'Spearmen', heavy: 'Heavy Infantry', cavalry: 'Cavalry',
+};
 
 // The art is the unit's silhouette and nothing else, because the silhouette is
 // what the player has to match against the thing standing on the board - the
-// spears above the helmets are how a Footman is told apart at the game's camera,
+// steel above the helmets is how a body of Swordsmen is told apart at the game's camera,
 // so they are how the card is told apart too.
 // The three figures, drawn in the same hand as the card art above them: flat
 // shapes in `currentColor`, no strokes finer than the art uses, and each one the
@@ -172,6 +175,18 @@ const STAT_ICONS = {
       <circle cx="7" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.62"/>
       <circle cx="7" cy="6" r="1.6" fill="currentColor"/>
     </svg>`,
+  // Ground covered, drawn as ground: two chevrons and a bar under them. A boot
+  // was the obvious answer and reads as a boot at this size and nothing else -
+  // what has to come across is *distance*, and an arrow going somewhere is the
+  // only thing eleven pixels wide that says it.
+  move: /* html */`
+    <svg viewBox="0 0 14 12" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+        <path d="M4 2.6 L8 6 L4 9.4" opacity="0.62"/>
+        <path d="M8.6 2.6 L12.6 6 L8.6 9.4"/>
+      </g>
+      <path d="M0.8 5.2 H4.4 V6.8 H0.8z" fill="currentColor" opacity="0.4"/>
+    </svg>`,
 };
 
 const ART = {
@@ -193,7 +208,7 @@ const ART = {
         <path d="M32 30 l3.5 -7 h1 L40 30z" opacity="0.7"/>
       </g>
     </svg>`,
-  footman: /* html */`
+  swordsmen: /* html */`
     <svg viewBox="0 0 48 32" aria-hidden="true">
       <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.85">
         <line x1="8"  y1="29" x2="10" y2="3"/>
@@ -205,7 +220,7 @@ const ART = {
         <path d="M8 30 l3.5 -6 h1 L16 30z M22 30 l3.5 -7 h1 L30 30z M36 30 l3.5 -6 h1 L44 30z" opacity="0.75"/>
       </g>
     </svg>`,
-  // The same ranks the Footmen card draws, with the one difference the board
+  // The same ranks the Swordsmen card draws, with the one difference the board
   // itself uses: curves standing over the heads instead of straight shafts
   // leaning forward. Nothing here says three hexes - what has to be matched is
   // the shape of the thing on the tile.
@@ -219,6 +234,54 @@ const ART = {
       <g fill="currentColor">
         <circle cx="12" cy="21" r="3.6"/><circle cx="26" cy="20" r="3.6"/><circle cx="40" cy="21" r="3.6"/>
         <path d="M8 30 l3.5 -6 h1 L16 30z M22 30 l3.5 -7 h1 L30 30z M36 30 l3.5 -6 h1 L44 30z" opacity="0.75"/>
+      </g>
+    </svg>`,
+  // The same ranks again, with the shafts *levelled* instead of shouldered -
+  // which is exactly the difference on the board, and exactly what two hexes of
+  // reach means: they are fighting over the top of whoever is in front.
+  spearmen: /* html */`
+    <svg viewBox="0 0 48 32" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.85">
+        <line x1="4"  y1="13" x2="26" y2="8"/>
+        <line x1="12" y1="19" x2="34" y2="13"/>
+        <line x1="20" y1="24" x2="44" y2="18"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="12" cy="21" r="3.6"/><circle cx="26" cy="20" r="3.6"/><circle cx="40" cy="21" r="3.6"/>
+        <path d="M8 30 l3.5 -6 h1 L16 30z M22 30 l3.5 -7 h1 L30 30z M36 30 l3.5 -6 h1 L44 30z" opacity="0.75"/>
+      </g>
+    </svg>`,
+  // Four rather than three, shoulder to shoulder, and no daylight between them.
+  // The card has to say *slab* - that is the whole unit - and a crowd with gaps
+  // in it is any other crowd.
+  heavy: /* html */`
+    <svg viewBox="0 0 48 32" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.9">
+        <line x1="9"  y1="26" x2="9"  y2="5"/>
+        <line x1="20" y1="26" x2="20" y2="4"/>
+        <line x1="31" y1="26" x2="31" y2="5"/>
+        <line x1="42" y1="26" x2="42" y2="4"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="9" cy="19" r="4.2"/><circle cx="20" cy="18" r="4.2"/>
+        <circle cx="31" cy="19" r="4.2"/><circle cx="42" cy="18" r="4.2"/>
+        <path d="M4 30 l4 -8 h2 L14 30z M15 30 l4 -9 h2 L25 30z M26 30 l4 -8 h2 L36 30z M37 30 l4 -9 h2 L47 30z"/>
+      </g>
+    </svg>`,
+  // Two, leaning, with the lances down and forward. Fewer figures than anything
+  // else in the hand and the only ones off the vertical, which is as close as
+  // flat shapes get to saying "at speed".
+  cavalry: /* html */`
+    <svg viewBox="0 0 48 32" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.85">
+        <line x1="2"  y1="6"  x2="30" y2="14"/>
+        <line x1="14" y1="14" x2="46" y2="23"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="15" cy="15" r="4"/>
+        <path d="M9 30 l7 -12 h2 L22 30z"/>
+        <circle cx="31" cy="19" r="3.4" opacity="0.8"/>
+        <path d="M26 30 l6 -9 h2 L38 30z" opacity="0.8"/>
       </g>
     </svg>`,
   scout: /* html */`
