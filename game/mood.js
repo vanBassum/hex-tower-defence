@@ -322,6 +322,18 @@ export const MOOD = {
     opacity: 0.16,
   },
 
+  // Where the group that is picked up may walk on this action. The same
+  // treatment as the two above and quieter than either, because it is a much
+  // larger patch of board and it is up for as long as anything is selected -
+  // the deployment zone gets to shout for a second, this has to be able to sit
+  // there. Cool rather than warm: it is the route preview's own colour, which
+  // is drawn over the top of it and should read as the brighter thread through
+  // the field rather than as a different idea.
+  reach: {
+    color: 0x9fd8ee,
+    opacity: 0.07,
+  },
+
   // Deeper orange, and brighter to match. Green grass subtracts red from any
   // light landing on it, so a light that is merely warm comes back yellow-green;
   // the fix is to take green out of the lamp and then push hard enough that the

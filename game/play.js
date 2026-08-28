@@ -18,6 +18,7 @@ import { Pickup } from './components/pickup.js';
 import { Deployment } from './components/deployment.js';
 import { EnemyForce } from './components/enemy_force.js';
 import { Battle } from './components/battle.js';
+import { ActionLoop, makeStatus } from './components/action_loop.js';
 import { CARD_TYPES } from './cards.js';
 import { CardBar } from './ui/card_bar.js';
 import { DEBUG, installDebug } from './debug.js';
@@ -53,6 +54,9 @@ import { DEBUG, installDebug } from './debug.js';
 //   debug     whether to install `window.hex` and the developer keys
 //   focus     whether to point the camera at the King on the way in
 //   onReady   called once the first real frame has been drawn
+//   tactical  one action at a time instead of real time - see action_loop.js.
+//             False gives back the real-time game exactly as it was, which is
+//             the seam the experiment is meant to be removable along.
 //
 // ── The tower defence layer that used to live here ──────────────────────────
 // Towers, waves, an economy, lives, a route across the island: all gone. What is
@@ -72,6 +76,7 @@ export function startPlay({
   debug = true,
   focus = true,
   onReady = null,
+  tactical = true,
 } = {}) {
   // Everything that went into the scene, in the order it went in, so it can all
   // come back out. `add` is the only way anything gets added below.
@@ -306,6 +311,17 @@ export function startPlay({
   // come from the *tile* - its own brightness, a rim, a lift - or from the unit,
   // not from a decal laid over the top.
   const forceGO = new GameObject('Force');
+  // And - only while one action at a time is the game - where the group that is
+  // picked up may get to on this one. It goes on before the route preview so the
+  // route reads as the bright thread through the field rather than as a second
+  // colour arguing with it, and it is the *same* treatment as the deployment
+  // zone rather than the wash that used to be here: an answer to "where may this
+  // go", up only while somebody is asking, and additive so a hex catches a
+  // little more light instead of having a hexagon painted on it.
+  const reachOverlay = tactical ? forceGO.addComponent(new HexOverlay(map.grid, [], {
+    color: MOOD.reach.color, opacity: MOOD.reach.opacity, y: 0.02, additive: true,
+    heightAt: (q, r) => hexGround.topY(q, r),
+  })) : null;
   const pathOverlay = forceGO.addComponent(new HexOverlay(map.grid, [], {
     color: 0x9fd8ee, opacity: 0.13, y: 0.03, additive: true,
     heightAt: (q, r) => hexGround.topY(q, r),
@@ -409,6 +425,23 @@ export function startPlay({
   battleGO.addComponent(new Battle({ grid: map.grid, sides: [control, enemies] }));
   add(battleGO);
 
+  // And - the experiment - the thing that decides when either side may act at
+  // all. It goes on last of the three because it drives the other two: it takes
+  // EnemyForce off automatic and hands it one decision per player action, and it
+  // waits on Battle rather than replacing it, so a fight still looks like a
+  // fight. See action_loop.js; `tactical: false` removes the whole of it.
+  const loopGO = new GameObject('Actions');
+  const loop = tactical ? loopGO.addComponent(new ActionLoop({
+    grid: map.grid, control, enemies, visibility,
+    overlay: reachOverlay, status: makeStatus(),
+  })) : null;
+  if (tactical) add(loopGO);
+
+  // The one question every input path asks. Not a flag kept here: while the
+  // board is finishing what was asked of it there is exactly one authority on
+  // whether it will take another order, and it is the loop.
+  const busy = () => loop != null && !loop.canCommand();
+
   // A cursor on the hex under the mouse, and now three things asking what the mouse
   // means. The picker still knows nothing about any of them: it reports a hex and
   // the force decides whether that is a unit, a destination, or a change of mind.
@@ -427,13 +460,27 @@ export function startPlay({
     grid: map.grid,
     ground: hexGround,
     onHover: (hex) => { deployment.handleHover(hex); control.handleHover(hex); },
-    onPick:  (hex) => { if (!deployment.handlePick(hex)) control.handlePick(hex); },
+    // A hex the selection can reach is a destination, and everything else the
+    // left button always meant - pick a group up, or put it down. The order
+    // matters: the card gets first refusal, then the move, then selection, so
+    // clicking the tile you are already going to does not also deselect.
+    onPick:  (hex) => {
+      if (busy()) return;
+      if (deployment.handlePick(hex)) return;
+      if (loop?.handlePick(hex)) return;
+      control.handlePick(hex);
+    },
     // A right *drag* is the camera's rotate and a right *press* is the order, and
     // the rig is the one that knows which just happened - so an order that arrives
     // at the end of a drag is thrown away here rather than in either component.
     onOrder: (hex) => {
       if (rig.consumedRightPress) return;
-      if (!deployment.handleOrder(hex)) control.handleOrder(hex);
+      if (busy()) return;
+      if (deployment.handleOrder(hex)) return;
+      // Through the loop when there is one, so the right button commits an
+      // action rather than going round the back of it.
+      if (loop) loop.handleOrder(hex);
+      else control.handleOrder(hex);
     },
   }));
   add(cursor);
@@ -498,7 +545,7 @@ export function startPlay({
   // far a scout sees is a number that has to be tried, not a feature.
   if (debug) installDebug({
     game, grid: map.grid, ground: hexGround, rig, mask, control, visibility,
-    pickups, deployment, enemies,
+    pickups, deployment, enemies, loop,
     // How a unit gets built, handed over rather than rebuilt in the debug module -
     // it is the same call a collected pickup goes through.
     spawn: deploy,
@@ -544,7 +591,7 @@ export function startPlay({
       game.scene.add(mesh);
       return mesh;
     });
-    const overlays = [pathOverlay, placeOverlay];
+    const overlays = [pathOverlay, placeOverlay, reachOverlay].filter(Boolean);
     for (const o of overlays) o.setHexes([{ q: start.q, r: start.r }]);
 
     boot.beforeWarm = performance.now();
@@ -598,7 +645,7 @@ export function startPlay({
 
   return {
     teardown,
-    map, control, enemies, deployment, visibility, mask, deploy,
+    map, control, enemies, deployment, visibility, mask, deploy, loop,
     ground: hexGround,
     king,
   };

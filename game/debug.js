@@ -27,7 +27,8 @@ export const DEBUG = {
 const VISION_COLOR = 0xffc07a;
 
 export function installDebug({ game, grid, ground, rig, mask, control, visibility,
-                               spawn = null, pickups = [], deployment = null, enemies = null }) {
+                               spawn = null, pickups = [], deployment = null, enemies = null,
+                               loop = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -65,6 +66,11 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     // The other side, so a fight can be started without walking into one:
     // `hex.enemies.units[0].damage(5)`, or `hex.teleport(0, 2)` and wait.
     enemies,
+    // The action loop, while there is one - `hex.loop.state` is why the board is
+    // not taking orders, and `hex.loop.TACTICS` is where the numbers are. It is
+    // the experiment's knobs rather than the game's, so it is null when the
+    // experiment is off.
+    loop,
 
     // A card in hand without finding the thing that carries it. The one knob
     // this milestone actually needs tried: whether a card is worth walking back

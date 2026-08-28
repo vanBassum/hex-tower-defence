@@ -62,6 +62,12 @@ export class UnitControl extends Component {
     this._unknown = null;         // lazily built set of "q,r" nobody has seen
     this._hover = null;
     this._pathOverlay = pathOverlay;
+    // How far one order may reach, when something is spending them. Null is no
+    // limit, which is the real-time game. It lives here rather than in whatever
+    // is counting because the route preview and the order are both drawn from
+    // `_pathTo`, and a limit checked anywhere else would be a limit the preview
+    // could disagree with.
+    this.maxSteps = null;
     this.onGrant = onGrant;
     this.onSelect = onSelect;
     this._pending = units;
@@ -182,7 +188,9 @@ export class UnitControl extends Component {
     // goal and that exception is wrong for this one.
     if (!this._visibility.isExplored(hex.q, hex.r)) return null;
     if (!this._grid.isWalkable(hex.q, hex.r)) return null;   // crags, and other units
-    return this._grid.findPath(u.q, u.r, hex.q, hex.r, this._unknownKeys());
+    const path = this._grid.findPath(u.q, u.r, hex.q, hex.r, this._unknownKeys());
+    if (path && this.maxSteps != null && path.length - 1 > this.maxSteps) return null;
+    return path;
   }
 
   _refreshPath() {

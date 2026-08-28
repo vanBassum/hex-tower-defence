@@ -40,6 +40,11 @@ export class EnemyForce extends Component {
     this._rethink = rethink;
     this._since = 0;
     this.units = [];
+    // Whether it decides for itself. Off when something else is deciding *when*
+    // the other side gets to act - see ActionLoop - and the roster, the posts
+    // and the deaths all keep working, because those are facts about who is out
+    // there rather than about who is thinking.
+    this.auto = true;
   }
 
   add(unit) {
@@ -61,6 +66,7 @@ export class EnemyForce extends Component {
   }
 
   update(dt) {
+    if (!this.auto) return;
     // A decision every frame would be a hundred path searches a second to
     // produce the same answer, and it would also make an enemy re-order itself
     // mid-step forever - the route is recomputed from where it *is*, so asking

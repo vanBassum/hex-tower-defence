@@ -54,7 +54,8 @@ thing being changed - reach for them then, not by default.
       props.js / units.js / pickups.js / cards.js     what things are
       detail.js             the ground cover: sets, and the scatter that derives
                             it from a patch rather than storing it
-      components/           prop_layer, unit, unit_control, pickup, deployment
+      components/           prop_layer, unit, unit_control, pickup, deployment,
+                            action_loop (EXPERIMENT: one action at a time)
       ui/card_bar.js        the hand, in DOM
       debug.js              window.hex - developer knobs, not game UI
     editor/                 the level editor at /editor/ - same world, no game
@@ -70,6 +71,8 @@ thing being changed - reach for them then, not by default.
       main.js               second composition root; edits rebuild the board
       ui/                   editbar (tool/content/assets/settings), panel,
                             levels (library)
+    levels/                 editor levels as files, for importing - skirmish.json
+                            is the encounter the action loop is tested against
     tools/                  map.mjs (authoring), check.py (verification)
 
 ## Invariants
@@ -212,6 +215,27 @@ Break one of these and something three files away goes subtly wrong.
   nowhere to arrive cannot be opened. The format still *carries* a friendly unit,
   and `play.js` still hands one to the roster, so a level written before this
   reads back unchanged - there is simply no way to author another.
+- **EXPERIMENT: the board takes one action at a time.** `ActionLoop` in
+  `game/components/action_loop.js` is a prototype of turn-like play with no turn
+  in it: pick a group, spend one move, the enemies that move made *relevant*
+  answer it, the fight resolves, control comes back. There is no End Turn and no
+  enemy phase - an enemy that the action did not concern does nothing at all,
+  which is the whole claim being tested. Three rules hold it together. **There is
+  exactly one authority on whether an order may be given** and it is
+  `loop.canCommand()`; nothing else keeps a busy flag, because two booleans about
+  the same fact is how a game ends up taking an order in the middle of a fight.
+  **The other side stops thinking for itself** - the loop sets `EnemyForce.auto =
+  false` and hands it one decision per player action, and leaving both running is
+  an enemy that reacts *and* keeps walking while the player is choosing.
+  **`tactical: false` on `startPlay` removes the whole of it** and gives back the
+  real-time game unchanged, which is the seam an experiment has to have to be an
+  experiment. Every number is in `TACTICS` at the top of that file, because the
+  reaction rules are expected to be rewritten several times before this is kept
+  or deleted.
+- **A move allowance is told to `UnitControl`, not checked beside it.**
+  `control.maxSteps` clamps `_pathTo`, so the reachable overlay, the route
+  preview and the right-button order are one answer rather than three that can
+  disagree - the same reason area verbs are handed `previewHexes()`.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.
@@ -274,6 +298,8 @@ Break one of these and something three files away goes subtly wrong.
 | An enemy kind | `UNIT_TYPES` with `hostile` + a behaviour field; place it in `maps.js` `enemies` |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
+| A reaction rule, or how far a group moves | `TACTICS` in `game/components/action_loop.js` |
+| A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
 | A wire between components | `game/play.js`, never inside either component |
 | Something the *page* owns, not the level | `game/main.js` (or `editor/main.js`) |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |
