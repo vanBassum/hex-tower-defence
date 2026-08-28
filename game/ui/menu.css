@@ -79,11 +79,14 @@
   outline-offset: 2px;
 }
 
+/* The unlit field - see the note in menu.js about why it is not the board. It
+   fills the panel edge to edge and clips to it: a letterbox of card background
+   above and below read as a picture that had failed to load. */
 .menu-shot {
   display: block;
   border-radius: 7px;
   background: rgba(6, 10, 18, 0.6);
-  padding: 6px 0;
+  overflow: hidden;
 }
 .menu-shot svg { display: block; width: 100%; height: 108px; }
 
@@ -105,10 +108,63 @@
 }
 .menu-card.is-broken .menu-blurb { color: #d99184; }
 
+/* ── How it ended ──────────────────────────────────────────────────────────
+   The same sheet as the menu, dimmer and with one sentence on it. It is the
+   menu's stylesheet rather than the page's because it is the other half of the
+   same screen: you come out of a board into this and out of this into the list.
+
+   Full-screen and it takes the pointer, which is the whole of "the run is over" -
+   there is no flag anywhere saying the board is finished, because a board nobody
+   can click is finished. */
+#over {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(120% 90% at 50% 40%, rgba(10, 18, 30, 0.72), rgba(4, 7, 12, 0.93));
+  color: #b9cfe0;
+  font-family: system-ui, sans-serif;
+  text-align: center;
+  animation: over-in 520ms ease both;
+}
+#over[hidden] { display: none; }
+/* Slow, because it arrives on top of something the player was watching. */
+@keyframes over-in { from { opacity: 0; } to { opacity: 1; } }
+
+.over-sheet { display: grid; gap: 12px; justify-items: center; }
+.over-sheet h2 {
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #e8f2f8;
+}
+/* Red for the loss, and it is the only place the interface borrows the enemy's
+   colour - see MOOD.units.raiders. Losing is the one thing on screen that is
+   about them. */
+#over.is-lost .over-sheet h2 { color: #d99184; }
+.over-sheet p { font-size: 12.5px; color: #7f93a4; }
+.over-back {
+  margin-top: 8px;
+  padding: 9px 20px;
+  border-radius: 99px;
+  background: rgba(9, 16, 30, 0.6);
+  border: 1px solid rgba(255, 210, 74, 0.45);
+  color: #ffd24a;
+  font: 11px/1 system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.over-back:hover { background: rgba(255, 210, 74, 0.12); border-color: rgba(255, 210, 74, 0.8); }
+
 /* Nothing that describes playing belongs on screen while there is nothing to
    play. The legend is a following sibling of the menu in the page, so this is
    the whole of hiding it - no class to set and nothing for main.js to remember. */
-#menu:not(.is-away) ~ #controls {
+#menu:not(.is-away) ~ #controls,
+#over:not([hidden]) ~ #controls {
   opacity: 0;
   pointer-events: none;
 }

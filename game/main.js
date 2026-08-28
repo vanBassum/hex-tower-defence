@@ -56,7 +56,46 @@ game.add(air);
 // ── The board that is on ────────────────────────────────────────────────────
 const loading = document.getElementById('loading');
 const now = document.getElementById('now');
+const over = document.getElementById('over');
 const menu = new Menu({ root: document.getElementById('menu'), onPick: play });
+
+// What a finished board says. The page owns this rather than play.js for the
+// reason the menu and the camera live here: the editor's Play ends the same way
+// and wants a line in its status bar, not a screen. See `onOutcome` in play.js.
+//
+// Neither of them offers to try again. Restarting is picking the same board off
+// the list, which is one more click and no new machinery - and the list is where
+// somebody who has just lost is going anyway.
+const ENDINGS = {
+  lost: {
+    title: 'The King has fallen',
+    line: 'Nothing arrives without him. Whatever is still standing out there is on its own.',
+  },
+  won: {
+    title: 'The island is quiet',
+    line: 'Every picket on it is down. Walk the rest of it, or take another board.',
+  },
+};
+
+function ended(kind) {
+  const end = ENDINGS[kind];
+  if (!end) return;
+  over.className = `is-${kind}`;
+  over.innerHTML = `<div class="over-sheet">
+      <h2>${end.title}</h2>
+      <p>${end.line}</p>
+      <button type="button" class="over-back">Levels</button>
+    </div>`;
+  over.hidden = false;
+}
+
+// Anywhere on it, not only the button: a screen with one way off it should not
+// ask to be aimed at.
+over.onclick = () => {
+  over.hidden = true;
+  stop();
+  menu.show(levels);
+};
 
 let session = null;
 
@@ -67,12 +106,14 @@ let session = null;
 // merged on top of whatever the session left, which is why the object is the
 // board when there is one and the page when there is not.
 function publish() {
-  window.hex = Object.assign(window.hex ?? {}, { game, rig, menu, play, stop, levels });
+  window.hex = Object.assign(window.hex ?? {},
+                             { game, rig, menu, play, stop, levels, session });
 }
 
 async function play(entry) {
   stop();
   menu.hide();
+  over.hidden = true;
   // The message goes back up for the frame play.js throws away compiling its
   // shaders. It covered the first board when there was only ever one; there are
   // several now and every one of them costs that frame.
@@ -88,6 +129,7 @@ async function play(entry) {
     // A message that leaves before the freeze it exists to cover is worse than no
     // message at all, so it goes when play.js says the slow frame is done.
     onReady: () => loading.classList.add('is-done'),
+    onOutcome: ended,
   });
   now.innerHTML = `<span>${entry.name}</span><span class="back">Levels</span>`;
   now.hidden = false;
@@ -98,6 +140,7 @@ function stop() {
   session?.teardown();
   session = null;
   now.hidden = true;
+  over.hidden = true;
   publish();
 }
 

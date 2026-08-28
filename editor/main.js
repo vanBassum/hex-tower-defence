@@ -1109,6 +1109,12 @@ function begin() {
     // Stay exactly where the board is being looked at. Flying to the King is
     // right when a run opens and wrong when this is the fifth time in a minute.
     focus: false,
+    // A line rather than a screen. Playing here is testing a board, so the
+    // useful thing to know is *that* it ended and which way - the way out is the
+    // Play button, which is already where the pointer is.
+    onOutcome: (kind) => say(kind === 'won'
+      ? 'Every enemy on this board is down.'
+      : 'The King is dead - this board is lost.', kind === 'lost'),
   });
 }
 

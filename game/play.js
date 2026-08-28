@@ -56,6 +56,7 @@ import { DEBUG, installDebug } from './debug.js';
 //   debug     whether to install `window.hex` and the developer keys
 //   focus     whether to point the camera at the King on the way in
 //   onReady   called once the first real frame has been drawn
+//   onOutcome called once, with 'won' or 'lost', when the board is finished
 //   tactical  one action at a time instead of real time - see action_loop.js.
 //             False gives back the real-time game exactly as it was, which is
 //             the seam the experiment is meant to be removable along.
@@ -78,6 +79,7 @@ export function startPlay({
   debug = true,
   focus = true,
   onReady = null,
+  onOutcome = null,
   tactical = true,
 } = {}) {
   // Everything that went into the scene, in the order it went in, so it can all
@@ -443,6 +445,40 @@ export function startPlay({
   }
   add(garrisonGO);
 
+  // ── When the board is finished ─────────────────────────────────────────────
+  // Two ends, and both are read off the rosters rather than counted anywhere:
+  // the King is gone, or the other side is. `onDied` is already how everything
+  // in this game learns that a unit has nobody left, so this is two listeners
+  // and a latch - and the latch matters, because the last enemy dying and the
+  // King dying in the same second are two calls otherwise.
+  //
+  // It *reports*. What a finished board does - a banner, the way back to the
+  // list, a level unlocked one day - is the page's business and differs between
+  // the two callers, which is the same split the hand and the camera are already
+  // on. Nothing here stops the world: the board keeps running behind whatever
+  // the page puts over it, which is exactly how the menu already works.
+  let outcome = null;
+  const finish = (kind) => {
+    if (outcome) return;
+    outcome = kind;
+    // The one thing worth doing to the board itself. A group left picked up
+    // under a banner still has a yellow ring and a reachable set drawn round it,
+    // which is the interface promising something it will not do.
+    control.deselect();
+    onOutcome?.(kind);
+  };
+  king.onDied(() => finish('lost'));
+  // Only where there was something to beat. A board with nothing hostile on it -
+  // the island is one - is not a board already won, and saying so on the first
+  // frame would be announcing a victory over nobody.
+  //
+  // The roster has already dropped the unit by the time this runs: EnemyForce's
+  // own `onDied` was registered in `add`, before this one, and listeners fire in
+  // the order they were added. So the question is simply whether any are left.
+  for (const e of enemies.units) {
+    e.onDied(() => { if (!enemies.units.length) finish('won'); });
+  }
+
   // And what happens when the two of them end up next to each other. It is handed
   // both rosters and neither of them is told: a side is anything with a `units`
   // array, so the day there is a third one it is one more entry here.
@@ -679,5 +715,8 @@ export function startPlay({
     map, control, enemies, deployment, visibility, mask, deploy, loop, garrison,
     ground: hexGround,
     king,
+    // How it ended, or null while it has not. A function rather than a field
+    // because the caller holds this object for the whole of the session.
+    outcome: () => outcome,
   };
 }
