@@ -64,6 +64,8 @@ thing being changed - reach for them then, not by default.
       content.js            WHAT you edit: seven categories, each implementing
                             the same verbs over the game's own definitions
       ghost.js              the see-through preview of a precise placement
+      thumbnails.js         the palette's pictures: renders each asset once,
+                            caches the PNG, packs the renderer away
       main.js               second composition root; edits rebuild the board
       ui/                   editbar (tool/content/assets/settings), panel,
                             levels (library)
@@ -112,6 +114,20 @@ Break one of these and something three files away goes subtly wrong.
   the editor it replaced had a separate tool per category and every new category
   arrived with its own brush, its own palette and its own idea of what the right
   button meant.
+- **A palette thumbnail is a photograph, not a view.** `thumbnails.js` renders
+  each asset once through the game's own builders, keeps the PNG for the life of
+  the page and tears the preview renderer down at the end of the batch. So the
+  palette is `<img>` tags and reopening a category costs nothing - forty live
+  previews at sixty frames a second to look at a list is not a trade anybody would
+  make. The studio is deliberately *not* the game's scene: bright, neutral, no fog
+  and no environment, because the board is a dusk island and everything rendered
+  in its light comes out a dark smudge at icon size. Materials are the one thing
+  borrowed from the world, because the colour is what makes a rock a rock. Every
+  entry point is a batch, so every entry point closes the studio.
+- **Framing fits the bounding box in screen space, not the sphere.** A sphere
+  around fifteen men is as wide as the formation and the men are short, so the
+  subject ends up in a thin band across an empty picture. Per-category camera
+  angles exist and there are exactly two, both about how flat the subject is.
 - **What the preview highlights is exactly what the press does.** Area verbs are
   handed `previewHexes()`, not the raw footprint. Not a nicety - a brush that
   acted on hexes it had not highlighted wrote ground cover into the sea, and the
@@ -220,6 +236,7 @@ Break one of these and something three files away goes subtly wrong.
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
 | A prop, tree or landmark | `game/props.js` `PROP_TYPES` (a `name` and a `category`) - the matching category's palette picks it up |
 | A kind of ground cover | `PROP_TYPES` with `category: 'detail'` - `detailKinds()` finds it |
+| A picture for a new kind of asset | a `preview: { kind, ... }` on the asset entry, and a branch in `build()` in `editor/thumbnails.js` |
 | A whole content category | an entry in `CONTENT` in `editor/content.js`: its assets, its tools, its verbs |
 | A new editing gesture | an entry in `TOOLS` in `editor/tools.js`, plus that verb on the categories it means something to |
 | An editor setting | `SETTINGS` in `editor/tools.js`, then name it on the tool that offers it and the categories that understand it |

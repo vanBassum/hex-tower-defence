@@ -195,15 +195,14 @@
     }
     #tools button.cat:hover { background: rgba(143, 216, 232, 0.18); }
 
-    /* ASSETS: a grid of cells, each one already shaped like a thumbnail with a
-       caption. The `.thumb` box is empty today and holds a rendered model later,
-       which is why the cell has a height it does not currently need - swapping
-       text for a picture then costs nothing and moves nothing. */
+    /* ASSETS: a grid of cells, each a rendered picture of the thing with its name
+       underneath. The picture is the control and the name is the caption - two
+       trees are told apart by looking, and the name confirms it. */
     #tools .assets {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 3px;
-      max-height: 188px;
+      max-height: 244px;
       overflow-y: auto;
     }
     #tools button.asset {
@@ -222,11 +221,33 @@
       transition: background 140ms ease;
     }
     #tools button.asset:hover { background: rgba(143, 216, 232, 0.20); }
+    /* Square, because the render is square - a picture squeezed into a letterbox
+       is a picture of a different shape. The image is transparent behind the
+       model, so what shows through is the cell, which is what makes a ticked
+       asset's warm background reach the picture as well as the frame. */
     #tools .asset .thumb {
+      display: grid;
+      place-items: center;
       width: 100%;
-      height: 16px;
+      aspect-ratio: 1;
       border-radius: 3px;
       background: rgba(143, 216, 232, 0.06);
+      overflow: hidden;
+    }
+    #tools .asset .thumb img {
+      width: 100%; height: 100%;
+      object-fit: contain;
+      /* Nearest-neighbour would be wrong here: these are little photographs of
+         smooth geometry, not pixel art. */
+      image-rendering: auto;
+    }
+    /* An asset whose picture could not be drawn. Marked rather than blank, so it
+       reads as a render that is missing instead of a hole in the list. */
+    #tools .asset .thumb.is-missing {
+      color: #6d8195;
+      font-size: 11px;
+      background: rgba(232, 160, 154, 0.10);
+      border: 1px dashed rgba(232, 160, 154, 0.35);
     }
     #tools .asset .aname {
       width: 100%;

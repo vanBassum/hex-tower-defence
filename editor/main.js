@@ -20,6 +20,7 @@ import {
   TOOLS, TOOL_BY_ID, SETTINGS, defaultSettings, visibleSettings, toolsFor,
 } from './tools.js';
 import { Ghost } from './ghost.js';
+import { thumbnails, thumbnailStats, forgetThumbnails } from './thumbnails.js';
 import { downloadLevel, readFile } from './files.js';
 import { startPlay } from '../game/play.js';
 import { buildMap } from '../game/maps.js';
@@ -618,6 +619,9 @@ function refreshPanel() {
     content: content(),
     assets: content().assets(),
     selected: chosen[activeContent],
+    // Rendered once per asset and cached as a PNG for the life of the page, so
+    // this is a map lookup on every repaint but the first - see thumbnails.js.
+    thumbs: thumbnails(content().assets()),
     settings: visibleSettings(tool(), content(), state),
     values: toolSettings[activeTool],
     hint: tool().hint,
@@ -1000,6 +1004,9 @@ window.hex = {
   get session() { return session; },
   storage,
   panel, editbar, library,
+  // The asset palette's pictures, for the check script: how many are held, how
+  // many could not be drawn, and whether a preview renderer is standing.
+  thumbnailStats, forgetThumbnails,
   // The level panel, under its own name: `settings` above is the tools' own.
   levelSettings: settings,
   // The editor driven the way the mouse drives it, so a board can be built from

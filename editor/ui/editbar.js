@@ -76,7 +76,7 @@ export class EditBar {
   // `tools` is [{tool, enabled}], `assets` the current category's palette,
   // `selected` a Set of asset ids, `settings` the descriptors to draw and `values`
   // what they currently say.
-  update({ tools, tool, contents, content, assets, selected, settings, values, hint, note }) {
+  update({ tools, tool, contents, content, assets, selected, thumbs, settings, values, hint, note }) {
     this._tools.innerHTML = tools.map(({ tool: t, enabled }) => `
       <button type="button" data-tool="${esc(t.id)}" ${enabled ? '' : 'disabled'}
               class="tool ${t.id === tool.id ? 'is-on' : ''}"
@@ -92,13 +92,23 @@ export class EditBar {
 
     // A category with one thing in it still draws a palette. It reads as the same
     // control everywhere, and the day it has three entries nothing has changed.
-    this._assets.innerHTML = assets.map(a => `
+    //
+    // The picture is the control now and the name is the caption: two trees are
+    // told apart by looking, which is what a shape is for, and the name is what
+    // confirms it. An asset with no picture keeps its name and gets a marked box
+    // rather than an empty one - a palette missing a render should look like a
+    // render that is missing, not like a gap in the list.
+    this._assets.innerHTML = assets.map(a => {
+      const url = thumbs?.get(a.id);
+      return `
       <button type="button" data-asset="${esc(a.id)}"
               class="asset ${selected.has(a.id) ? 'is-on' : ''}"
               title="${esc(a.name)}${a.note ? ` - ${esc(a.note)}` : ''}">
-        <span class="thumb"></span>
+        <span class="thumb${url ? '' : ' is-missing'}"
+          >${url ? `<img src="${url}" alt="" draggable="false">` : '?'}</span>
         <span class="aname">${esc(a.name)}</span>
-      </button>`).join('');
+      </button>`;
+    }).join('');
     this._count.textContent = assets.length
       ? `${selected.size}/${assets.length}`
       : '';

@@ -66,7 +66,11 @@ const TERRAIN_NAMES = { land: 'Ground', crag: 'Crag', water: 'Water' };
 const terrain = {
   id: 'terrain',
   name: 'Terrain',
-  assets: () => TERRAIN.map(t => ({ id: t, name: TERRAIN_NAMES[t] ?? t })),
+  // `preview` is what the palette draws a picture of - see editor/thumbnails.js.
+  // Terrain is a colour rather than a shape, so its picture is a piece of board.
+  assets: () => TERRAIN.map(t => ({
+    id: t, name: TERRAIN_NAMES[t] ?? t, preview: { kind: 'terrain', terrain: t },
+  })),
   tools: ['tile', 'brush', 'erase', 'select'],
   settings: ['radius', 'step'],
   // Terrain is the one category whose brush should show its whole footprint
@@ -120,7 +124,9 @@ const detail = {
   id: 'detail',
   name: 'Terrain detail',
   short: 'Detail',
-  assets: () => detailKinds().map(key => ({ id: key, name: PROP_TYPES[key].name })),
+  assets: () => detailKinds().map(key => ({
+    id: key, name: PROP_TYPES[key].name, preview: { kind: 'prop', type: key },
+  })),
   tools: ['place', 'tile', 'brush', 'erase', 'select'],
   settings: ['radius', 'density', 'seed', 'size', 'spin', 'turn', 'scale'],
 
@@ -169,6 +175,7 @@ function placedContent({ id, name, category, tools, settings, spread }) {
       id: t.key,
       name: t.name,
       lights: !!t.lights,
+      preview: { kind: 'prop', type: t.key },
     })),
 
     place: (ctx, hex, at) => placeInstance(ctx, hex, at, category, spread),
@@ -232,6 +239,7 @@ function forceContent({ id, name, hostile, extra = [] }) {
         id: k,
         name: UNIT_TYPES[k].name,
         note: `${UNIT_TYPES[k].people} men · sees ${UNIT_TYPES[k].viewDistance}`,
+        preview: { kind: 'unit', type: k },
       })),
     ],
 
@@ -296,7 +304,12 @@ export const CONTENT = [
     // The King is not a unit in the file - he is one hex on his own - so he is the
     // one asset with a hand-written entry. A level that stands friendly units on
     // the board hands them to the player's roster when it opens; see play.js.
-    extra: [{ id: 'king', name: 'King', note: 'The player start - moves the existing King' }],
+    extra: [{
+      id: 'king',
+      name: 'King',
+      note: 'The player start - moves the existing King',
+      preview: { kind: 'unit', type: 'king' },
+    }],
   }),
   forceContent({ id: 'enemy', name: 'Enemy', hostile: true }),
 ];
