@@ -238,27 +238,43 @@ Break one of these and something three files away goes subtly wrong.
   nowhere to arrive cannot be opened. The format still *carries* a friendly unit,
   and `play.js` still hands one to the roster, so a level written before this
   reads back unchanged - there is simply no way to author another.
-- **EXPERIMENT: the board takes one action at a time.** `ActionLoop` in
-  `game/components/action_loop.js` is a prototype of turn-like play with no turn
-  in it: pick a group, spend one move, the enemies that move made *relevant*
-  answer it, the fight resolves, control comes back. There is no End Turn and no
-  enemy phase - an enemy that the action did not concern does nothing at all,
-  which is the whole claim being tested. Three rules hold it together. **There is
-  exactly one authority on whether an order may be given** and it is
-  `loop.canCommand()`; nothing else keeps a busy flag, because two booleans about
-  the same fact is how a game ends up taking an order in the middle of a fight.
+- **EXPERIMENT: a move is one action, and nothing ever takes the board away.**
+  `ActionLoop` in `game/components/action_loop.js` is a prototype of turn-like
+  play with no turn in it: pick a group, spend one move, and the enemies that
+  move made *relevant* answer it. There is no End Turn and no enemy phase - an
+  enemy the action did not concern does nothing at all, which is the whole claim
+  being tested. It briefly locked input for the whole of a resolution and that
+  was wrong: a fight is five to fifteen seconds of watching, and taking the
+  cursor away for it is a game about waiting. The phases in `STATE` are
+  **derived** now - read off the board rather than stored - so there is no
+  machine that can get out of step with it, and orders may be given during a
+  walk, during a reaction and in the middle of a fight.
   **The other side stops thinking for itself** - the loop sets `EnemyForce.auto =
-  false` and hands it one decision per player action, and leaving both running is
-  an enemy that reacts *and* keeps walking while the player is choosing.
+  false` and drives it off *edges* (an action that finished, a fight that just
+  started) rather than a timer or a state, because a state would re-order the
+  same enemies sixty times a second.
   **`tactical: false` on `startPlay` removes the whole of it** and gives back the
   real-time game unchanged, which is the seam an experiment has to have to be an
   experiment. Every number is in `TACTICS` at the top of that file, because the
   reaction rules are expected to be rewritten several times before this is kept
   or deleted.
+- **The only thing that stops an order is being next to something.** `pinnedBy`
+  in `action_loop.js` is the game's first zone of control, and it is per-group
+  rather than global: a unit adjacent to a living enemy cannot be ordered, and
+  everything else on the board can be, always. It is stated as *adjacency* rather
+  than as "in combat" for one reason worth keeping - Archers shooting something
+  three hexes off are not being held by it and may fall back and keep shooting,
+  and the moment something reaches them they are held like anyone else. No
+  exception is written for them anywhere, and none should be. The rule is only
+  coherent because a move is now a thing you spend: in the real-time game a unit
+  held in place was held forever, which is why `battle.js` used to say there was
+  no zone of control at all.
 - **A move allowance is told to `UnitControl`, not checked beside it.**
   `control.maxSteps` clamps `_pathTo`, so the reachable overlay, the route
   preview and the right-button order are one answer rather than three that can
-  disagree - the same reason area verbs are handed `previewHexes()`.
+  disagree - the same reason area verbs are handed `previewHexes()`. Being held
+  goes through the same channel: a pinned group gets `maxSteps = 0` and an empty
+  reachable set, so nothing has to test for it twice.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.
@@ -279,11 +295,6 @@ Break one of these and something three files away goes subtly wrong.
   world coordinates and undoes the unit's transform every frame, exactly as
   `_writeMelee` does for the dead. Anything else the game ever throws goes the
   same way.
-- **Battle describes a fight every frame and only charges for it sometimes.** Its
-  `active` predicate gates the *cost*, never the description - the poses are
-  worked out either way, or pausing the damage would freeze fifteen men
-  mid-thrust. That split is what lets the action loop have stretches where
-  nothing is happening without the board looking broken.
 - **A unit's strength IS the men left standing.** Damage lowers `people`; the
   instances past it are the same men lying on the ground, so the roster and the
   display are one array and cannot drift. `count` stays at the full roster -

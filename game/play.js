@@ -422,12 +422,7 @@ export function startPlay({
   // both rosters and neither of them is told: a side is anything with a `units`
   // array, so the day there is a third one it is one more entry here.
   const battleGO = new GameObject('Battle');
-  // Blows land only while the board is resolving an action. With no loop that is
-  // always, which is the real-time game.
-  battleGO.addComponent(new Battle({
-    grid: map.grid, sides: [control, enemies],
-    active: () => loop == null || busy(),
-  }));
+  battleGO.addComponent(new Battle({ grid: map.grid, sides: [control, enemies] }));
   add(battleGO);
 
   // And - the experiment - the thing that decides when either side may act at
@@ -441,11 +436,6 @@ export function startPlay({
     overlay: reachOverlay, status: makeStatus(),
   })) : null;
   if (tactical) add(loopGO);
-
-  // The one question every input path asks. Not a flag kept here: while the
-  // board is finishing what was asked of it there is exactly one authority on
-  // whether it will take another order, and it is the loop.
-  const busy = () => loop != null && !loop.canCommand();
 
   // A cursor on the hex under the mouse, and now three things asking what the mouse
   // means. The picker still knows nothing about any of them: it reports a hex and
@@ -470,16 +460,12 @@ export function startPlay({
     grid: map.grid,
     ground: hexGround,
     color: MOOD.interact.color,
-    // The route preview is only drawn while an order could actually be given.
-    // The selection survives a move, so without this the group would go on
-    // offering routes it is in no position to walk.
-    onHover: (hex) => { deployment.handleHover(hex); if (!busy()) control.handleHover(hex); },
+    onHover: (hex) => { deployment.handleHover(hex); control.handleHover(hex); },
     // A hex the selection can reach is a destination, and everything else the
     // left button always meant - pick a group up, or put it down. The order
     // matters: the card gets first refusal, then the move, then selection, so
     // clicking the tile you are already going to does not also deselect.
     onPick:  (hex) => {
-      if (busy()) return;
       if (deployment.handlePick(hex)) return;
       if (loop?.handlePick(hex)) return;
       control.handlePick(hex);
@@ -489,7 +475,6 @@ export function startPlay({
     // at the end of a drag is thrown away here rather than in either component.
     onOrder: (hex) => {
       if (rig.consumedRightPress) return;
-      if (busy()) return;
       if (deployment.handleOrder(hex)) return;
       // Through the loop when there is one, so the right button commits an
       // action rather than going round the back of it.

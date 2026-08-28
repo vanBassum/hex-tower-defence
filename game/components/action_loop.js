@@ -3,29 +3,37 @@ import { Component } from '../../engine/gameobject.js';
 const key = (h) => `${h.q},${h.r}`;
 
 // ── EXPERIMENT ──────────────────────────────────────────────────────────────
-// The board as one action at a time, instead of as a real-time skirmish.
+// The board as one action at a time, without ever taking the board away.
 //
-// The whole of the prototype is in this file plus five lines of wiring in
+// The whole of the prototype is in this file plus a few lines of wiring in
 // play.js, and turning it off is `tactical: false` on startPlay - at which point
-// EnemyForce drives itself again and the game is exactly the real-time one it
-// was. That is deliberate: the question being asked is whether
+// EnemyForce drives itself again and the game is the real-time one it was.
 //
-//     select → move → the enemy answers → they fight → select again
+// ── What a move costs, and what it does not ─────────────────────────────────
+// Committing a move spends an allowance - a group walks so many hexes and no
+// further, which is the whole of what makes a move a decision - and it makes the
+// enemies it concerns answer. What it does *not* do is stop the player playing.
+// Orders can be given while a walk is still happening, while enemies are
+// answering, and in the middle of a fight.
 //
-// is a rhythm worth having, and a question you cannot stop asking is one you
-// cannot get an answer to.
+// It used to lock the board for the whole of that, on the reasoning that one
+// action at a time means one action *finishing* at a time. That was wrong in
+// practice for a plain reason: a fight is five to fifteen seconds of watching,
+// and a game that takes the cursor away for fifteen seconds every time two units
+// touch is a game about waiting. Nothing about the rhythm needed it - a group
+// still gets one move, an enemy still only answers what concerns it - so the
+// lock is gone, and the phases below are a *description* of what the board is
+// doing rather than a gate on what the player may do.
 //
-// ── Why there is no End Turn ────────────────────────────────────────────────
-// This is not "player phase, enemy phase". One group moves, and only the enemies
-// that move made *relevant* answer it. Nothing across the board takes a step
-// because you walked somewhere it cannot see, so the board does not lurch every
-// time you spend an action - the consequence stays local to the thing you did,
-// which is the whole idea being tested.
-//
-// ── The one authority ───────────────────────────────────────────────────────
-// `canCommand()`. Every input path asks it and nothing else keeps a "busy" flag
-// of its own, because two booleans about the same fact is how a game ends up
-// accepting an order in the middle of a fight.
+// ── The one thing that does hold you ────────────────────────────────────────
+// A group standing next to a living enemy cannot be ordered. That is the only
+// restriction left, it is per-group rather than global, and it is a rule about
+// adjacency rather than about combat: Archers shooting something three hexes off
+// are not being held by it and may fall back and keep shooting, and the moment
+// something reaches them they are in the same fight as everybody else and stay
+// in it. It is the first zone of control this game has had, and it is only
+// coherent because a move is now a thing you spend - see the note in battle.js
+// about why pinning a unit used to mean pinning it forever.
 export const STATE = {
   READY:    'PLAYER_READY',
   MOVING:   'PLAYER_MOVING',
@@ -53,10 +61,6 @@ export const TACTICS = {
   // it *is* the choice to start one.
   react: { hold: 2, hunt: 4 },
   reactDefault: 3,
-
-  // A beat of quiet after the last blow before the board is handed back, so the
-  // fight is seen to be over rather than the cursor simply working again.
-  settle: 0.35,
 };
 
 export class ActionLoop extends Component {
@@ -66,7 +70,7 @@ export class ActionLoop extends Component {
     enemies,             // the other one
     visibility,          // what is known - you may not walk into the dark
     overlay = null,      // where the selected group may go
-    status = null,       // the element that says the board is busy
+    status = null,       // and why it may not, when it may not
   } = {}) {
     super();
     this._grid = grid;
@@ -76,10 +80,9 @@ export class ActionLoop extends Component {
     this._overlay = overlay;
     this._status = status;
 
-    this.state = STATE.READY;
-    this._mover = null;        // the group whose action is being resolved
-    this._reacting = [];       // and the enemies that answered it
-    this._quiet = 0;
+    this._movers = new Set();  // groups whose action has not finished playing out
+    this._reacting = [];       // and the enemies answering the last one
+    this._fighting = false;    // whether anybody was engaged a frame ago
     this._reachKeys = new Set();
     this._sig = null;          // what the reachable set was last computed for
     this._epoch = 0;           // bumped when the board changed under it
@@ -87,24 +90,51 @@ export class ActionLoop extends Component {
 
   start() {
     // The other side stops thinking for itself. Its decisions are taken here
-    // now, once per player action, and leaving both running would be an enemy
-    // that reacts *and* keeps walking while the player is choosing.
+    // now, in answer to what the player did, and leaving both running would be
+    // an enemy that reacts *and* hunts on a timer of its own.
     if (this._enemies) this._enemies.auto = false;
     this._unsub = this._visibility?.onChange(() => { this._epoch++; });
-    this._setState(STATE.READY);
   }
 
   destroy() {
     this._unsub?.();
     if (this._enemies) this._enemies.auto = true;
     this._overlay?.setHexes([]);
-    // The pill is the experiment's own DOM and nothing else on either page knows
-    // about it, so it leaves with the session that put it there.
+    // The notice is the experiment's own DOM and nothing else on either page
+    // knows about it, so it leaves with the session that put it there.
     this._status?.remove();
   }
 
-  // ── The authority ─────────────────────────────────────────────────────────
-  canCommand() { return this.state === STATE.READY; }
+  // ── What the board is doing ───────────────────────────────────────────────
+  // Derived rather than stored, now that nothing is waiting on it: there is no
+  // machine left to get out of step with the board when it is read off the
+  // board. It is kept because it is still the right vocabulary for
+  // `hex.loop.state` and for whatever eventually wants to say what is going on.
+  get state() {
+    if (this._movers.size) return STATE.MOVING;
+    if (this._reacting.some(e => !e.dead && e.isMoving)) return STATE.REACTING;
+    if (this._fighting) return STATE.COMBAT;
+    return STATE.READY;
+  }
+
+  // ── Who may be ordered ────────────────────────────────────────────────────
+  // The enemy holding this group in place, if one is. Adjacency and nothing
+  // else - see the note at the top of the file for why that is the whole rule,
+  // and why Archers need no exception written for them.
+  pinnedBy(unit) {
+    if (!unit || unit.dead) return null;
+    for (const e of this._enemies?.units ?? []) {
+      if (e.dead) continue;
+      if (this._grid.hexDistance(unit.q, unit.r, e.q, e.r) === 1) return e;
+    }
+    return null;
+  }
+
+  canOrder(unit) { return !!unit && !unit.dead && !this.pinnedBy(unit); }
+
+  // Kept for anything still asking the old question. There is no global lock any
+  // more, so the answer is always yes and the real question is `canOrder`.
+  canCommand() { return true; }
 
   allowance(unit) {
     return TACTICS.move[unit?.type?.key] ?? TACTICS.moveDefault;
@@ -114,67 +144,53 @@ export class ActionLoop extends Component {
   // A left click on a hex the selection can reach is the commit. Anywhere else
   // and this says so, and the click goes on to mean what it always meant -
   // picking a group up, or putting it down.
+  //
+  // Neither of these tests being held or being out of range. A group that cannot
+  // move has an empty reachable set, so the rule is applied in the one place
+  // that computes it and there is no second answer to disagree with the first.
   handlePick(hex) {
-    if (!this.canCommand() || !this._control.selected) return false;
+    if (!this._control.selected) return false;
     if (!this._reachKeys.has(key(hex))) return false;
     return this.commit(hex);
   }
 
   // The right button still orders, through the same gate and the same range.
   handleOrder(hex) {
-    if (!this.canCommand()) return false;
     if (!this._reachKeys.has(key(hex))) return false;
     return this.commit(hex);
   }
 
   // One committed move is one player action, and the group stays picked up
-  // through it. A second order cannot get in - `canCommand()` is false for the
-  // whole of the resolution - so the selection costs nothing while the board is
-  // busy and buys the thing that matters when it is not: the group you just
-  // moved is still the group in your hand, with its new reach already lit, so
-  // moving the same troops twice is one click rather than three.
+  // through it - the group you just moved is still the group in your hand, with
+  // its reachable set following it along as it walks.
   commit(hex) {
     const unit = this._control.selected;
     if (!unit || !this._control.handleOrder(hex)) return false;
-    this._mover = unit;
-    this._setState(STATE.MOVING);
+    this._movers.add(unit);
     return true;
   }
 
-  // ── Resolution ────────────────────────────────────────────────────────────
-  update(dt) {
-    switch (this.state) {
-      // A fight can start without anybody having moved - a card played onto a
-      // tile beside something, or Archers whose range reaches further than the
-      // last action took them. It is still the player's doing, so it is still an
-      // action's worth of consequence: the enemies it concerns answer it and the
-      // board resolves, rather than a fight quietly running while nobody is
-      // being asked anything.
-      case STATE.READY:
-        if (this._engaged()) this._react();
-        break;
-
-      case STATE.MOVING:
-        if (this._mover && !this._mover.dead && this._mover.isMoving) break;
-        this._react();
-        break;
-
-      case STATE.REACTING:
-        if (this._reacting.some(e => !e.dead && e.isMoving)) break;
-        this._setState(STATE.COMBAT);
-        this._quiet = 0;
-        break;
-
-      case STATE.COMBAT:
-        // A fight ends by somebody dying - nothing here stops it early, because
-        // the existing combat is a rate applied while two units are alongside
-        // and cutting it short would be a second, different combat model.
-        if (this._engaged() || this._anyMoving()) { this._quiet = 0; break; }
-        this._quiet += dt;
-        if (this._quiet >= TACTICS.settle) this._setState(STATE.READY);
-        break;
+  // ── Consequences ──────────────────────────────────────────────────────────
+  // Two things make the enemy think, and both are edges rather than states: an
+  // action that has finished playing out, and a fight that was not happening a
+  // frame ago. Edges because nothing is waiting for a phase to end any more - on
+  // a state, this would re-order the same enemies sixty times a second.
+  update() {
+    for (const u of this._movers) {
+      if (!u.dead && u.isMoving) continue;
+      this._movers.delete(u);
+      this._react();
     }
-    if (this.state === STATE.READY) this._refreshReach();
+
+    // A fight can start without anybody having moved - a card played beside
+    // something, or Archers whose range reaches further than the last action
+    // took them - and it is still the player's doing.
+    const fighting = this._engaged();
+    if (fighting && !this._fighting) this._react();
+    this._fighting = fighting;
+
+    this._refreshReach();
+    this._say();
   }
 
   // Who answers, and it is deliberately the plainest rule that can be written:
@@ -189,6 +205,11 @@ export class ActionLoop extends Component {
     const roster = [...(this._enemies?.units ?? [])].sort((a, b) => a.id - b.id);
     for (const e of roster) {
       if (e.dead) continue;
+      // One already on its way finishes what it started. Re-issuing its route
+      // every time anything happens is how a picket ends up stuttering between
+      // two targets - and the player can now keep acting throughout, which is
+      // what makes this line necessary rather than tidy.
+      if (e.isMoving) { this._reacting.push(e); continue; }
       if (!this._relevant(e)) continue;
       const target = this._nearest(e);
       if (!target) continue;
@@ -206,7 +227,6 @@ export class ActionLoop extends Component {
       e.follow(path.slice(0, steps + 1));
       this._reacting.push(e);
     }
-    this._setState(STATE.REACTING);
   }
 
   // What makes an enemy the business of the action that just happened. Two
@@ -238,10 +258,8 @@ export class ActionLoop extends Component {
     return best;
   }
 
-  // Whether anybody is still hurting anybody, which is Battle's rule read back:
-  // a pair is fighting while either of them can reach the other. Archers three
-  // hexes out are an encounter that has not finished, so control does not come
-  // back while they are still shooting.
+  // Whether anybody is hurting anybody, which is Battle's rule read back: a pair
+  // is fighting while either of them can reach the other.
   _engaged() {
     for (const u of this._control.units) {
       if (u.dead) continue;
@@ -254,42 +272,24 @@ export class ActionLoop extends Component {
     return false;
   }
 
-  _anyMoving() {
-    for (const u of this._control.units) if (!u.dead && u.isMoving) return true;
-    for (const e of this._enemies?.units ?? []) if (!e.dead && e.isMoving) return true;
-    return false;
-  }
-
-  _setState(next) {
-    if (this.state === next) return;
-    this.state = next;
-    this._epoch++;
-    if (next === STATE.READY) { this._mover = null; this._reacting = []; }
-    else {
-      // The reachable set and the route preview both go the moment an action
-      // commits. The selection does not - see `commit` - but a route drawn from
-      // a group that is halfway along one is describing a move nobody can make.
-      this._setReach([]);
-      this._sig = null;
-      this._control.handleHover(null);
-    }
-    if (this._status) this._status.hidden = (next === STATE.READY);
-  }
-
   // ── Where you may go ──────────────────────────────────────────────────────
   // Recomputed when the answer could have changed and not otherwise: the
-  // selection, where it is standing, or the board itself.
+  // selection, where it is standing, whether it is being held, or the board
+  // itself. A group's own coordinate is in there, so the reachable set follows
+  // it along as it walks - which is what lets an order be changed halfway
+  // through the last one.
   _refreshReach() {
     const u = this._control.selected;
-    const sig = u ? `${u.id}:${u.q},${u.r}:${this._epoch}` : '';
+    const held = this.pinnedBy(u);
+    const sig = u ? `${u.id}:${u.q},${u.r}:${held ? 'held' : ''}:${this._epoch}` : '';
     if (sig === this._sig) return;
     this._sig = sig;
-    this._setReach(u ? this._reachable(u) : []);
-    // The route preview and the right-button order both go through
-    // UnitControl's own pathing, so the allowance is told to it rather than
-    // checked twice - which is what keeps a highlighted hex and an orderable
-    // hex the same set of hexes.
-    this._control.maxSteps = u ? this.allowance(u) : null;
+    this._setReach(u && !held ? this._reachable(u) : []);
+    // The route preview and the right-button order both go through UnitControl's
+    // own pathing, so the allowance is told to it rather than checked twice -
+    // which is what keeps a highlighted hex and an orderable hex the same set of
+    // hexes. Zero is how a group being held has nowhere to go.
+    this._control.maxSteps = !u ? null : held ? 0 : this.allowance(u);
   }
 
   _setReach(hexes) {
@@ -322,25 +322,37 @@ export class ActionLoop extends Component {
     }
     return out;
   }
+
+  // The one line of UI, and it says the one thing the board cannot. A group you
+  // have picked up with nothing lit around it might be walled in by crags, or
+  // out of allowance, or held in a fight, and all three look identical. It is
+  // off the rest of the time: there is nothing to announce when the answer is
+  // yes.
+  _say() {
+    if (!this._status) return;
+    const u = this._control.selected;
+    const held = this.pinnedBy(u);
+    this._status.hidden = !held;
+    if (held) this._status.textContent = `${u.type.name} - held in the fight`;
+  }
 }
 
-// The one piece of UI the experiment adds, and it is a word in a corner. There
-// are no turns to announce - a banner saying whose turn it is would be
-// describing a game this is not - so all it says is that the board is busy
-// finishing what you asked for.
+// The one piece of UI the experiment adds, and it is a line in a corner. It said
+// "Resolving…" while the board used to take the cursor away; it says who cannot
+// leave now, which is the only thing left that the player can be told and cannot
+// see. Yellow, because it is about a group they are holding - see MOOD.interact.
 //
 // Built here rather than in either page's HTML because it belongs to the
 // experiment: deleting this file should take it with it.
-export function makeStatus(text = 'Resolving…') {
+export function makeStatus() {
   const el = document.createElement('div');
-  el.id = 'resolving';
-  el.textContent = text;
+  el.id = 'held';
   el.hidden = true;
   el.style.cssText = [
     'position:fixed', 'left:50%', 'top:18px', 'transform:translateX(-50%)',
     'padding:6px 14px', 'border-radius:99px',
-    'background:rgba(9,16,30,0.55)', 'border:1px solid rgba(143,216,232,0.14)',
-    'color:#b9cfe0', 'font:12px/1 system-ui,sans-serif',
+    'background:rgba(9,16,30,0.55)', 'border:1px solid rgba(255,210,74,0.28)',
+    'color:#ffd24a', 'font:12px/1 system-ui,sans-serif',
     'letter-spacing:0.12em', 'text-transform:uppercase',
     'pointer-events:none', 'user-select:none', 'z-index:5',
   ].join(';');

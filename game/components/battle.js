@@ -13,11 +13,14 @@ import { Component } from '../../engine/gameobject.js';
 // is here is the smallest thing that makes an encounter mean something: walking
 // into one costs you people, and people are what a unit is.
 //
-// ── No zone of control ──────────────────────────────────────────────────────
-// Nothing stops a player unit walking away, or walking straight past. It bleeds
-// while it is alongside and then it is gone. A rule that pinned units in place
-// is a rule about turns, and holding somebody still in a game with no turn to
-// spend is holding them still forever.
+// ── Zone of control, and where it lives ─────────────────────────────────────
+// Nothing *here* stops a unit walking away: this file only ever asks where
+// things are standing and takes people off them for it. Being unable to leave a
+// fight is a rule about orders, so it is a rule in ActionLoop - `pinnedBy` - and
+// it arrived only once there was a move to spend. That order matters. In the
+// real-time game there was no turn, so a unit held in place was held forever and
+// the rule could not exist; now a move is an action with a cost, and not being
+// able to spend it is a price rather than a sentence.
 //
 // ── Flanking falls out ──────────────────────────────────────────────────────
 // Pairs are resolved independently, so a unit with two enemies beside it takes
@@ -45,38 +48,21 @@ import { Component } from '../../engine/gameobject.js';
 // and do nothing with it but turn onto it - which is the only thing on screen
 // that says where the casualties over there are coming from.
 export class Battle extends Component {
-  constructor({
-    grid,
-    sides = [],
-    // Whether blows are landing right now. It exists because a board that takes
-    // one action at a time has stretches where nothing should be happening at
-    // all - see ActionLoop - and a fight that kept costing people while the
-    // player was choosing would be a real-time skirmish wearing a turn.
-    //
-    // It gates the *cost*, never the description: the poses are worked out on
-    // every frame either way, so a line that is standing there is still standing
-    // there facing the right way. Without that split, pausing the damage would
-    // freeze fifteen men mid-thrust.
-    active = () => true,
-  } = {}) {
+  constructor({ grid, sides = [] } = {}) {
     super();
     this._grid = grid;
     // Each side is anything with a `units` array - UnitControl and EnemyForce
     // both are, without either of them being told about this.
     this._sides = sides;
-    this._active = active;
   }
 
   update(dt) {
-    if (dt < 0) return;
-    // A zero step is the whole of "not right now": every pair is still found and
-    // still described, and `damage` ignores an amount of nothing.
-    const step = this._active() ? dt : 0;
+    if (dt <= 0) return;
     this._fights = new Map();
     this._aims = new Map();
     for (let a = 0; a < this._sides.length; a++) {
       for (let b = a + 1; b < this._sides.length; b++) {
-        this._clash(this._sides[a].units, this._sides[b].units, step);
+        this._clash(this._sides[a].units, this._sides[b].units, dt);
       }
     }
     for (const side of this._sides) {
