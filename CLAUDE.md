@@ -192,6 +192,29 @@ Break one of these and something three files away goes subtly wrong.
 - **Occupancy lives in the grid.** Crags and units hold a key; `isWalkable` and
   A* already ask. Making something impassable is `grid.occupy`, and making
   something walkable-onto (a pickup) is simply not calling it.
+- **One yellow means "you can act here", and nothing else on the board is that
+  yellow.** `MOOD.interact` is the colour of the tile under the pointer, the
+  route a group would walk, the ground it could walk to, the tiles a card may be
+  played onto, and the ring under a selected unit. Five answers to one question,
+  so they are one colour - the point is that after a minute of play the colour
+  *is* the question, and that only holds while nothing in the world borrows it.
+  It was three colours doing this job and the cost was that none of them meant
+  anything alone. Yellow specifically because nothing else here is: the board is
+  a cool dusk, the enemy is the only red, and warm light is lanterns - all things
+  that are *there*. This is the only warm thing on screen that belongs to the
+  interface rather than to the island.
+- **These are marks, not fills, and that decides the blending.** `HexCorners` and
+  `HexRoute` subclass `HexOverlay` - six ticks just inside a tile's boundary, and
+  a thin line through a run of them. A *fill* has to be additive or it reads as a
+  pale sticker on the ground; a thin mark has the opposite problem, because
+  additive at any strength worth seeing pushes yellow through orange to white and
+  takes the recognisable colour out of the one thing meant to be recognised by
+  it. So these blend normally. They are subclasses rather than separate
+  components because `HexPicker` finds its cursor with `getComponent(HexOverlay)`
+  - what it needs is *a marking of the hex under the pointer*, and which drawing
+  that is has nothing to do with it. `LineBasicMaterial` is not an option for any
+  of it: its width is one pixel in WebGL whatever the number says, so every
+  marking is built out of `flatBar` quads.
 - **Every colour is in `mood.js`.** The palette is coupled on purpose - lanterns
   only read warm because the world is cool. Never hard-code a colour in a
   component.
@@ -326,6 +349,8 @@ Break one of these and something three files away goes subtly wrong.
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
 | A reaction rule, or how far a group moves | `TACTICS` in `game/components/action_loop.js` |
 | A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
+| A way of marking hexes | a subclass of `HexOverlay` overriding `_rebuild` - the picker finds any of them |
+| Anything the player can act on | draw it in `MOOD.interact`, and never spend that yellow on the world |
 | A wire between components | `game/play.js`, never inside either component |
 | Something the *page* owns, not the level | `game/main.js` (or `editor/main.js`) |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |

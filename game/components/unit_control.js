@@ -196,9 +196,12 @@ export class UnitControl extends Component {
   _refreshPath() {
     const path = this._hover ? this._pathTo(this._hover) : null;
     this._path = path ?? [];
-    // The hex the unit is standing on is in the path and is not part of the walk,
-    // and the destination already has the cursor sitting on it.
-    this._pathOverlay?.setHexes(this._path.slice(1));
+    // The whole route, the hex the unit is standing on included. It is not part
+    // of the walk and it is part of the *line*: what is drawn is a thread from
+    // the group to where it would end up, and a thread that starts one tile out
+    // is a thread nobody is holding. The far end needs nothing - the cursor is
+    // already sitting on it.
+    this._pathOverlay?.setHexes(this._path);
   }
 
   _afterMove() {

@@ -185,7 +185,10 @@ export const MOOD = {
     cloak: 0x4a6a94,
     trim:  0x2c3d55,
     skin:  0x8c8377,
-    select: 0x8fd8e8,
+    // The ring under a unit you have picked up. The same yellow as everything
+    // else the player acts in - what is selected is a thing you are about to
+    // give an order to, which is the same sentence the tile markings are saying.
+    select: 0xffd24a,
     lampGlow: 0xffb45c,
 
     // Blue is the player's. Everything they own is one family of it, told apart
@@ -325,27 +328,48 @@ export const MOOD = {
     pennant: 0xbdb096,
   },
 
-  // Where a card may be played, which is only ever drawn while one is held. It
-  // answers "where may this go" and nothing else, so it is allowed to be the
-  // brightest thing on the board for the second it is up.
+  // ── The one colour the player acts in ───────────────────────────────────
+  // Every marking that means *you can do something here* is this yellow and
+  // nothing else is: the tile under the pointer, the route a group would walk,
+  // the ground it could walk to, and the tiles a card may be played onto. Four
+  // answers to the same question, so they are one colour, and after a minute of
+  // play the colour is the question.
   //
-  // The treatment the route preview settled on: additive, so a hex catches a
-  // little more light rather than having a shape painted onto it.
-  deploy: {
-    color: 0xffc98a,
-    opacity: 0.16,
-  },
-
-  // Where the group that is picked up may walk on this action. The same
-  // treatment as the two above and quieter than either, because it is a much
-  // larger patch of board and it is up for as long as anything is selected -
-  // the deployment zone gets to shout for a second, this has to be able to sit
-  // there. Cool rather than warm: it is the route preview's own colour, which
-  // is drawn over the top of it and should read as the brighter thread through
-  // the field rather than as a different idea.
-  reach: {
-    color: 0x9fd8ee,
-    opacity: 0.07,
+  // It had been three colours doing this - a cool blue for reachability and the
+  // route, a warm orange for the deployment zone, a third blue for the cursor -
+  // and the cost was that none of them meant anything on its own. A player
+  // seeing pale blue on a tile had to work out *which* pale blue it was.
+  //
+  // Yellow because nothing else on this island is. The board is a cool dusk, the
+  // enemy is the only red, and warm light is lanterns and fires - all of which
+  // are things that are *there*, in the world. This is the only warm thing on
+  // screen that is not: it belongs to the interface, and reserving a hue for
+  // that is what lets it be recognised rather than read.
+  //
+  // ── Marks rather than fills, and normal blending rather than additive ──────
+  // These are drawn as lines and corner brackets - see HexCorners and HexRoute -
+  // and the blending follows from that. A *fill* has to be additive or it reads
+  // as a pale sticker on the ground; a thin mark has the opposite problem, since
+  // additive at any strength worth seeing pushes yellow through orange to white
+  // and takes the recognisable colour out of the one thing that is supposed to be
+  // recognised by its colour. So these mix normally and stay yellow.
+  //
+  // Three strengths, and they are a hierarchy rather than three tastes: the tile
+  // you are pointing at is the brightest, the route is next, and the field of
+  // everywhere-you-could-go is quietest because it is twenty tiles at once.
+  interact: {
+    color: 0xffd24a,
+    cursor: 0.95,
+    route: 0.88,
+    // Quiet, and it has to be: this is the one that appears two dozen tiles at a
+    // time, and at the strength the cursor wants it turns the whole board into
+    // scaffolding and buries the thing the player is actually looking at.
+    field: 0.34,
+    // Where a card may be played is the same marking and is allowed to be louder,
+    // for two reasons that are both about density rather than importance: it is
+    // six tiles rather than two dozen, and it is only up for the second somebody
+    // is holding something. Nothing else is competing with it while it is there.
+    zone: 0.62,
   },
 
   // Deeper orange, and brighter to match. Green grass subtracts red from any

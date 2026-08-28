@@ -5,7 +5,8 @@ import { HexWater } from '../engine/components/hex_water.js';
 import { AmbientMotes } from '../engine/components/ambient_motes.js';
 import { HexGridRenderer } from '../engine/components/hex_grid_renderer.js';
 import { HexGround } from '../engine/components/hex_ground.js';
-import { HexOverlay } from '../engine/components/hex_overlay.js';
+import { HexCorners } from '../engine/components/hex_corners.js';
+import { HexRoute } from '../engine/components/hex_route.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { VisibilityMask } from '../engine/components/visibility_mask.js';
 import { VisibilityMap } from '../engine/hex/visibility.js';
@@ -312,18 +313,17 @@ export function startPlay({
   // not from a decal laid over the top.
   const forceGO = new GameObject('Force');
   // And - only while one action at a time is the game - where the group that is
-  // picked up may get to on this one. It goes on before the route preview so the
-  // route reads as the bright thread through the field rather than as a second
-  // colour arguing with it, and it is the *same* treatment as the deployment
-  // zone rather than the wash that used to be here: an answer to "where may this
-  // go", up only while somebody is asking, and additive so a hex catches a
-  // little more light instead of having a hexagon painted on it.
-  const reachOverlay = tactical ? forceGO.addComponent(new HexOverlay(map.grid, [], {
-    color: MOOD.reach.color, opacity: MOOD.reach.opacity, y: 0.02, additive: true,
+  // picked up may get to on this one. Corner brackets rather than lit tiles: it
+  // is up to two dozen hexes at once, and twenty filled hexagons is a region
+  // painted over the board where what is meant is twenty separate tiles you
+  // could stand on. It goes on before the route so the line reads as the bright
+  // thread through the field.
+  const reachOverlay = tactical ? forceGO.addComponent(new HexCorners(map.grid, [], {
+    color: MOOD.interact.color, opacity: MOOD.interact.field, y: 0.02,
     heightAt: (q, r) => hexGround.topY(q, r),
   })) : null;
-  const pathOverlay = forceGO.addComponent(new HexOverlay(map.grid, [], {
-    color: 0x9fd8ee, opacity: 0.13, y: 0.03, additive: true,
+  const pathOverlay = forceGO.addComponent(new HexRoute(map.grid, [], {
+    color: MOOD.interact.color, opacity: MOOD.interact.route, y: 0.03,
     heightAt: (q, r) => hexGround.topY(q, r),
   }));
   const control = forceGO.addComponent(new UnitControl({
@@ -348,8 +348,8 @@ export function startPlay({
   // Scout has no home to point at, and a ring drawn permanently around a unit that
   // already has a lamp and a selection ring is the third thing competing to
   // describe the same tile.
-  const placeOverlay = forceGO.addComponent(new HexOverlay(map.grid, [], {
-    color: MOOD.deploy.color, opacity: MOOD.deploy.opacity, y: 0.04, additive: true,
+  const placeOverlay = forceGO.addComponent(new HexCorners(map.grid, [], {
+    color: MOOD.interact.color, opacity: MOOD.interact.zone, y: 0.04,
     heightAt: (q, r) => hexGround.topY(q, r),
   }));
 
@@ -452,9 +452,14 @@ export function startPlay({
   // the force decides whether that is a unit, a destination, or a change of mind.
   // The overlay goes on first so HexPicker.start() can find it.
   const cursor = new GameObject('Cursor');
-  // The cursor gets the same treatment: a lift, not a fill.
-  cursor.addComponent(new HexOverlay(map.grid, [], {
-    color: 0x8fd8e8, opacity: 0.16, y: 0.05, additive: true,
+  // The tile under the pointer, and the brightest of the four: it is one hex and
+  // it is the one the click will land on. HexPicker finds it by instanceof and
+  // never learns it is drawn as a bracket rather than a fill.
+  cursor.addComponent(new HexCorners(map.grid, [], {
+    color: MOOD.interact.color, opacity: MOOD.interact.cursor, y: 0.05,
+    // Heavier than the field's, because it has to be found among two dozen of
+    // them. The same six ticks, drawn as though pressed harder.
+    arm: 0.28, width: 0.075,
   }));
   // The camp gets first refusal on every click and the force gets what is left.
   // That order is the mode: while a card is armed the left button is placing it
@@ -464,6 +469,7 @@ export function startPlay({
   cursor.addComponent(new HexPicker({
     grid: map.grid,
     ground: hexGround,
+    color: MOOD.interact.color,
     // The route preview is only drawn while an order could actually be given.
     // The selection survives a move, so without this the group would go on
     // offering routes it is in no position to walk.
@@ -600,7 +606,12 @@ export function startPlay({
       return mesh;
     });
     const overlays = [pathOverlay, placeOverlay, reachOverlay].filter(Boolean);
-    for (const o of overlays) o.setHexes([{ q: start.q, r: start.r }]);
+    // Two hexes rather than one, because a route of a single tile has no run in
+    // it and would draw nothing - which is exactly the material this frame
+    // exists to compile. The neighbour is taken off the grid so it is a tile
+    // that really exists and `topY` has an answer for it.
+    const next = [...map.grid.neighbors(start.q, start.r)][0] ?? start;
+    for (const o of overlays) o.setHexes([{ q: start.q, r: start.r }, next]);
 
     boot.beforeWarm = performance.now();
     game.renderer.render(game.scene, game.camera);
