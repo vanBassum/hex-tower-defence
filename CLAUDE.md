@@ -247,9 +247,15 @@ Break one of these and something three files away goes subtly wrong.
   being shot makes an enemy *relevant* (`_relevant` in `action_loop.js`) and it
   comes for you. Widening the range without that is free damage forever. Only a
   pair standing next to each other forms a front line; at range the shooters are
-  handed a direction and do nothing with it but turn onto it, because a volley is
-  not a line and turning is the only thing on screen that says where the
-  casualties are coming from.
+  handed a direction, a distance and the target's height, and do nothing with the
+  first of those but turn onto it - a volley is not a line.
+- **An arrow is pinned to the world, like a corpse and for the same reason.** It
+  is drawn out of the shooting unit's own mesh - one more InstancedMesh, no new
+  material, because a material first *drawn* mid-run is a stall - so it lives in
+  a space that walks off with the unit. `Unit._writeArrows` keeps the flight in
+  world coordinates and undoes the unit's transform every frame, exactly as
+  `_writeMelee` does for the dead. Anything else the game ever throws goes the
+  same way.
 - **Battle describes a fight every frame and only charges for it sometimes.** Its
   `active` predicate gates the *cost*, never the description - the poses are
   worked out either way, or pausing the damage would freeze fifteen men
@@ -303,6 +309,7 @@ Break one of these and something three files away goes subtly wrong.
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
 | A troop that kills at a distance | `range` on its type - Battle already asks, and `_relevant` already makes the target notice |
 | What a unit carries | `spears` / `bows` on its type - one InstancedMesh, one geometry swapped, never a fourth pass |
+| Something a unit throws | an instanced pass and a writer in `buildSquad`'s `userData`; the flight belongs to `Unit` and is kept in world space |
 | A prop, tree or landmark | `game/props.js` `PROP_TYPES` (a `name` and a `category`) - the matching category's palette picks it up |
 | A kind of ground cover | `PROP_TYPES` with `category: 'detail'` - `detailKinds()` finds it |
 | A picture for a new kind of asset | a `preview: { kind, ... }` on the asset entry, and a branch in `build()` in `editor/thumbnails.js` |

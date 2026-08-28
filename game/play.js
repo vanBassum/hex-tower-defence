@@ -464,7 +464,10 @@ export function startPlay({
   cursor.addComponent(new HexPicker({
     grid: map.grid,
     ground: hexGround,
-    onHover: (hex) => { deployment.handleHover(hex); control.handleHover(hex); },
+    // The route preview is only drawn while an order could actually be given.
+    // The selection survives a move, so without this the group would go on
+    // offering routes it is in no position to walk.
+    onHover: (hex) => { deployment.handleHover(hex); if (!busy()) control.handleHover(hex); },
     // A hex the selection can reach is a destination, and everything else the
     // left button always meant - pick a group up, or put it down. The order
     // matters: the card gets first refusal, then the move, then selection, so

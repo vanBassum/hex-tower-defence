@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Component } from '../../engine/gameobject.js';
-import { UNIT_TYPES } from '../units.js';
+import { UNIT_TYPES, ARROWS } from '../units.js';
 import { hashHex } from '../../engine/hex/hex_noise.js';
 
 // Something standing on a hex.
@@ -68,6 +68,19 @@ const HIT_TIME = 0.18;
 // than to the unit they belonged to. See `_writeMelee`.
 const DEATH_FALL = 0.32;
 
+// A volley: seconds between arrows leaving one body of Archers, how fast one
+// travels, and how far it rises as a fraction of how far it goes. At three hexes
+// the flight is a little over half a second, so there are usually two or three
+// in the air - a stream rather than a shot, which is what a body of men loosing
+// at their own rhythm looks like.
+//
+// The arc is what makes it read as an arrow rather than a dart: a flat line
+// between two points at this scale is a scratch, and the rise is what gives the
+// eye something to follow.
+const VOLLEY = 0.22;
+const ARROW_SPEED = 9.0;
+const ARROW_ARC = 0.12;
+
 let UNIT_ID = 0;
 
 export class Unit extends Component {
@@ -133,6 +146,9 @@ export class Unit extends Component {
     this._facing = 0;       // where the formation is pointed, eased toward the leg
     this._clock = 0;        // seconds of fighting, for the thrusts
     this._aim = null;       // the way it is shooting, when that is not a melee
+    this._shots = [];       // arrows in the air, in world space
+    this._nock = 0;         // and how far through the next one's wait it is
+    this._nextShot = 0;     // whose turn it is to loose - round the line, not at random
     this._corpses = 0;      // men down and still lying there, at the tail of `spots`
 
     // Several things want to hear about a step - fog, the route preview, later
@@ -576,10 +592,94 @@ export class Unit extends Component {
     if (!f && !this._aim && moved < 0.002) this._settling = false;
   }
 
+  // ── A volley ──────────────────────────────────────────────────────────────
+  // One arrow away, from one man on the line. Round the formation rather than at
+  // random, so the shots come from across the body instead of piling up on
+  // whoever a die kept picking.
+  //
+  // Everything about a shot is in *world* space, for the reason the dead are:
+  // it is drawn out of the unit's own mesh and so sits in a space that walks off
+  // with the unit, and an arrow that travelled with the men who fired it would
+  // hang in front of them for its whole flight.
+  _loose() {
+    const g = this._mesh?.userData;
+    const aim = this._aim;
+    if (!g?.writeArrow || !aim || this.people <= 0) return;
+
+    const sp = g.spots[(this._nextShot++) % this.people];
+    const p = this.gameObject.position;
+    const a = this.gameObject.rotation.y, ca = Math.cos(a), sa = Math.sin(a);
+
+    // Off his bow, which is where he is standing turned back into the world.
+    const x0 = p.x + sp.cx * ca + sp.cz * sa;
+    const z0 = p.z - sp.cx * sa + sp.cz * ca;
+    const y0 = p.y + g.bowY;
+
+    // A hand either side of the middle of the tile it is going to. Fifteen
+    // arrows into one point is a laser; the scatter is what makes it a volley.
+    const n = this._nextShot;
+    const off = (hashHex(n, this.id, 13) - 0.5) * 0.5;
+    const x1 = p.x + aim.x * aim.dist - aim.z * off;
+    const z1 = p.z + aim.z * aim.dist + aim.x * off;
+    const y1 = aim.y + g.bowY * 0.5;
+
+    const run = Math.hypot(x1 - x0, z1 - z0);
+    if (this._shots.length >= ARROWS) this._shots.shift();
+    this._shots.push({
+      x0, y0, z0, x1, y1, z1, run,
+      t: 0,
+      dur: Math.max(0.12, run / ARROW_SPEED),
+      arc: run * ARROW_ARC,
+      yaw: Math.atan2(x1 - x0, z1 - z0),
+    });
+  }
+
+  // Advancing every arrow in the air and drawing it, in the mesh's own space.
+  // It keeps running after there is nothing left to shoot at, because the last
+  // shots of a volley are still up when the target dies.
+  _writeArrows(dt) {
+    const g = this._mesh?.userData;
+    if (!g?.writeArrow) return;
+
+    if (this._aim && !this.dead && this.people > 0) {
+      this._nock += dt;
+      while (this._nock >= VOLLEY) { this._nock -= VOLLEY; this._loose(); }
+    } else {
+      // The first arrow of the next engagement leaves the moment there is
+      // something to shoot at, rather than up to a fifth of a second later.
+      this._nock = VOLLEY;
+    }
+    if (!this._shots.length) return;
+
+    const p = this.gameObject.position;
+    const a = this.gameObject.rotation.y, ca = Math.cos(a), sa = Math.sin(a);
+    let i = 0;
+    let landed = false;
+    for (const s of this._shots) {
+      s.t += dt / s.dur;
+      if (s.t >= 1) { landed = true; continue; }
+      const t = s.t;
+      const wx = s.x0 + (s.x1 - s.x0) * t;
+      const wz = s.z0 + (s.z1 - s.z0) * t;
+      const wy = s.y0 + (s.y1 - s.y0) * t + Math.sin(Math.PI * t) * s.arc;
+      // Nose follows the flight: up on the way out, down on the way in. It is
+      // the derivative of the curve above and not an eased guess, so the shaft
+      // is on the line it is actually travelling.
+      const rise = (s.y1 - s.y0) + Math.cos(Math.PI * t) * Math.PI * s.arc;
+      const dx = wx - p.x, dz = wz - p.z;
+      g.writeArrow(i++, dx * ca - dz * sa, wy - p.y, dx * sa + dz * ca,
+                   s.yaw - a, -Math.atan2(rise, s.run));
+    }
+    for (let k = i; k < ARROWS; k++) g.writeArrow(k, 0, 0, 0, 0, 0, 0);
+    g.flushArrows?.();
+    if (landed) this._shots = this._shots.filter(s => s.t < 1);
+  }
+
   update(dt) {
     // Corpses are pinned to the world, so they have to be rewritten for as long
     // as they exist - the unit standing over them can still walk away.
     if (this._fights || this._aim || this._settling || this._corpses) this._writeMelee(dt);
+    if (this._aim || this._shots.length) this._writeArrows(dt);
     if (this._born < 1) {
       this._born = Math.min(1, this._born + this._emergeRate * dt);
       const s = this._born * this._born * (3 - 2 * this._born);

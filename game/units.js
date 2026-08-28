@@ -61,6 +61,16 @@ const HIT_TILT = 0.32;       // tipping him off his feet as it goes
 // then he is left there. The field keeps its dead for now.
 const DEATH_SLIDE = 0.28;    // how far the fall carries him back off the line
 
+// How many arrows a body of Archers can have in the air at once. They are drawn
+// out of the unit like everything else - one more InstancedMesh, one more draw
+// call, no new material - because a material first *drawn* mid-run is a stall,
+// and `warmShaders` only knows about what a type builds.
+//
+// It is a ring rather than a pool with a free list: a shot still flying when its
+// slot comes round again has been up longer than the whole volley cycle, which
+// at these speeds cannot happen and would only cost one arrow vanishing early.
+export const ARROWS = 10;
+
 export const UNIT_TYPES = {
   scout: {
     key: 'scout',
@@ -261,6 +271,7 @@ const DEFAULT_COLORS = {
   steel: 0x99a3b3,
   gold:  0xc9a55e,
   bow:   0xb08a52,
+  arrow: 0xd8c9a8,
   banner: 0xb8894a,
   pole:  0x2f2721,
   lampGlow: 0xffb45c,
@@ -347,6 +358,29 @@ function buildSquad(type, colors = {}, tuning = {}) {
     own.push(spears);
   }
 
+  // And what leaves them. Pale rather than wooden: an arrow is a tenth of a hex
+  // long crossing a board lit at blue hour, and the only thing that makes it
+  // readable is being the lightest thing in the frame for the half second it is
+  // up. Never culled - the mesh's bounds are the formation's and an arrow spends
+  // its whole flight outside them.
+  let arrows = null;
+  if (type.bows) {
+    // Longer and fatter than an arrow really is. At this scale a true one is
+    // three pixels of nothing from the game's camera, and a shot nobody can see
+    // is the same as no shot - so it is drawn at about the length of a man, which
+    // is the smallest thing on this board that reliably reads.
+    const arrowGeo = new THREE.CylinderGeometry(h * 0.018, h * 0.030, h * 0.95, 3);
+    arrowGeo.rotateX(Math.PI / 2);        // laid along +Z, which is the way it flies
+    arrows = new THREE.InstancedMesh(
+      arrowGeo,
+      new THREE.MeshLambertMaterial({ color: c.arrow, flatShading: true }),
+      ARROWS,
+    );
+    arrows.frustumCulled = false;
+    group.add(arrows);
+    own.push(arrows);
+  }
+
   const m = new THREE.Matrix4();
   const pos = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -419,6 +453,19 @@ function buildSquad(type, colors = {}, tuning = {}) {
       spears.setMatrixAt(i, m);
     }
   };
+
+  // One arrow in flight, in the mesh's own space. `vis` at zero is how a slot
+  // with nothing in it is hidden - an InstancedMesh has no per-instance
+  // visibility, and a `count` cannot skip a hole in the middle.
+  const writeArrow = arrows ? (i, x, y, z, yaw, pitch, vis = 1) => {
+    tilt.set(pitch, yaw, 0);
+    quat.setFromEuler(tilt);
+    pos.set(x, y, z);
+    scale.set(vis, vis, vis);
+    m.compose(pos, quat, scale);
+    arrows.setMatrixAt(i, m);
+  } : null;
+  if (writeArrow) for (let i = 0; i < ARROWS; i++) writeArrow(i, 0, 0, 0, 0, 0, 0);
 
   const spread = type.jitter ?? 0.22;
   for (let i = 0; i < n; i++) {
@@ -612,6 +659,11 @@ function buildSquad(type, colors = {}, tuning = {}) {
   group.userData.spots = spots;
   group.userData.write = write;
   group.userData.reach = reach;
+  // Where an arrow leaves from, so Unit does not have to know what a soldier
+  // height is to put one at the right place on a man's bow.
+  group.userData.bowY = h * 0.62;
+  group.userData.writeArrow = writeArrow;
+  group.userData.flushArrows = arrows ? () => { arrows.instanceMatrix.needsUpdate = true; } : null;
   group.userData.flush = () => {
     bodies.instanceMatrix.needsUpdate = true;
     heads.instanceMatrix.needsUpdate = true;

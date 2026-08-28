@@ -117,16 +117,23 @@ export class Battle extends Component {
     put(v, { x: -dx / d, z: -dz / d }, -first, u);
   }
 
-  // The direction one unit is shooting another, kept only for the first thing it
-  // finds. A body of men can only face one way, and the nearest is not worth
-  // working out for a pose.
+  // Where one unit is shooting another: the way, how far, and how high the thing
+  // being shot is standing. Kept only for the first target it finds - a body of
+  // men can only face one way, and which of two is nearer is not worth working
+  // out for a pose.
+  //
+  // The height comes off the target's transform rather than the grid, because
+  // the arrow has to land on the man and the man is standing on whatever
+  // elevation his tile is at.
   _takeAim(who, at) {
     if (this._aims.has(who)) return;
     const a = this._grid.hexToWorld(who.q, who.r);
     const b = this._grid.hexToWorld(at.q, at.r);
     const dx = b.x - a.x, dz = b.z - a.z;
     const d = Math.hypot(dx, dz) || 1;
-    this._aims.set(who, { x: dx / d, z: dz / d });
+    this._aims.set(who, {
+      x: dx / d, z: dz / d, dist: d, y: at.gameObject?.position.y ?? 0,
+    });
   }
 
   _clash(ours, theirs, dt) {

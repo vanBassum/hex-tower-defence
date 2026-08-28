@@ -221,6 +221,9 @@ export const MOOD = {
       cloak: 0x44708c,
       trim:  0xa8c2c6,
       bow:   0xc09154,
+      // Lighter than anything else the player owns, because it has half a second
+      // over open ground to be seen in.
+      arrow: 0xf0e3c4,
     },
 
     spearmen: {

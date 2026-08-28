@@ -127,15 +127,16 @@ export class ActionLoop extends Component {
     return this.commit(hex);
   }
 
-  // One committed move is one player action. The group is let go of as it
-  // leaves: an action belongs to a group rather than a group having a turn, and
-  // keeping it selected through the walk invites a second order into the middle
-  // of the first one.
+  // One committed move is one player action, and the group stays picked up
+  // through it. A second order cannot get in - `canCommand()` is false for the
+  // whole of the resolution - so the selection costs nothing while the board is
+  // busy and buys the thing that matters when it is not: the group you just
+  // moved is still the group in your hand, with its new reach already lit, so
+  // moving the same troops twice is one click rather than three.
   commit(hex) {
     const unit = this._control.selected;
     if (!unit || !this._control.handleOrder(hex)) return false;
     this._mover = unit;
-    this._control.deselect();
     this._setState(STATE.MOVING);
     return true;
   }
@@ -264,7 +265,14 @@ export class ActionLoop extends Component {
     this.state = next;
     this._epoch++;
     if (next === STATE.READY) { this._mover = null; this._reacting = []; }
-    else { this._setReach([]); this._sig = null; }
+    else {
+      // The reachable set and the route preview both go the moment an action
+      // commits. The selection does not - see `commit` - but a route drawn from
+      // a group that is halfway along one is describing a move nobody can make.
+      this._setReach([]);
+      this._sig = null;
+      this._control.handleHover(null);
+    }
     if (this._status) this._status.hidden = (next === STATE.READY);
   }
 
