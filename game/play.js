@@ -18,6 +18,7 @@ import { UnitControl } from './components/unit_control.js';
 import { Pickup } from './components/pickup.js';
 import { Deployment } from './components/deployment.js';
 import { EnemyForce } from './components/enemy_force.js';
+import { Garrison } from './components/garrison.js';
 import { Battle } from './components/battle.js';
 import { ActionLoop, makeStatus } from './components/action_loop.js';
 import { CARD_TYPES } from './cards.js';
@@ -404,19 +405,44 @@ export function startPlay({
   const enemies = enemyGO.addComponent(new EnemyForce({ grid: map.grid, control }));
   add(enemyGO);
 
+  // Troops the level left standing about to be found. They are built exactly like
+  // everybody else and simply not handed to the roster - see garrison.js, which
+  // is where the whole of dormancy lives.
+  //
+  // It is made before the loop below and added after it, so its first look at the
+  // board happens once every unit exists.
+  const garrisonGO = new GameObject('Garrison');
+  const garrison = garrisonGO.addComponent(new Garrison({
+    visibility, control,
+    // What a discovered group does about the card bar, decided here rather than
+    // in there: joining the force is a fact about the roster, and having a face
+    // on the bar is a fact about the hand. The card is spent on arrival - it is
+    // the strength readout every other unit the player owns has, and there is
+    // nothing on it to play.
+    onWake: (unit) => {
+      if (CARD_TYPES[unit.type.key]) deployment.addPlacedCard(unit.type.key, unit);
+    },
+  }));
+
   // Everybody the level puts on the board, sorted by the only thing that says which
   // side they are on: `hostile` on their type. A level that stands friendly units
-  // on the board - which is every level out of the editor, and none of the authored
-  // ones - hands them to the roster the same way a played card does, and they get a
-  // card apiece so the bar reads the whole force rather than only the King.
+  // on the board hands them to the roster the same way a played card does, and they
+  // get a card apiece so the bar reads the whole force rather than only the King.
+  //
+  // `dormant` is read for the player's side only. A hidden ambush is the same
+  // machinery pointed at the other roster and it is not written, because nothing
+  // has asked for one - a dormant flag on a hostile is ignored rather than
+  // half-working.
   for (const u of map.units) {
     const unit = deploy(u.type, u.q, u.r, { emerge: false });
     if (UNIT_TYPES[u.type]?.hostile) enemies.add(unit);
+    else if (u.dormant) garrison.add(unit);
     else {
       control.add(unit);
       if (CARD_TYPES[u.type]) deployment.addPlacedCard(u.type, unit);
     }
   }
+  add(garrisonGO);
 
   // And what happens when the two of them end up next to each other. It is handed
   // both rosters and neither of them is told: a side is anything with a `units`
@@ -544,7 +570,7 @@ export function startPlay({
   // far a scout sees is a number that has to be tried, not a feature.
   if (debug) installDebug({
     game, grid: map.grid, ground: hexGround, rig, mask, control, visibility,
-    pickups, deployment, enemies, loop,
+    pickups, deployment, enemies, loop, garrison,
     // How a unit gets built, handed over rather than rebuilt in the debug module -
     // it is the same call a collected pickup goes through.
     spawn: deploy,
@@ -649,7 +675,7 @@ export function startPlay({
 
   return {
     teardown,
-    map, control, enemies, deployment, visibility, mask, deploy, loop,
+    map, control, enemies, deployment, visibility, mask, deploy, loop, garrison,
     ground: hexGround,
     king,
   };

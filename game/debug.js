@@ -28,7 +28,7 @@ const VISION_COLOR = 0xffc07a;
 
 export function installDebug({ game, grid, ground, rig, mask, control, visibility,
                                spawn = null, pickups = [], deployment = null, enemies = null,
-                               loop = null }) {
+                               loop = null, garrison = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -71,6 +71,9 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     // the experiment's knobs rather than the game's, so it is null when the
     // experiment is off.
     loop,
+    // Troops the level is holding back until somebody sees them.
+    // `hex.garrison.dormant` is who has not been found yet.
+    garrison,
 
     // A card in hand without finding the thing that carries it. The one knob
     // this milestone actually needs tried: whether a card is worth walking back

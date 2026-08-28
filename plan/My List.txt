@@ -5,18 +5,10 @@
 Still not sure if it should be turn based or real time. 
 
 
-Lets reserve some specific yellow color for interactions.
-
-
-The path indication, lets do thin yellow lines instead of lighting up the whole tile.
-
-We can use the yellow also for selected tile, instead of higlighting the tile we can have some selector by coloring the corners.
-Similar for the spawn location of the troops.
-
-If we have one recurring same color for interactable things the player will recognize them easely.
 
 
 
+Let soldiers in a unit avoid standing inside objects. For example a bush. 
 
 
 

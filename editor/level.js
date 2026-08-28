@@ -113,8 +113,13 @@ export function discTiles(radius) {
 export function stringifyLevel(level) {
   const tiles = level.tiles.map(t =>
     `    { "q": ${t.q}, "r": ${t.r}, "terrain": ${JSON.stringify(t.terrain)}, "level": ${t.level ?? 0} }`);
+  // `dormant` is written only when it is true, which is what makes it free: a
+  // level with no hidden troops in it is byte for byte the level it was before
+  // the flag existed, and every file written before it reads back as not dormant
+  // because that is what a missing key means.
   const units = (level.units ?? []).map(u =>
-    `    { "type": ${JSON.stringify(u.type)}, "q": ${u.q}, "r": ${u.r} }`);
+    `    { "type": ${JSON.stringify(u.type)}, "q": ${u.q}, "r": ${u.r}` +
+    `${u.dormant ? ', "dormant": true' : ''} }`);
   // A prop is its type, its hex, and the two numbers that make one instance of it
   // itself: `salt` picks its size, its rotation and where in the tile it stands,
   // and `spread` says how far off centre it may be. So the file *is* the seed -
@@ -275,7 +280,14 @@ export function parseLevel(text) {
     // board the game cannot build.
     if (standing.has(key)) throw new Error(`two units at ${key}`);
     standing.add(key);
-    units.push({ type: u.type, q: u.q, r: u.r });
+    // Waiting on the board to be found rather than fighting from the first frame -
+    // see game/components/garrison.js. Optional and false by default, so it needs
+    // no version of its own: a file that does not mention it means what it always
+    // meant. Anything other than `true` is not dormant rather than an error,
+    // because the absence of a flag is the common case and has to stay cheap.
+    const unit = { type: u.type, q: u.q, r: u.r };
+    if (u.dormant === true) unit.dormant = true;
+    units.push(unit);
   }
 
   // What is standing about on it. Validated the same way everything else is,
@@ -629,9 +641,13 @@ export function moveKing(level, q, r) {
   return true;
 }
 
-export function placeUnit(level, type, q, r) {
+export function placeUnit(level, type, q, r, { dormant = false } = {}) {
   level.units ??= [];
-  level.units.push({ type, q, r });
+  const unit = { type, q, r };
+  // Written onto the placement only when it is on, so the flag is absent rather
+  // than false everywhere it does not apply - see `stringifyLevel`.
+  if (dormant) unit.dormant = true;
+  level.units.push(unit);
   return true;
 }
 

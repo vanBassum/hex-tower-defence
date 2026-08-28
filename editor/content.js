@@ -16,7 +16,7 @@ import {
 // ── The model ────────────────────────────────────────────────────────────────
 // A tool is an *interaction*: one hex, a precise spot, an area, a pick. A content
 // category is *what that interaction does to the level*. So there are five tools
-// and seven categories and thirty-five combinations, and none of them is a
+// and eight categories and forty combinations, and none of them is a
 // special case written somewhere in the UI - each category implements the verbs
 // it supports and says which tools it supports, and the editor asks.
 //
@@ -298,6 +298,61 @@ const enemy = {
   ghost: () => null,
 };
 
+// ── Troops the level leaves standing to be found ────────────────────────────
+// The one palette of the player's own kind of unit, and it exists without
+// breaking the rule that says there should not be one. That rule - the editor
+// has no palette for the player's army, because which army comes is the player's
+// answer to the level - is about the *hand*. These are not a hand: they are men
+// standing in a field who join the force when somebody walks close enough to see
+// them, which is exactly "what is waiting for it" and squarely the level's side
+// of that line. See game/components/garrison.js.
+//
+// Which is why `dormant` opens at 1. Turned off, this palette really would be
+// standing the player's army on the board for them, and that is the thing the
+// rule is against - the setting is there because a level format that carries an
+// always-active friendly still exists and can still be authored, not because it
+// is the ordinary case.
+//
+// Tile only, for the reason Enemy is: a body of men occupies its hex, so there is
+// no sub-hex spot to place one at.
+const troops = {
+  id: 'troops',
+  name: 'Troops',
+  tools: ['tile', 'select', 'erase'],
+  settings: ['dormant'],
+  // Everything that is not the other side and not the King - the same one line
+  // Enemy uses, read the other way round, so a new friendly unit type appears in
+  // here the day it appears in UNIT_TYPES.
+  assets: () => Object.entries(UNIT_TYPES)
+    .filter(([key, type]) => !type.hostile && key !== 'king')
+    .map(([key, type]) => ({
+      id: key,
+      name: type.name,
+      note: `${type.people} men · sees ${type.viewDistance}`,
+      preview: { kind: 'unit', type: key },
+    })),
+
+  tile: (ctx, hex) => {
+    const asset = one(ctx.assets, hex, 0);
+    const no = whyNot(ctx.level, 'unit', hex.q, hex.r);
+    if (no) throw new Error(`Cannot place the ${asset.name} here - ${no}.`);
+    return placeUnit(ctx.level, asset.id, hex.q, hex.r, { dormant: ctx.s.dormant === 1 }) ? 1 : 0;
+  },
+
+  erase: (ctx, hexes) => {
+    let gone = 0;
+    for (const h of hexes) if (removeEntityAt(ctx.level, h.q, h.r)) gone++;
+    return gone;
+  },
+
+  // Whatever is standing there that is not the King, the same as Enemy answers -
+  // both palettes place into one `units` array and the type is what sorts them,
+  // so erase takes what is on the hex rather than only what this palette makes.
+  has: (level, q, r) => entityAt(level, q, r)?.kind === 'unit',
+  refuse: (level, hex) => whyNot(level, 'unit', hex.q, hex.r),
+  ghost: () => null,
+};
+
 export const CONTENT = [
   terrain,
   detail,
@@ -324,6 +379,7 @@ export const CONTENT = [
     settings: ['size', 'spin', 'turn', 'scale', 'height', 'intensity', 'distance'],
   }),
   playerStart,
+  troops,
   enemy,
 ];
 

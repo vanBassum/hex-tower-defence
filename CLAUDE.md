@@ -55,6 +55,7 @@ thing being changed - reach for them then, not by default.
       detail.js             the ground cover: sets, and the scatter that derives
                             it from a patch rather than storing it
       components/           prop_layer, unit, unit_control, pickup, deployment,
+                            garrison (troops the level leaves to be found),
                             action_loop (EXPERIMENT: one action at a time)
       ui/card_bar.js        the hand, in DOM
       debug.js              window.hex - developer knobs, not game UI
@@ -62,7 +63,7 @@ thing being changed - reach for them then, not by default.
       level.js              the level *as data*, and the only stored format
       storage.js            levels in localStorage, keyed by id
       tools.js              HOW you edit: five interactions, and every setting
-      content.js            WHAT you edit: seven categories, each implementing
+      content.js            WHAT you edit: eight categories, each implementing
                             the same verbs over the game's own definitions
       ghost.js              the see-through preview of a precise placement
       marker.js             the ring round the one object that is selected
@@ -108,9 +109,9 @@ Break one of these and something three files away goes subtly wrong.
   being in that sweep.
 - **A tool is HOW, a content category is WHAT, and they are independent.**
   `tools.js` holds five interactions - select, place, tile, brush, erase - and
-  knows nothing about trees. `content.js` holds seven categories, each
+  knows nothing about trees. `content.js` holds eight categories, each
   implementing whichever of `place` / `tile` / `brush` / `erase` / `wheel` it
-  supports and declaring which tools and settings it understands. Thirty-five
+  supports and declaring which tools and settings it understands. Forty
   combinations, none of them written down: the tool contributes the gesture, the
   category contributes the meaning, `main.js` crosses them. Adding a kind of
   thing to the board is an entry in one of those two files and never a new
@@ -237,7 +238,32 @@ Break one of these and something three files away goes subtly wrong.
   category in `editor/content.js`, one asset, no erase, because a board with
   nowhere to arrive cannot be opened. The format still *carries* a friendly unit,
   and `play.js` still hands one to the roster, so a level written before this
-  reads back unchanged - there is simply no way to author another.
+  reads back unchanged.
+- **Troops the level leaves to be found are level content, not the player's
+  army.** A dormant group - `dormant: true` on a unit in the level - stands on
+  the board belonging to nobody until an *active* friendly can see its hex, and
+  then joins the force for good. That is squarely "what is waiting for it" rather
+  than "which army comes", which is why the `troops` palette exists without
+  breaking the rule above, and why its `dormant` setting opens *on*: turned off it
+  really would be standing the player's hand on the board for them.
+- **A dormant group is inert because it is not on the roster, not because of a
+  flag.** `Garrison` in `game/components/garrison.js` holds it and hands it to
+  `UnitControl` on discovery, and everything downstream reads the roster - vision
+  is the union over it, selection is one of its entries, `Battle` fights the
+  `units` array of each side, and both `EnemyForce` and `ActionLoop` measure
+  distances against it. So "cannot be seen, selected, ordered, fought or reacted
+  to" costs no checks anywhere: there is nothing to check, because it is not in
+  the list. Only two things are done to it by hand - `object3D.visible = false`,
+  because hiding it must not depend on the fog being on, and its hex stays
+  occupied, because the men are standing on it.
+- **Discovery is `VisibilityMap.isVisible` on the group's own hex and nothing
+  else.** No radius, no proximity check, no second answer. View distance, terrain
+  and which unit is doing the looking already feed the fog, so they feed discovery
+  for free - and the dependency runs one way: visibility says what is visible,
+  `Garrison` decides what that means, and nothing about troops has been put into
+  the fog. Waking widens the union, which re-enters the same listener, so the list
+  is shortened *before* anybody is woken and the recursion terminates on a shorter
+  list rather than on a guard.
 - **EXPERIMENT: a move is one action, and nothing ever takes the board away.**
   `ActionLoop` in `game/components/action_loop.js` is a prototype of turn-like
   play with no turn in it: pick a group, spend one move, and the enemies that
@@ -340,7 +366,8 @@ Break one of these and something three files away goes subtly wrong.
 
 | Adding | Touch |
 | --- | --- |
-| A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
+| A unit type | `game/units.js` (+ its palette block in `MOOD.units`) - the `troops` or `enemy` palette picks it up from `hostile` |
+| Troops a level hides until they are found | `dormant: true` on the unit, or the editor's Troops palette |
 | A troop that kills at a distance | `range` on its type - Battle already asks, and `_relevant` already makes the target notice |
 | What a unit carries | `spears` / `bows` on its type - one InstancedMesh, one geometry swapped, never a fourth pass |
 | Something a unit throws | an instanced pass and a writer in `buildSquad`'s `userData`; the flight belongs to `Unit` and is kept in world space |

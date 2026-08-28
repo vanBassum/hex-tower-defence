@@ -4,7 +4,7 @@
 // does not know that trees exist.
 //
 // That is the split the whole editor is built on. Five interactions times seven
-// categories is thirty-five things the editor can do, and not one of them is
+// categories is forty things the editor can do, and not one of them is
 // written down anywhere: the tool contributes the gesture, the category
 // contributes the meaning, and the panel offers the combination when the category
 // says it makes sense.
@@ -45,6 +45,10 @@ export const SETTINGS = {
   turn:      { label: 'Facing', min: 0, max: 11, value: 0, when: (st) => st.s.spin !== 2 },
   // Tenths, so the stepper is whole numbers and the scale is not.
   scale:     { label: 'Scale', min: 4, max: 20, value: 10 },
+  // Whether troops placed on the board are waiting to be found. A 0/1 stepper
+  // rather than a checkbox, because a checkbox is a control this panel does not
+  // have and one flag is not a reason to build one.
+  dormant:   { label: 'On reveal', min: 0, max: 1, value: 1 },
   step:      { label: 'Height step', min: 1, max: 3, value: 1 },
   height:    { label: 'Height', min: 1, max: 5, value: 3 },
   // What a light opens on is the hour's own lamp rather than a number typed here -
@@ -114,7 +118,7 @@ export const TOOLS = [
     footprint: 'hex',
     continuous: false,
     settings: ['density', 'seed', 'size', 'spin', 'turn', 'scale', 'step',
-      'height', 'intensity', 'distance'],
+      'height', 'intensity', 'distance', 'dormant'],
   },
 
   {
