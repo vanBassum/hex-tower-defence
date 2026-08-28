@@ -292,9 +292,10 @@ export function startPlay({
       });
     }
     // Built after the sweep at the bottom of this file, so it patches itself in -
-    // culled rather than dimmed, because a unit is the one thing on the board that
-    // is nothing but information.
-    mask?.patch(go.object3D, { cull: true });
+    // culled on *watched* rather than dimmed, because a unit is the one thing on
+    // the board that is nothing but information. Ground the player found stays
+    // drawn; who is standing on it does not.
+    mask?.patch(go.object3D, { cull: 'watched' });
     return unit;
   }
 
@@ -612,14 +613,19 @@ export function startPlay({
   // want identical behaviour, and the next component to be added should get it
   // without having to remember to ask.
   //
-  // The two lists are the two kinds of thing on the board, and which list a layer
-  // is in is a rule rather than a look. The land is dimmed to almost nothing and
-  // left there, so the island still reads as continuing into the dark. Everything
-  // standing on it is *information* - a unit, an enemy, a prop, a pickup - and
-  // information is not dimmed, it is discarded: on an unwatched hex there is
-  // nothing on screen to read at all.
+  // The three lists are the three kinds of thing on the board, and which list a
+  // layer is in is a rule rather than a look - see the note over
+  // `VisibilityMask.patch`.
+  //
+  // The land is dimmed to almost nothing and left there, so an island nobody has
+  // walked still reads as an island. What stands on the land and cannot move is
+  // part of what the player *learned* by going there, so it appears with the tile
+  // and stays. Units and enemies are neither: they are where an army is standing,
+  // which is the one thing exploring must not tell you, so they are drawn only
+  // while somebody is looking.
   for (const go of [groundGO, sea]) mask?.patch(go.object3D);
-  for (const go of [propsGO, gridGO, kingGO, motes, ...pickupGOs]) mask?.patch(go.object3D, { cull: true });
+  for (const go of [propsGO, gridGO, motes, ...pickupGOs]) mask?.patch(go.object3D, { cull: 'known' });
+  mask?.patch(kingGO.object3D, { cull: 'watched' });
 
   // Developer knobs: V rings what the force is lighting up, R
   // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
@@ -666,7 +672,7 @@ export function startPlay({
     const at = map.grid.hexToWorld(start.q, start.r);
     const scrap = Object.values(UNIT_TYPES).map((type) => {
       const mesh = type.build(MOOD.units, { lamp: LAMPS[type.key], hexSize: map.grid.size });
-      mask?.patch(mesh, { cull: true });
+      mask?.patch(mesh, { cull: 'watched' });
       // Where the camera is already looking, and clear of the ground, so its
       // fragments are really shaded rather than sorted away behind the terrain.
       mesh.position.set(at.x, hexGround.topY(start.q, start.r) + 1.2, at.z);

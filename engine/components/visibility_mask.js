@@ -1,18 +1,36 @@
 import * as THREE from 'three';
 import { Component } from '../gameobject.js';
 
-// What the player cannot see, unlit - and the whole of the fog of war for now.
+// What the player has never seen, unlit - and the whole of the fog of war for now.
 //
 // `VisibilityMap` is the truth: a set of hexes, each unexplored, explored or
-// visible. A tile the force is looking at right now renders exactly as it always
-// did, and every other tile collapses to the night the island is standing in.
+// visible. A tile that has *ever* been seen renders exactly as it always did, and
+// every tile that has not collapses to the night the island is standing in.
+//
+// ── Ground you found stays found ────────────────────────────────────────────
+// It used to be the narrower rule - watched *right now* or night - so walking a
+// unit away un-drew the hillside behind it. That is a defensible fog and it is
+// the wrong one for this board: the whole game is walking an island to learn its
+// shape, and a shape that goes out again the moment you leave is a shape nobody
+// can plan a route across. So the picture follows discovery.
+//
+// What did *not* change is the part that matters, and keeping the two apart is
+// this file's job. The dark is a picture and it now belongs to *discovery*;
+// culling is a rule and it still comes in the two flavours the board needs:
+//
+//   'watched'  gone unless somebody is looking at that hex this instant. Units
+//              and enemies, because where an army is standing is the one thing
+//              exploring must not tell you.
+//   'known'    gone until that hex has been seen once, and there for good after.
+//              Trees, rocks, lanterns, caches, the grid - the furniture of the
+//              board, which is what "the tile is visible" means when a tile has
+//              something standing on it.
 //
 // Three things happen on top of that, in this order, and the order is the point:
 // the hex decides (binary, no softness), the night is laid down, and only then is
 // anything cosmetic allowed - the fade that laps the dark over the edge of the
 // light, and the slow air drifting out in the dark. Neither of the two can lift a
-// hex the player is not watching, which is the one property this file exists to
-// keep.
+// hex nobody has been to, which is the one property this file exists to keep.
 //
 // ── Why the hex is rebuilt in the shader ────────────────────────────────────
 // The obvious way to get a hex mask to a material is a world-space texture, and
@@ -120,13 +138,18 @@ export class VisibilityMask extends Component {
     // own hexes left at "visible" - a hole in a shaped board is open sea, not
     // undiscovered ground.
     //
-    // Two channels, and keeping them apart is the whole of how the reveal stays
-    // honest. **R is the rule**: watched or not, binary, changed the instant the
-    // VisibilityMap says so, and the only thing culling reads. **G is the
-    // picture**: how far through its reveal the hex is, which eases from one to
-    // the other over `reveal.time` and is what every cosmetic term reads. A hex
-    // is therefore *fully* a gameplay fact before it has finished looking like
-    // one, and never the other way round.
+    // Three channels, and keeping them apart is the whole of how the reveal stays
+    // honest. **R is watched**: is anybody looking at this hex this instant -
+    // binary, changed at once, and read by nothing but the cull that hides
+    // armies. **B is known**: has it ever been seen - binary, changed at once,
+    // and read by the cull that hides the board's own furniture until it is
+    // found. **G is the picture**: how far through its reveal the hex is, which
+    // eases over `reveal.time` and is what every cosmetic term reads, and it
+    // follows *known* rather than watched.
+    //
+    // So a hex is fully a gameplay fact before it has finished looking like one,
+    // and never the other way round - a tree is drawn the instant its tile is
+    // discovered and then emerges out of the dark with the ground under it.
     this._data = new Uint8Array(this._w * this._h * 4).fill(255);
     // Where each hex is going, and where it has got to. Indexed like the texture.
     this._goal = new Float32Array(this._w * this._h).fill(1);
@@ -141,20 +164,29 @@ export class VisibilityMask extends Component {
   // The only place the two systems touch, and it is one-way: hexes in, a table
   // out. Cheap enough to redo whole on every change - it is two bytes per hex.
   //
-  // The rule lands immediately. The picture is only given a new destination here;
-  // `_advance` walks it there. `instant` is construction: whatever is already
-  // known at the start of a run has always been known, and should not sweep in.
+  // Both rules land immediately. The picture is only given a new destination
+  // here; `_advance` walks it there. `instant` is construction: whatever is
+  // already known at the start of a run has always been known, and should not
+  // sweep in.
+  //
+  // The picture's goal is `known`, which only ever goes up - so the dark now has
+  // one direction to travel and the leaving of it is the only animation left.
+  // `_advance` can still bring it back and is left able to: nothing in the map
+  // un-explores a hex, and a rule that depends on nothing ever doing so is a rule
+  // waiting to be broken by a level that wipes the fog.
   _refresh(instant = false) {
     let settling = false;
     for (const { q, r } of this._hexList) {
       const t = (r - this._rMin) * this._w + (q - this._qMin);
       const lit = this._vis.isVisible(q, r) ? 1 : 0;
+      const known = this._vis.isExplored(q, r) ? 1 : 0;
       this._data[t * 4] = lit ? 255 : 0;
-      this._goal[t] = lit;
+      this._data[t * 4 + 2] = known ? 255 : 0;
+      this._goal[t] = known;
       if (instant) {
-        this._cur[t] = lit;
-        this._data[t * 4 + 1] = lit ? 255 : 0;
-      } else if (this._cur[t] !== lit) {
+        this._cur[t] = known;
+        this._data[t * 4 + 1] = known ? 255 : 0;
+      } else if (this._cur[t] !== known) {
         settling = true;
       }
     }
@@ -187,14 +219,22 @@ export class VisibilityMask extends Component {
   // One call in main.js per layer, and the layer never hears about it: whether a
   // thing obeys fog of war is a fact about the scene, not about the thing.
   //
-  // `cull` is the difference between the two kinds of thing in the scene, and it
-  // is the rule rather than a look. Terrain is *land*, and land nobody is
-  // watching still has to read as land continuing into the dark, so it is dimmed
-  // to almost nothing and left there. Everything standing on it - a unit, an
-  // enemy, a prop, a pickup - is gameplay information, and information is not
-  // dimmed, it is thrown away: the fragment is discarded outright on a hex the
-  // force is not watching, so there is nothing on screen to read, not even a
-  // silhouette against the ground behind it.
+  // `cull` is the difference between the three kinds of thing in the scene, and
+  // all three are rules rather than looks.
+  //
+  //   omitted    the land itself. Ground nobody has ever seen still has to read
+  //              as land continuing into the dark, so it is dimmed to almost
+  //              nothing and left there rather than cut away.
+  //   'known'    everything standing on the land that cannot move - trees, rocks,
+  //              lanterns, caches, the grid over the tiles. Thrown away until its
+  //              hex has been seen, and drawn from then on: it is part of what the
+  //              player learned by going there.
+  //   'watched'  units and enemies. Thrown away unless somebody is looking at
+  //              that hex *this instant*, so on ground the player knows but is not
+  //              watching there is nothing on screen to read, not even a
+  //              silhouette against the tile behind it. Where an army is standing
+  //              is the one thing exploring is not allowed to tell you, and
+  //              discarding is how that is stated - information is not dimmed.
   patch(root, opts) {
     root.traverse?.((o) => {
       const m = o.material;
@@ -205,15 +245,17 @@ export class VisibilityMask extends Component {
     return root;
   }
 
-  patchMaterial(material, { cull = false } = {}) {
+  patchMaterial(material, { cull = null } = {}) {
     if (!material || this._patched.has(material)) return material;
     this._patched.add(material);
 
     const prev = material.onBeforeCompile;
     // three keys its program cache on the source text of onBeforeCompile, and the
     // closure below reads identically for every material it is put on - so
-    // anything that distinguishes them has to go into the key by hand.
-    const key = `${prev ? prev.toString() : ''}|mask${cull ? 'c' : ''}`;
+    // anything that distinguishes them has to go into the key by hand. The cull
+    // mode is part of it: two materials that differ only in which channel they
+    // discard against would otherwise share one program.
+    const key = `${prev ? prev.toString() : ''}|mask${cull ?? ''}`;
     material.customProgramCacheKey = () => key;
 
     material.onBeforeCompile = (shader, renderer) => {
@@ -417,9 +459,10 @@ vec2 maskHexAt( vec2 p ) {
 // Anything off the table counts as watched and finished - the open ocean past the
 // coast is not a secret.
 //
-// 'maskRule' is the gameplay fact, and only the culling below may read it: an
-// object on an unwatched hex is not drawn at all, and it starts being drawn the
-// instant the rule changes rather than when the picture catches up.
+// 'maskRule' and 'maskKnown' are the two gameplay facts - is anybody looking at
+// this hex now, and has anybody ever - and only the culling below may read
+// either. An object is drawn or not drawn outright, and it starts the instant its
+// rule changes rather than when the picture catches up.
 //
 // 'maskShown' is how far through its reveal a hex is - 0 night, 1 open - and
 // every cosmetic term reads this one instead. 'maskWatched' is the same thing
@@ -429,6 +472,12 @@ float maskRule( vec2 ax ) {
   vec2 idx = ax - uMaskOrigin;
   if ( any( lessThan( idx, vec2( 0.0 ) ) ) || any( greaterThanEqual( idx, uMaskSize ) ) ) return 1.0;
   return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).r;
+}
+
+float maskKnown( vec2 ax ) {
+  vec2 idx = ax - uMaskOrigin;
+  if ( any( lessThan( idx, vec2( 0.0 ) ) ) || any( greaterThanEqual( idx, uMaskSize ) ) ) return 1.0;
+  return texture2D( uMaskTable, ( idx + 0.5 ) / uMaskSize ).b;
 }
 
 float maskShown( vec2 ax ) {
@@ -551,14 +600,12 @@ function maskFragment(cull) {
 {
   vec2 maskAx = maskHexAt( vMaskWorld.xz );
 ${cull ? `
-  // Not dimmed - gone, and off the *rule* rather than off the picture. This is
-  // the information rule: on an unwatched hex there is to be nothing on screen
-  // to read, not even a shape against the ground behind it. Reading the rule is
-  // what keeps that true through a reveal - a hex is a gameplay fact before it
-  // has finished looking like one, so an object waits for the fact and then
-  // emerges with the dark, painted toward the night by the same term the ground
-  // is until the front has passed it.
-  if ( maskRule( maskAx ) < 0.5 ) discard;
+  // Not dimmed - gone, and off a *rule* rather than off the picture. Reading the
+  // rule is what keeps it honest through a reveal: a hex is a gameplay fact
+  // before it has finished looking like one, so an object waits for the fact and
+  // then emerges with the dark, painted toward the night by the same term the
+  // ground is until the front has passed it.
+  if ( ${cull === 'watched' ? 'maskRule' : 'maskKnown'}( maskAx ) < 0.5 ) discard;
 ` : ''}
   // How far through its own reveal this hex is, eased so the dark neither starts
   // nor stops abruptly. 0 and 1 are left exactly alone, which is what makes the

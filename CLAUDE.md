@@ -94,15 +94,27 @@ Break one of these and something three files away goes subtly wrong.
   and states. Nothing writes `UNEXPLORED` after construction: seen once is seen
   forever. Whatever draws it reads it and never writes.
 - **Hidden ground is unlit, not covered.** `VisibilityMask` is the only drawing
-  of visibility and it hides nothing with geometry: a hex the force is not
-  watching *right now* collapses to `MOOD.hidden`, keeping a trace of its own
-  brightness so the land still reads as continuing into the dark.
-- **An unwatched hex leaks nothing.** Land is dimmed; everything standing on it -
-  units, enemies, props, pickups - is `discard`ed outright (`patch(go, { cull:
-  true })` in `main.js`), so there is no shape on screen to read. Visibility
-  itself stays binary: watched or night, decided by the fragment's own hex.
+  of visibility and it hides nothing with geometry: a hex nobody has *ever* seen
+  collapses to `MOOD.hidden`, keeping a trace of its own brightness so the land
+  still reads as continuing into the dark.
+- **Ground you found stays found, but who is standing on it does not.** The dark
+  is a picture and it follows *discovery*; culling is a rule and it comes in two
+  flavours, chosen per layer by one call in `play.js`. `cull: 'known'` is the
+  board's own furniture - props, pickups, the grid - which appears with its tile
+  and stays, because it is what the player learned by going there. `cull:
+  'watched'` is units and enemies, `discard`ed outright unless somebody is looking
+  at that hex this instant, so there is no shape on screen to read, not even a
+  silhouette. Where an army is standing is the one thing exploring must not tell
+  you, and that is the whole of what the narrower fog was protecting - the version
+  before this one un-drew the hillside as well, which made a shape nobody could
+  plan a route across.
+- **The mask's three channels are two rules and a picture.** R is *watched*, B is
+  *known*, both binary and both changed the instant `VisibilityMap` says so; G is
+  how far through its reveal a hex is, it eases, it follows `known`, and every
+  cosmetic term reads it and only it. So a hex is fully a gameplay fact before it
+  has finished looking like one, and never the other way round.
 - **Softening may only ever remove light.** `MOOD.hidden.fade` laps the night
-  back over the outer edge of *watched* tiles, along the perimeter of the whole
+  back over the outer edge of *known* tiles, along the perimeter of the whole
   region. There is deliberately no term anywhere that can lift an unwatched hex,
   and that asymmetry is what lets the edge be soft while the rule is hard - so
   anything added here fades the lit side inward, never the dark side outward.
@@ -110,9 +122,10 @@ Break one of these and something three files away goes subtly wrong.
   position back into axial coordinates and reads a one-texel-per-hex table, so
   the boundary is the real hex boundary. `maskHexAt` in `visibility_mask.js` is
   `HexGrid.worldToHex` written twice - change one and change the other.
-- **`mask.patch` is one call per layer in `main.js`**, never an argument threaded
+- **`mask.patch` is one call per layer in `play.js`**, never an argument threaded
   through a constructor. Anything new added to the scene obeys fog of war by
-  being in that sweep.
+  being in that sweep, and which of the three lists it joins - dimmed, culled on
+  `known`, culled on `watched` - is the only decision to make about it.
 - **A tool is HOW, a content category is WHAT, and they are independent.**
   `tools.js` holds five interactions - select, place, tile, brush, erase - and
   knows nothing about trees. `content.js` holds eight categories, each
@@ -489,6 +502,7 @@ Break one of these and something three files away goes subtly wrong.
 | A unit that hits harder for having arrived | `charge: COMBAT.charge` on its type - `Unit` counts the tiles and `strike` spends it |
 | A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
 | A way of marking hexes | a subclass of `HexOverlay` overriding `_rebuild` - the picker finds any of them |
+| Something new in the scene that must obey the fog | one line in the `mask.patch` sweep in `game/play.js` - dimmed, `cull: 'known'`, or `cull: 'watched'` |
 | Anything the player can act on | draw it in `MOOD.interact`, and never spend that yellow on the world |
 | Where a group order puts people | `plan()` in `game/components/unit_control.js` - the hover and the click are the same call |
 | A wire between components | `game/play.js`, never inside either component |
