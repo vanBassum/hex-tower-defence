@@ -12,18 +12,21 @@ import { Unit } from '../game/components/unit.js';
 import { PropLayer } from '../game/components/prop_layer.js';
 import {
   defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt, describeAt,
-  addCard, removeCard, setDeckLimit, deckLimit, topPropAt, moveProp,
+  addCard, removeCard, setDeckLimit, deckLimit, topPropAt, moveProp, isStandable,
 } from './level.js';
-import { canStand } from './objects.js';
 import { detailPlacements } from '../game/detail.js';
-import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
+import { CONTENT, CONTENT_BY_ID } from './content.js';
+import {
+  TOOLS, TOOL_BY_ID, SETTINGS, defaultSettings, visibleSettings, toolsFor,
+} from './tools.js';
+import { Ghost } from './ghost.js';
 import { downloadLevel, readFile } from './files.js';
 import { startPlay } from '../game/play.js';
 import { buildMap } from '../game/maps.js';
 import { fogWanted, setFogWanted } from './prefs.js';
 import * as storage from './storage.js';
 import { EditorPanel } from './ui/panel.js';
-import { ToolBar } from './ui/toolbar.js';
+import { EditBar } from './ui/editbar.js';
 import { LevelLibrary } from './ui/levels.js';
 import { LevelSettings } from './ui/settings.js';
 
@@ -56,12 +59,17 @@ import { LevelSettings } from './ui/settings.js';
 // opens again on whatever was on screen last time. Files are for the other
 // things: a backup, another machine, a level committed to git.
 //
-// ── What the mouse means is a tool's business ────────────────────────────────
-// This file routes the pointer and knows nothing about what any tool does. Hover
-// paints a preview of the active tool's footprint, a left press and drag hands
-// that footprint to the tool, and the wheel does the same when the tool wants it.
-// The tools are data in tools.js; adding units, enemies or objects later is a new
-// entry there and nothing here.
+// ── What the mouse means is a tool crossed with a content ───────────────────
+// Two independent choices: a *tool* is how you are editing - one hex, an exact
+// spot, an area, a pick - and a *content* is what you are editing. This file owns
+// the crossing and neither half of it. Hover previews the tool's footprint, a
+// press hands that footprint to whichever verb the tool names, and the content
+// decides what that means.
+//
+// So there is no branch anywhere below on what is being placed. The tools are in
+// tools.js, the categories are in content.js, and adding a kind of thing to the
+// board is an entry in one of them - never a new interaction, and never a line
+// here.
 //
 // The scene is in two halves because of that. The camera, the light, the brush
 // overlay and the picker are built once and outlive every edit - tearing the
@@ -213,30 +221,29 @@ function clearTerrain() {
   hexGround = null;
 }
 
-// ── The mouse ────────────────────────────────────────────────────────────────
+// ---- The mouse --------------------------------------------------------------
 
 let hovered = null;          // the hex under the cursor, or null
+let spot = null;             // where in the world the cursor is, or null
 let painting = false;        // a left button held down, mid-stroke
 let selected = null;         // the hex the arrow has picked, or null
 // How far into the current stroke we are: 1 on the press, counting up while the
-// button is held. It is handed to the tools, and it is the only way one of them
-// can tell a click from a drag - which the Props tool needs, because a press
-// places one thing on purpose and a drag scatters. See the contract at the top of
-// tools.js.
+// button is held. A tool that acts on the press only says so with `continuous`,
+// and this is what lets the drag be told from the press it started with.
 let step = 0;
 // And what the arrow has hold of: the prop the press landed on, carried while the
 // button stays down. Null for a hex with nothing pickable on it, which is most of
 // them - the drag then does nothing, rather than the camera being fought over.
 let carried = null;
 
-// The brush: the footprint the active tool would act on, in that tool's colour.
-// One overlay for every tool, because there is only ever one brush - and it is
-// the only thing on screen that says what the mouse is about to do.
+// The footprint the active tool would act on, in that tool's colour. One overlay
+// for every tool, because there is only ever one - and it is the only thing on
+// screen that says what the mouse is about to do.
 const brushGO = new GameObject('Brush');
 const brush = brushGO.addComponent(new HexOverlay(geometry, [], {
   color: 0x9fd8ee, opacity: 0.34, y: 0.045, additive: true,
-  // Off the board there is no surface and `topY` says zero, which is the height
-  // a tile would be added at - so the preview sits exactly where the tile will.
+  // Off the board there is no surface and `topY` says zero, which is the height a
+  // tile would be added at - so the preview sits exactly where the tile will.
   heightAt: (q, r) => hexGround?.topY(q, r) ?? 0,
 }));
 game.add(brushGO);
@@ -252,6 +259,13 @@ const selection = selectGO.addComponent(new HexOverlay(geometry, [], {
 }));
 game.add(selectGO);
 
+// The see-through preview of what a precise placement would leave behind. Built
+// once and reused, because it outlives every edit - and because building it is the
+// expensive half.
+const ghostGO = new GameObject('Ghost');
+const ghost = ghostGO.addComponent(new Ghost({ colors: MOOD.props }));
+game.add(ghostGO);
+
 // The editor's mouse. It survives every *edit* - tearing the picker down mid-drag
 // would take the listener running the drag with it - and it is taken off the page
 // entirely while a playtest is on, because the game puts its own picker there and
@@ -265,10 +279,11 @@ game.add(selectGO);
 // themselves, because both are replaced on every edit and a captured reference
 // would be pointing at the board as it was two tiles ago.
 let cursorGO = null;
+let picker = null;
 
 function buildCursor() {
   cursorGO = new GameObject('EditorCursor');
-  cursorGO.addComponent(new HexPicker({
+  picker = cursorGO.addComponent(new HexPicker({
     grid: {
       worldToHex: (x, z) => envelope.worldToHex(x, z),
       inBounds: (q, r) => envelope.inBounds(q, r),
@@ -276,23 +291,24 @@ function buildCursor() {
     ground: { topY: (q, r) => hexGround?.topY(q, r) ?? 0 },
     onHover: (hex) => {
       hovered = hex;
-      // A drag is the hexes it crosses - for the tools that want it. Place does
-      // not: dropping a unit on every hex the cursor passed over is not a stroke,
-      // it is a mess to undo.
-      if (painting && tool().continuous !== false) apply();
+      // Where in the tile, not just which tile. The Place tool is the reason the
+      // picker keeps this: everything else rounds it off to a hex immediately.
+      spot = picker?.point ?? null;
+      if (painting && tool().continuous) apply();
       else refreshBrush();
       refreshPanel();
     },
     onDown: (hex) => {
       hovered = hex;
+      spot = picker?.point ?? null;
       painting = true;
       step = 0;
       apply();
     },
     onUp: () => { painting = false; carried = null; },
-    // The right button, and it is the same intention for every tool: take away
-    // what this tool puts down. A right *drag* is the camera's rotate and a right
-    // *press* is the removal, and the rig is the one that knows which just
+    // The right button, and it is the same intention whatever the tool: take away
+    // what this *content* puts down. A right drag is the camera's rotate and a
+    // right press is the removal, and the rig is the one that knows which just
     // happened - so a press at the end of a drag is thrown away here.
     onOrder: (hex) => {
       if (rig.consumedRightPress) return;
@@ -300,16 +316,15 @@ function buildCursor() {
       removeAt();
       refreshPanel();
     },
-    // The wheel is the tool's only if the tool wants it and there is something
-    // under the cursor to use it on. Everything else - which is every notch spent
-    // off the board, and every notch spent with a tool that has no use for one -
-    // falls through to the camera's zoom.
+    // The wheel is the content's only if the content has a use for one - which
+    // terrain does, because sculpting height is a continuous adjustment and no
+    // number of clicks is. Everything else falls through to the camera's zoom.
     onWheel: (hex, deltaY) => {
-      if (!hex || !tool().wheel) return false;
+      if (!hex || !content().wheel || !tool().verb) return false;
       hovered = hex;
-      const hexes = tool().brush(ctx(), hex);
+      const hexes = footprint();
       if (!hexes.length) return false;
-      edited(tool().wheel(ctx(), hexes, deltaY < 0 ? +1 : -1));
+      edited(content().wheel(ctx(), hexes, deltaY < 0 ? +1 : -1));
       return true;                    // consumed: the camera does not zoom
     },
   }));
@@ -321,10 +336,13 @@ function editorMouse(on) {
   else if (!on && cursorGO) {
     game.remove(cursorGO);
     cursorGO = null;
+    picker = null;
     hovered = null;
+    spot = null;
     painting = false;
   }
-  brush.setHexes(on ? brushHexes() : []);
+  if (!on) ghost.hide();
+  brush.setHexes(on ? footprint() : []);
   refreshSelection();
 }
 
@@ -332,71 +350,145 @@ function tool() {
   return TOOL_BY_ID[activeTool];
 }
 
-// What a tool is given: the level to change, the lattice to stay inside, and its
-// own settings. Rebuilt per call because `level` and `envelope` are both replaced
-// out from under it.
-function ctx() {
-  return { level, envelope, s: toolSettings[activeTool], step };
+function content() {
+  return CONTENT_BY_ID[activeContent];
 }
 
-function brushHexes() {
-  return hovered ? tool().brush(ctx(), hovered) : [];
+// What the palette has ticked, as the category's own asset entries. Always a list,
+// and never empty: a selection that fell to nothing would be a tool that silently
+// does nothing, so the first asset stands in.
+function assets() {
+  const all = content().assets();
+  const want = chosen[activeContent] ?? new Set();
+  const picked = all.filter(a => want.has(a.id));
+  return picked.length ? picked : all.slice(0, 1);
+}
+
+// What a content verb is given: the level to change, its own settings, and what
+// is selected. Rebuilt per call because `level` is replaced out from under it.
+function ctx() {
+  return { level, envelope, assets: assets(), s: toolSettings[activeTool] };
+}
+
+// The hexes the press would act on. A tool that works in hex units gets the one
+// under the cursor; an area tool gets the ring the radius asks for, bounded by the
+// envelope so a wide brush cannot paint off into hexes nothing can reach.
+function footprint() {
+  if (!hovered) return [];
+  if (tool().footprint !== 'area') return [hovered];
+  const radius = Math.max(0, (toolSettings[activeTool].radius ?? 1) - 1);
+  return [...envelope.hexesInRange(hovered.q, hovered.r, radius)];
+}
+
+// And the same list narrowed to what the press would actually touch, which is the
+// honest preview for everything except terrain. A terrain brush shows its whole
+// footprint on purpose: a preview that shrinks as it crosses ground already drawn
+// reads as the tool losing its grip.
+function previewHexes() {
+  const hexes = footprint();
+  const c = content();
+  if (tool().id === 'erase') return hexes.filter(h => c.has(level, h.q, h.r));
+  if (c.showsWholeFootprint || !c.refuse) return hexes;
+  return hexes.filter(h => !c.refuse(level, h, assets()[0]));
 }
 
 function refreshBrush() {
-  // A tool that has something to say about the hex under the cursor says it in
-  // the brush's colour, which is the only feedback that arrives before the click.
-  brush.setColor(tool().colorAt?.(ctx(), hovered) ?? tool().color);
-  brush.setHexes(brushHexes());
+  const c = content();
+  // Red where the press would be refused, so the tool answers while the cursor is
+  // moving instead of after a click that did nothing.
+  const no = tool().verb && hovered && c.refuse?.(level, hovered, assets()[0]);
+  brush.setColor(no ? 0xe8a09a : tool().color);
+  brush.setHexes(tool().verb || tool().id === 'select' ? previewHexes() : []);
+  refreshGhost();
 }
 
-// One stroke's worth of work: hand the tool its footprint and rebuild if it
-// changed anything. A drag across ground that is already drawn reports zero and
-// costs nothing, which is what keeps a long stroke cheap.
+// The ghost only belongs to the one tool that places something at a point. Under
+// every other tool the footprint overlay is the preview, and a second answer to
+// the same question would be two answers.
+function refreshGhost() {
+  if (activeTool !== 'place' || !hovered || !spot || session) return ghost.hide();
+  const c = content();
+  if (c.refuse?.(level, hovered, assets()[0])) return ghost.hide();
+  const placement = c.ghost?.(assets()[0], toolSettings[activeTool]);
+  if (!placement) return ghost.hide();
+  ghost.show(placement, {
+    x: spot.x, z: spot.z, y: hexGround?.topY(hovered.q, hovered.r) ?? 0,
+  });
+}
+
+// One stroke's worth of work: hand the footprint to the content and rebuild if it
+// changed anything. A drag across ground that already says what the tool would say
+// reports zero and costs nothing, which is what keeps a long stroke cheap.
 function apply() {
   if (session) return;
   step++;
-  // The arrow changes nothing, so it never reaches a tool - see `select` in
-  // tools.js. The press picks something up and the rest of the stroke carries it.
-  if (tool().select) return step === 1 ? pick() : carry();
-  const hexes = brushHexes();
-  if (!hexes.length) { refreshBrush(); return; }
+  // The arrow changes nothing, so it never reaches a category. The press picks
+  // something up and the rest of the stroke carries it.
+  if (!tool().verb) return step === 1 ? pick() : carry();
+  if (step > 1 && !tool().continuous) return;
+
+  const c = content();
+  const verb = c[tool().verb];
+  if (!verb) { say(`${tool().name} does nothing to ${c.name.toLowerCase()}.`, true); return; }
   try {
-    edited(tool().paint?.(ctx(), hexes) ?? 0);
+    if (tool().footprint === 'area') {
+      // The *preview's* list, not the whole footprint. The two being the same
+      // list is the rule rather than a nicety: a brush that acted on hexes it had
+      // not highlighted painted ground cover into the sea, which is a level the
+      // editor then refused to reopen. What is shown is what happens.
+      const hexes = previewHexes();
+      if (!hexes.length) { refreshBrush(); return; }
+      edited(verb(ctx(), hexes));
+    } else {
+      if (!hovered) { refreshBrush(); return; }
+      // One hex, so the refusal is worth saying out loud rather than by drawing
+      // nothing - a press that lands on a tile that cannot take the thing should
+      // say why.
+      const no = c.refuse?.(level, hovered, assets()[0]);
+      if (no) throw new Error(`Cannot put that here - ${no}.`);
+      edited(verb(ctx(), hovered, offsetIn(hovered)));
+    }
     panel.clearError();
   } catch (e) {
-    // A tool that will not do something says why. The brush was already showing
-    // the refusal in its colour; this is the sentence behind it, for the click
-    // that went ahead anyway.
+    // A refusal the brush was already showing in its colour; this is the sentence
+    // behind it, for the click that went ahead anyway.
     say(e.message, true);
   }
 }
 
-// The right button: whatever the active tool's `erase` is, on the press only.
-// Every tool's own inverse rather than one shared delete, so taking a lamp back
-// does not fell the tree beside it - the pairing is written on the tool.
+// Where in the hex the cursor is, in world units from the tile centre. This is the
+// whole of what the Place tool adds over the Tile tool, and it is why the picker
+// keeps a world point at all.
+function offsetIn(hex) {
+  if (!spot) return null;
+  const { x, z } = world.grid.hexToWorld(hex.q, hex.r);
+  return { dx: spot.x - x, dz: spot.z - z };
+}
+
+// The right button: the content's own erase, on the hex under the cursor. Every
+// category's own inverse rather than one shared delete, so taking a lamp back does
+// not fell the tree beside it - and terrain has to be the chosen category before a
+// right-click can take ground away at all.
 function removeAt() {
-  if (session) return;
-  const hexes = brushHexes();
-  if (!hexes.length) return;
+  if (session || !hovered) return;
   try {
-    edited(tool().erase?.(ctx(), hexes) ?? 0);
+    edited(content().erase?.(ctx(), [hovered]) ?? 0);
     panel.clearError();
   } catch (e) {
     say(e.message, true);
   }
 }
 
-// What the arrow does. A hex with something on it becomes the selection and a
-// bare one clears it; the level is not touched, so there is nothing to rebuild
-// and nothing to store - a selection is something the editor is holding, not
-// something the level says.
+// What the arrow does. A hex with something on it becomes the selection and a bare
+// one clears it; the level is not touched, so there is nothing to rebuild and
+// nothing to store - a selection is something the editor is holding, not something
+// the level says.
 function pick() {
   const what = hovered && describeAt(level, hovered.q, hovered.r);
   selected = what ? { ...hovered } : null;
-  // Whatever is on top of the hex, held for as long as the button is. Ground
-  // cover is deliberately not among them: there is no instance under the cursor
-  // to move, only a patch that says how thick the tile is.
+  // Whatever is on top of the hex, held for as long as the button is. Ground cover
+  // is deliberately not among them: there is no instance under the cursor to move,
+  // only a patch saying how thick the tile is.
   carried = hovered ? topPropAt(level, hovered.q, hovered.r) : null;
   refreshSelection();
   say(what ? `Selected ${what} at ${hovered.q}, ${hovered.r}.` : null);
@@ -404,12 +496,12 @@ function pick() {
 }
 
 // The rest of the stroke: whatever was picked up follows the cursor. This is the
-// whole of "move it", and it is here rather than on the tool because what is
+// whole of "move it", and it is here rather than on a tool because what is
 // selected is something the editor is holding - the level has no idea anything is
 // being carried. A hex it may not be put on simply does not take it, which reads
 // as the thing staying where it is.
 function carry() {
-  if (!carried || !hovered || !canStand(level, hovered) ||
+  if (!carried || !hovered || !standable(hovered) ||
       !moveProp(level, carried, hovered.q, hovered.r)) {
     // Nothing moved, so nothing is rebuilt - but the preview still has to follow
     // the cursor, which `edited` would otherwise have been the one to do.
@@ -421,8 +513,12 @@ function carry() {
   refreshPanel();
 }
 
-// A selection cannot outlive the thing it is on: whatever was picked may have
-// just been erased, or the whole level replaced.
+function standable(hex) {
+  return isStandable(level, hex.q, hex.r) || tileAt(level, hex.q, hex.r)?.terrain === 'crag';
+}
+
+// A selection cannot outlive the thing it is on: whatever was picked may have just
+// been erased, or the whole level replaced.
 function refreshSelection() {
   if (selected && !describeAt(level, selected.q, selected.r)) selected = null;
   selection.setHexes(selected && !session ? [selected] : []);
@@ -478,9 +574,24 @@ function commit() {
   refreshPanel();
 }
 
-// ── The tools, the panel and the library ─────────────────────────────────────
+// ── What is being edited, and how ────────────────────────────────────────────
+// Three independent pieces of state, which is the point of the whole
+// arrangement: the tool, the category, and which assets of that category are
+// ticked. None of them constrains another except where a category says a tool
+// makes no sense, and then the panel draws that tool disabled rather than the
+// editor silently doing something else.
 
-let activeTool = TOOLS[0].id;
+let activeTool = 'brush';
+let activeContent = CONTENT[0].id;
+
+// Which assets are ticked, per category. Per category rather than one shared set
+// because moving between Trees and Props and back has to come back to what was
+// chosen - a palette that forgets is a palette you re-tick every time.
+const chosen = {};
+for (const c of CONTENT) chosen[c.id] = new Set([c.assets()[0]?.id].filter(Boolean));
+
+// And the settings, per tool - see the note above SETTINGS in tools.js for why
+// they are not shared by key.
 const toolSettings = defaultSettings();
 
 function levelList() {
@@ -499,7 +610,26 @@ function refreshPanel() {
     playing: !!session,
   });
   document.getElementById('tools').classList.toggle('is-hidden', !!session);
-  toolbar.update(tool(), toolSettings[activeTool]);
+  const state = { assets: assets(), s: toolSettings[activeTool] };
+  editbar.update({
+    tools: toolsFor(content()),
+    tool: tool(),
+    contents: CONTENT,
+    content: content(),
+    assets: content().assets(),
+    selected: chosen[activeContent],
+    settings: visibleSettings(tool(), content(), state),
+    values: toolSettings[activeTool],
+    hint: tool().hint,
+    // What Select is holding, in the block where a tool's numbers would be. It is
+    // the whole of "show the properties of the selection" for now: what it is and
+    // where, plus the move and the delete that already work on it.
+    note: activeTool === 'select'
+      ? (selected
+        ? `${describeAt(level, selected.q, selected.r)} at ${selected.q}, ${selected.r}`
+        : 'Nothing picked')
+      : null,
+  });
   // The library is repainted out of storage rather than told what changed, so a
   // rename, a duplicate and an import all land the same way.
   if (library.isOpen) library.render(levelList(), level.id);
@@ -538,41 +668,54 @@ function say(text, isError = false) {
   ui()?.setStatus(text, isError);
 }
 
-const toolbar = new ToolBar({
+const editbar = new EditBar({
   root: document.getElementById('tools'),
-  groups: toolGroups(),
-  onSelect: (id) => {
-    if (!TOOL_BY_ID[id]) return;
+
+  onTool: (id) => {
+    if (!TOOL_BY_ID[id] || !content().tools.includes(id)) return;
     activeTool = id;
     refreshBrush();
     refreshPanel();
   },
-  // A change arrives as a nudge or as a value, and which one it is comes from the
-  // control the toolbar drew - so the toolbar never has to know a setting's
-  // bounds or its options. Both are declared on the tool and checked here.
-  onSetting: (key, change) => {
-    const spec = tool().settings?.find(s => s.key === key);
-    if (!spec) return;
-    if (change.value !== undefined) {
-      const known = (spec.groups ?? []).some(g => g.options.some(o => o.id === change.value));
-      if (!known) return;
-      if (spec.multi) {
-        // A chip toggles rather than replaces, and the last one cannot be turned
-        // off: a brush holding no sets at all would paint nothing, and a tool that
-        // silently does nothing reads as broken.
-        const held = toolSettings[activeTool][key] ?? [];
-        const next = held.includes(change.value)
-          ? held.filter(v => v !== change.value)
-          : [...held, change.value];
-        if (!next.length) return;
-        toolSettings[activeTool][key] = next;
-      } else {
-        toolSettings[activeTool][key] = change.value;
-      }
+
+  // Changing what is being edited does not change how. That is the whole reason
+  // the two are separate - you brush terrain, then brush detail over it, then
+  // brush props into it, without going back to the tool row. The one exception is
+  // a category the current tool means nothing to, and then the tool moves to the
+  // first one that category does support rather than sitting there disabled.
+  onContent: (id) => {
+    if (!CONTENT_BY_ID[id]) return;
+    activeContent = id;
+    if (!content().tools.includes(activeTool)) activeTool = content().tools[0];
+    refreshBrush();
+    refreshPanel();
+  },
+
+  // Click replaces, ctrl or shift adds - and the last tick cannot be cleared,
+  // because a palette holding nothing is a tool that silently does nothing.
+  onAsset: (id, additive) => {
+    const known = content().assets().some(a => a.id === id);
+    if (!known) return;
+    const held = chosen[activeContent];
+    if (!additive) {
+      held.clear();
+      held.add(id);
+    } else if (held.has(id)) {
+      if (held.size > 1) held.delete(id);
     } else {
-      const at = toolSettings[activeTool][key] ?? spec.min;
-      toolSettings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + change.by));
+      held.add(id);
     }
+    refreshBrush();
+    refreshPanel();
+  },
+
+  // A nudge, clamped by whatever the setting says about itself - so the panel
+  // never has to know a setting's bounds and this never has to know its name.
+  onSetting: (key, by) => {
+    const spec = SETTINGS[key];
+    if (!spec || !tool().settings.includes(key)) return;
+    const at = toolSettings[activeTool][key] ?? spec.min;
+    toolSettings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + by));
     refreshBrush();
     refreshPanel();
   },
@@ -813,9 +956,24 @@ function anyStoredLevel() {
 window.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (session && e.code === 'Escape') { stop(); return; }
-  if (e.code !== 'KeyP') return;
   if (library.isOpen || settings.isOpen) return;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? '')) return;
+  // 1 to 5 are the tools, in the order the row shows them. The tool is the choice
+  // that changes most often - you paint terrain, sculpt it, place a lamp on it,
+  // erase what went wrong - and reaching for the panel every time is the whole of
+  // the friction in an editor like this one. A tool the current content has no use
+  // for is ignored, the same as its button being disabled.
+  const digit = e.code.match(/^Digit([1-5])$/);
+  if (digit && !session) {
+    const id = TOOLS[+digit[1] - 1]?.id;
+    if (id && content().tools.includes(id)) {
+      activeTool = id;
+      refreshBrush();
+      refreshPanel();
+    }
+    return;
+  }
+  if (e.code !== 'KeyP') return;
   start();
 });
 
@@ -833,6 +991,7 @@ window.hex = {
   get ground()   { return hexGround; },
   get hovered()  { return hovered; },
   get tool()     { return activeTool; },
+  get content()  { return activeContent; },
   settings: toolSettings,
   loadLevel,
   commit,
@@ -840,20 +999,47 @@ window.hex = {
   stop,
   get session() { return session; },
   storage,
-  panel, toolbar, library,
+  panel, editbar, library,
   // The level panel, under its own name: `settings` above is the tools' own.
   levelSettings: settings,
-  // The tools, driven the way the mouse drives them, so a shape can be sketched
-  // from the console or the check script without a drag: point at a hex and use
-  // whatever is active.
-  pick: (id) => { activeTool = id; refreshBrush(); refreshPanel(); },
-  at: (q, r) => { hovered = { q, r }; refreshBrush(); refreshPanel(); },
-  // A press, not a continuation of one: the check script and the console place
-  // one thing per call, the way a click does.
+  // The editor driven the way the mouse drives it, so a board can be built from
+  // the console or the check script without a drag. The three choices are three
+  // calls, in the order the panel reads: what tool, what content, which assets.
+  pick: (id) => {
+    if (TOOL_BY_ID[id]) activeTool = id;
+    refreshBrush();
+    refreshPanel();
+  },
+  use_content: (id) => {
+    if (!CONTENT_BY_ID[id]) return;
+    activeContent = id;
+    if (!content().tools.includes(activeTool)) activeTool = content().tools[0];
+    refreshBrush();
+    refreshPanel();
+  },
+  use_assets: (...ids) => {
+    const all = content().assets().map(a => a.id);
+    const want = ids.flat().filter(id => all.includes(id));
+    if (want.length) chosen[activeContent] = new Set(want);
+    refreshBrush();
+    refreshPanel();
+  },
+  // Where in the hex, for the one tool that cares. Given as a fraction of the
+  // tile so a script does not have to know the hex size.
+  at: (q, r, dx = 0, dz = 0) => {
+    hovered = { q, r };
+    const { x, z } = world.grid.hexToWorld(q, r);
+    spot = { x: x + dx, z: z + dz };
+    refreshBrush();
+    refreshPanel();
+  },
+  // A press, not a continuation of one: the check script and the console place one
+  // thing per call, the way a click does.
   use: () => { step = 0; apply(); },
+  remove: () => { removeAt(); refreshPanel(); },
   scroll: (dir) => {
-    const hexes = brushHexes();
-    if (hexes.length && tool().wheel) edited(tool().wheel(ctx(), hexes, dir));
+    const hexes = footprint();
+    if (hexes.length && content().wheel) edited(content().wheel(ctx(), hexes, dir));
   },
   // The file format, reachable from the console and from the check script, so a
   // round trip can be asserted without a download dialog in the way.

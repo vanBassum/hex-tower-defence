@@ -113,87 +113,153 @@
     #panel .status:not(:empty) { margin-top: 9px; }
     #panel .status.is-error { color: #e08a7a; }
 
-    /* The tool rail, down the left edge, and the permanent home for editing.
-       Vertical because the list is going to grow - units, enemies, objects,
-       pickups - and downward is the direction the viewport can spare; a
-       horizontal strip of the same length would eat the board. */
+    /* The edit panel, down the left edge, and the permanent home for editing.
+       One column read downward: how, then what, then which, then the numbers -
+       which is the model the whole editor is built on and the reason this is one
+       card rather than a rail with a settings card beside it. Compact and dense
+       on purpose: it is on screen the whole time. */
     #tools {
       position: fixed;
       left: 16px; top: 16px;
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
+      width: 186px;
       color: #b9cfe0;
       font-size: 12px;
       line-height: 1;
       user-select: none;
     }
-    #tools .rail, #tools .settings {
+    #tools .bar {
       padding: 9px;
       border-radius: 7px;
-      background: rgba(9, 16, 30, 0.55);
+      background: rgba(9, 16, 30, 0.62);
       border: 1px solid rgba(143, 216, 232, 0.14);
     }
-
-    /* Two columns of icons. One column was fine at three tools and is a tall thin
-       strip at nine - and the rail is beside the settings card, so height is the
-       dimension that costs: a group of four is two rows here and four there. */
-    #tools .group {
-      display: grid;
-      grid-template-columns: repeat(2, 34px);
-      gap: 5px;
+    #tools .block + .block {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid rgba(143, 216, 232, 0.10);
     }
-    #tools .group + .group { margin-top: 10px; }
-    /* The heading spans both columns, so it stays a heading over the pair rather
-       than becoming the first cell of the grid. */
-    #tools .glabel { grid-column: 1 / -1; }
-    /* The category, small and quiet. It is a heading over two or three icons and
-       it is what makes the rail legible once there are four of them. */
-    #tools .glabel {
-      display: block;
+    /* The block's name, small and quiet. It is what makes four stacked controls
+       read as four questions rather than as one long list. */
+    #tools .blabel {
+      display: flex;
+      justify-content: space-between;
       font-size: 9px;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: #6d8195;
-      padding: 0 0 6px 2px;
+      padding: 0 1px 7px;
     }
+    #tools .blabel b { color: #9fd8ee; font-weight: 500; letter-spacing: 0; }
+
+    /* TOOLS: one row of five. A fixed row, always the same five in the same
+       places, because it is the control the hand has to find without looking. */
+    #tools .tools { display: flex; gap: 4px; }
     #tools button.tool {
       display: grid;
       place-items: center;
-      width: 34px; height: 34px;
+      flex: 1;
+      height: 30px;
       padding: 0;
       color: #9fd8ee;
-      border-radius: 6px;
+      border-radius: 5px;
       background: rgba(143, 216, 232, 0.08);
       border: 1px solid rgba(143, 216, 232, 0.14);
       cursor: pointer;
       transition: background 140ms ease, color 140ms ease;
     }
+    #tools button.tool svg { width: 16px; height: 16px; }
+    #tools button.tool:hover:not(:disabled) { background: rgba(143, 216, 232, 0.18); }
+    /* A tool this content has no use for. Visibly there and visibly not
+       available, rather than gone - a row that changes length as you move between
+       categories is a row nobody can build a habit on. */
+    #tools button.tool:disabled { opacity: 0.22; cursor: default; }
 
-    #tools button.tool svg { width: 18px; height: 18px; }
-    #tools button.tool:hover { background: rgba(143, 216, 232, 0.18); }
-    /* The active tool is warm, which is the one place in this UI that colour
-       carries state: everything else here is the same cool blue, so the tool
-       that is armed is the only warm thing on the left of the screen. */
-    #tools button.tool.is-on {
+    /* CONTENT: two columns of names. */
+    #tools .contents {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px;
+    }
+    #tools button.cat {
+      font: inherit;
+      text-align: left;
+      color: #9fd8ee;
+      padding: 5px 6px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.07);
+      border: 1px solid rgba(143, 216, 232, 0.14);
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #tools button.cat:hover { background: rgba(143, 216, 232, 0.18); }
+
+    /* ASSETS: a grid of cells, each one already shaped like a thumbnail with a
+       caption. The `.thumb` box is empty today and holds a rendered model later,
+       which is why the cell has a height it does not currently need - swapping
+       text for a picture then costs nothing and moves nothing. */
+    #tools .assets {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      max-height: 188px;
+      overflow-y: auto;
+    }
+    #tools button.asset {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      font: inherit;
+      font-size: 9px;
+      color: #9fd8ee;
+      padding: 4px 2px 3px;
+      border-radius: 4px;
+      background: rgba(143, 216, 232, 0.07);
+      border: 1px solid rgba(143, 216, 232, 0.14);
+      cursor: pointer;
+      transition: background 140ms ease;
+    }
+    #tools button.asset:hover { background: rgba(143, 216, 232, 0.20); }
+    #tools .asset .thumb {
+      width: 100%;
+      height: 16px;
+      border-radius: 3px;
+      background: rgba(143, 216, 232, 0.06);
+    }
+    #tools .asset .aname {
+      width: 100%;
+      text-align: center;
+      line-height: 1.25;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* The active tool, the active category and every ticked asset are warm, which
+       is the one place in this UI that colour carries state: everything else here
+       is the same cool blue, so what is armed is the only warm thing on the left
+       of the screen. Three controls saying it the same way is what makes the
+       panel readable at a glance. */
+    #tools button.tool.is-on,
+    #tools button.cat.is-on,
+    #tools button.asset.is-on {
       color: #f0dcc0;
       background: rgba(224, 160, 92, 0.16);
       border-color: rgba(224, 160, 92, 0.45);
     }
 
-    /* The active tool's settings, in a card beside the rail rather than under it:
-       the rail is a fixed column of icons and stays that width however many
-       settings a tool turns out to have. */
-    #tools .settings { min-width: 132px; }
-    #tools .sname { color: #f0dcc0; padding-bottom: 8px; }
+    /* SETTINGS: whatever the tool and the category both understand. */
     #tools .setting {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
       padding: 3px 0;
     }
     #tools .slabel { color: #7f93a4; }
+    #tools .none { color: #6d8195; padding: 2px 0; }
     #tools .stepper { display: flex; align-items: center; gap: 2px; }
     #tools .stepper b {
       min-width: 16px;
@@ -203,7 +269,7 @@
       font-variant-numeric: tabular-nums;
     }
     #tools .stepper button {
-      width: 20px; height: 20px;
+      width: 19px; height: 19px;
       padding: 0;
       font: inherit;
       color: #9fd8ee;
@@ -214,44 +280,13 @@
     }
     #tools .stepper button:hover:not(:disabled) { background: rgba(143, 216, 232, 0.22); }
     #tools .stepper button:disabled { opacity: 0.3; cursor: default; }
-    /* A choice out of grouped options: the category, then chips that wrap. The
-       chips reuse the rail's warm-for-active, because it is the same statement -
-       this is the one that is armed. */
-    #tools .choice .glabel { padding: 7px 0 5px 1px; }
-    #tools .choice .glabel:first-child { padding-top: 2px; }
-    #tools .chips { display: flex; flex-wrap: wrap; gap: 4px; }
-    #tools .chips button {
-      font: inherit;
-      color: #9fd8ee;
-      padding: 4px 7px;
-      border-radius: 4px;
-      background: rgba(143, 216, 232, 0.08);
-      border: 1px solid rgba(143, 216, 232, 0.16);
-      cursor: pointer;
-      transition: background 140ms ease;
-    }
-    #tools .chips button:hover { background: rgba(143, 216, 232, 0.20); }
-    #tools .chips button.is-on {
-      color: #f0dcc0;
-      background: rgba(224, 160, 92, 0.16);
-      border-color: rgba(224, 160, 92, 0.45);
-    }
-    /* The two numbers the game reads off the chosen type. A readout, not a
-       setting: they belong to the unit and the editor does not get a say. */
-    #tools .snote {
-      color: #7f93a4;
-      padding-top: 8px;
-      line-height: 1.4;
-      max-width: 150px;
-    }
 
     /* What the tool does, in one line. It is the only prose in the editor and it
-       is here because a rail of icons needs somewhere to say what the icon meant. */
-    #tools .shint {
+       is here because a row of icons needs somewhere to say what the icon meant. */
+    #tools .hint {
       color: #6d8195;
       line-height: 1.4;
-      padding-top: 7px;
-      max-width: 150px;
+      padding: 8px 1px 0;
     }
 
     /* Out of the way while a fight is on. The tools mean nothing during a
@@ -561,6 +596,7 @@
   <dialog id="levels"></dialog>
   <dialog id="settings"></dialog>
   <div id="controls">
+    <kbd>1</kbd><span>…</span><kbd>5</kbd><span>Pick a tool</span>
     <kbd>Left-drag</kbd><span>Use the tool</span>
     <kbd>Wheel</kbd><span>Sculpt or zoom</span>
     <kbd>Right-drag</kbd><span>Rotate</span>

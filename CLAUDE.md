@@ -60,11 +60,13 @@ thing being changed - reach for them then, not by default.
     editor/                 the level editor at /editor/ - same world, no game
       level.js              the level *as data*, and the only stored format
       storage.js            levels in localStorage, keyed by id
-      tools.js              what the mouse can do; entities.js / objects.js what
-                            it can place - both read the game's own definitions
-                            (objects.js is the four environment palettes)
+      tools.js              HOW you edit: five interactions, and every setting
+      content.js            WHAT you edit: seven categories, each implementing
+                            the same verbs over the game's own definitions
+      ghost.js              the see-through preview of a precise placement
       main.js               second composition root; edits rebuild the board
-      ui/                   toolbar (tools + settings), panel, levels (library)
+      ui/                   editbar (tool/content/assets/settings), panel,
+                            levels (library)
     tools/                  map.mjs (authoring), check.py (verification)
 
 ## Invariants
@@ -98,6 +100,26 @@ Break one of these and something three files away goes subtly wrong.
 - **`mask.patch` is one call per layer in `main.js`**, never an argument threaded
   through a constructor. Anything new added to the scene obeys fog of war by
   being in that sweep.
+- **A tool is HOW, a content category is WHAT, and they are independent.**
+  `tools.js` holds five interactions - select, place, tile, brush, erase - and
+  knows nothing about trees. `content.js` holds seven categories, each
+  implementing whichever of `place` / `tile` / `brush` / `erase` / `wheel` it
+  supports and declaring which tools and settings it understands. Thirty-five
+  combinations, none of them written down: the tool contributes the gesture, the
+  category contributes the meaning, `main.js` crosses them. Adding a kind of
+  thing to the board is an entry in one of those two files and never a new
+  interaction - which is the thing this arrangement exists to prevent, because
+  the editor it replaced had a separate tool per category and every new category
+  arrived with its own brush, its own palette and its own idea of what the right
+  button meant.
+- **What the preview highlights is exactly what the press does.** Area verbs are
+  handed `previewHexes()`, not the raw footprint. Not a nicety - a brush that
+  acted on hexes it had not highlighted wrote ground cover into the sea, and the
+  editor then refused to reopen the level it had just saved.
+- **A category's erase takes only its own.** Right-click and the Erase tool both
+  go through the chosen category's `erase`, so removing a lamp cannot fell the
+  tree beside it, and ground can only be destroyed while Terrain is the category
+  you are holding.
 - **Decoration is sorted by how it is *authored*, not by how big it is.**
   `category` on a prop type is the whole rule, and there are four:
   `detail` (ground cover, painted by the hundred and derived from a patch),
@@ -108,12 +130,20 @@ Break one of these and something three files away goes subtly wrong.
   rule: the rule is how much control the author gets per object, and it goes up as
   the object matters more. The four editor tools are that list, and a new kind of
   thing is an entry in `PROP_TYPES` with a category - never a new tool.
-- **Nothing is ever stored about one tuft.** A painted hex stores a patch - which
-  set, how thick, and a seed - and `detailPlacements` regenerates the tufts from
-  it identically on every load. There is nowhere to put a fact about an individual
-  tuft, so anything the author needs to control has to be a number on the patch.
-  That is what keeps a lush board a few hundred bytes, and it is the one thing the
-  three placed categories do the opposite of.
+- **Nothing is ever stored about one *scattered* tuft.** A painted hex stores one
+  patch - which kinds grow there, how thick, and a seed - and `detailPlacements`
+  regenerates the tufts from it identically on every load. There is nowhere to put
+  a fact about an individual scattered tuft, so anything the author needs to
+  control has to be a number on the patch. A tuft placed deliberately is not this:
+  that is an instance in `props` with a `dx`/`dz`, like every other placed thing,
+  and the two share a tile without either knowing. The migration that folds
+  per-tuft props into patches therefore runs only for files at version 6 or older
+  - from 7 on, a detail-typed prop means somebody put it there.
+- **A mixture is a selection, not a type.** The asset palette is multi-select and
+  a patch stores the list that was ticked, so "grass with stones through it" needs
+  no `stony grass` type to exist. Anything that only exists because the data
+  could not hold a combination is a sign the data is wrong - that is what the old
+  predefined detail sets were, and they are gone.
 - **A scattering is patchy because it varies over more than one hex.** `clumpAt`
   is smooth across tiles and everything scattered - ground cover *and* props -
   draws from the same field, so rocks thin out where the grass thins out. A count
@@ -188,10 +218,12 @@ Break one of these and something three files away goes subtly wrong.
 | Adding | Touch |
 | --- | --- |
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
-| A prop, tree or landmark | `game/props.js` `PROP_TYPES` (a `name` and a `category`) - the right editor tool's palette picks it up |
-| A kind of ground cover | `PROP_TYPES` with `category: 'detail'`, then name it in a set's `variants` in `game/detail.js` |
-| A detail *set* | `DETAIL_SETS` in `game/detail.js` - the palette and the brush follow |
-| A landmark with settings of its own | a word on its type (`lights`), then a descriptor with `when` on the Landmarks tool |
+| A prop, tree or landmark | `game/props.js` `PROP_TYPES` (a `name` and a `category`) - the matching category's palette picks it up |
+| A kind of ground cover | `PROP_TYPES` with `category: 'detail'` - `detailKinds()` finds it |
+| A whole content category | an entry in `CONTENT` in `editor/content.js`: its assets, its tools, its verbs |
+| A new editing gesture | an entry in `TOOLS` in `editor/tools.js`, plus that verb on the categories it means something to |
+| An editor setting | `SETTINGS` in `editor/tools.js`, then name it on the tool that offers it and the categories that understand it |
+| A landmark with settings of its own | a word on its type (`lights`), which is what `when` on a setting reads |
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
 | A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js`. `role` says what the troop is *for* - never a stat |
 | A unit others deploy beside | `deployAnchor: true` on its type |
@@ -201,8 +233,8 @@ Break one of these and something three files away goes subtly wrong.
 | A wire between components | `game/play.js`, never inside either component |
 | Something the *page* owns, not the level | `game/main.js` (or `editor/main.js`) |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |
-| An editor tool | a mutator in `editor/level.js`, a control in `editor/ui/panel.js`, one `act()` in `editor/main.js` ending in `rebuild()` |
-| A setting that only applies half the time | `when(s)` on the descriptor, not a second tool |
+| A level-wide editor control | a mutator in `editor/level.js`, a control in `editor/ui/panel.js`, one `act()` in `editor/main.js` |
+| A setting that only applies half the time | `when(state)` on the descriptor, not a second tool |
 
 ## Conventions
 

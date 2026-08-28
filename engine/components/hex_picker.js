@@ -50,6 +50,13 @@ export class HexPicker extends Component {
     this._onUp = onUp;
     this._onWheel = onWheel;
     this.hover = null;        // {q, r} or null
+    // Where on the ground the cursor actually is, in world space, or null. The hex
+    // is what most callers want and this is what the rest of them need: a tool
+    // that places something *within* a tile has to know where in the tile, and the
+    // ray was already worked out to find the hex. Kept as a field rather than
+    // pushed through every callback, because it is the same answer as `hover` said
+    // more precisely and nothing that ignores it should have to mention it.
+    this.point = null;        // {x, z} or null
 
     this._ndc = new THREE.Vector2();
     this._ray = new THREE.Raycaster();
@@ -140,6 +147,7 @@ export class HexPicker extends Component {
     }
 
     this.hover = hex;
+    this.point = { x: this._point.x, z: this._point.z };
     this._overlay?.setY(this._surfaceY(hex));
     this._overlay?.setHexes([hex]);
     this._onHover?.(hex);
@@ -148,6 +156,7 @@ export class HexPicker extends Component {
   _clear() {
     if (!this.hover) return;
     this.hover = null;
+    this.point = null;
     this._overlay?.setHexes([]);
     this._onHover?.(null);
   }

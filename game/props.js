@@ -534,13 +534,21 @@ export function buildProp(placement, mats, { x, z, y }, tuning = {}) {
   // the tile. That is what lets a second tree be stood on a hex without the first
   // one moving - which it would, if this were a division of the tile between
   // however many are currently on it.
-  const spread = placement.spread ?? 0.35;
-  const slot = placement.slot ?? placement.salt ?? 0;
-  const angle = slot * 2.399963 + hashHex(q, r, 23 + salt) * 0.7;
-  const band = ((slot % 3) + 0.5) / 3;
-  const dist = spread * 0.5 * (0.35 + 0.65 * band) * (0.94 + hashHex(q, r, 27 + salt) * 0.12);
-  obj.position.x = x + Math.cos(angle) * dist;
-  obj.position.z = z + Math.sin(angle) * dist;
+  // A placement may instead say exactly where it stands, which is what somebody
+  // pointing at a spot inside a tile means. Then none of the above applies: they
+  // did not ask for a slot, they asked for that spot.
+  if (placement.dx !== undefined || placement.dz !== undefined) {
+    obj.position.x = x + (placement.dx ?? 0);
+    obj.position.z = z + (placement.dz ?? 0);
+  } else {
+    const spread = placement.spread ?? 0.35;
+    const slot = placement.slot ?? placement.salt ?? 0;
+    const angle = slot * 2.399963 + hashHex(q, r, 23 + salt) * 0.7;
+    const band = ((slot % 3) + 0.5) / 3;
+    const dist = spread * 0.5 * (0.35 + 0.65 * band) * (0.94 + hashHex(q, r, 27 + salt) * 0.12);
+    obj.position.x = x + Math.cos(angle) * dist;
+    obj.position.z = z + Math.sin(angle) * dist;
+  }
   obj.position.y += y;
   // Which way it faces is its hash unless the placement says otherwise, which is
   // what lets a whole scattering be turned the same way without storing an angle
