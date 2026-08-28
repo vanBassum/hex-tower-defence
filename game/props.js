@@ -519,9 +519,28 @@ export function buildProp(placement, mats, { x, z, y }, tuning = {}) {
     : tuning;
   const obj = type.build(mats, size, local);
 
+  // Where in the tile it stands, and it is a *slot* rather than a free jitter.
+  // Two draws from the hash land on top of each other often enough to see it -
+  // with six tufts on a tile it is not a rare accident, it is most tiles - and two
+  // tufts in one place read as one bigger tuft, so the density the author asked
+  // for is not the density they get.
+  //
+  // The golden angle plus three radial bands gives every slot its own place: turn
+  // 137.5 degrees and change how far out you are, and consecutive slots cannot
+  // coincide however many there are. The hash is still in there, but only as a
+  // small nudge, so a tile does not read as a pattern either.
+  //
+  // The slot is the placement's own number and never depends on how many share
+  // the tile. That is what lets a second tree be stood on a hex without the first
+  // one moving - which it would, if this were a division of the tile between
+  // however many are currently on it.
   const spread = placement.spread ?? 0.35;
-  obj.position.x = x + (hashHex(q, r, 23 + salt) - 0.5) * spread;
-  obj.position.z = z + (hashHex(q, r, 27 + salt) - 0.5) * spread;
+  const slot = placement.slot ?? placement.salt ?? 0;
+  const angle = slot * 2.399963 + hashHex(q, r, 23 + salt) * 0.7;
+  const band = ((slot % 3) + 0.5) / 3;
+  const dist = spread * 0.5 * (0.35 + 0.65 * band) * (0.94 + hashHex(q, r, 27 + salt) * 0.12);
+  obj.position.x = x + Math.cos(angle) * dist;
+  obj.position.z = z + Math.sin(angle) * dist;
   obj.position.y += y;
   // Which way it faces is its hash unless the placement says otherwise, which is
   // what lets a whole scattering be turned the same way without storing an angle

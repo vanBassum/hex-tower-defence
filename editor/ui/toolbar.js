@@ -82,19 +82,38 @@ function control(setting, value) {
 // A choice out of grouped options: the group's name over a row of chips, and the
 // selected one's own note underneath. The chips wrap, so a category that grows
 // from two entries to six costs a line rather than a redesign.
+//
+// `multi` on the descriptor makes the value a list and every chip a toggle. It is
+// the same control either way - the same chips, the same warm-for-active - because
+// it is the same statement: this is what the brush is holding. Only the number of
+// things it can hold at once changes, and the editor is the one that decides what
+// a press means (see `onSetting` in main.js).
 function choice(setting, value) {
   const groups = setting.groups ?? [];
   const all = groups.flatMap(g => g.options);
-  const at = all.find(o => o.id === value) ?? all[0];
+  const chosen = setting.multi
+    ? all.filter(o => (value ?? []).includes(o.id))
+    : [all.find(o => o.id === value) ?? all[0]].filter(Boolean);
+  const on = new Set(chosen.map(o => o.id));
   return `<div class="choice">
     ${groups.map(g => `
       <span class="glabel">${esc(g.name)}</span>
       <div class="chips">${g.options.map(o => `
         <button type="button" data-key="${esc(setting.key)}" data-value="${esc(o.id)}"
-                class="${o.id === at?.id ? 'is-on' : ''}">${esc(o.name)}</button>`).join('')}
+                class="${on.has(o.id) ? 'is-on' : ''}">${esc(o.name)}</button>`).join('')}
       </div>`).join('')}
-    ${at?.note ? `<p class="snote">${esc(at.note)}</p>` : ''}
+    ${notes(chosen)}
   </div>`;
+}
+
+// The note under the chips. One entry says its own; several say how many, because
+// three notes stacked up is a paragraph nobody reads and the chips above already
+// say which three.
+function notes(chosen) {
+  if (chosen.length === 1) {
+    return chosen[0].note ? `<p class="snote">${esc(chosen[0].note)}</p>` : '';
+  }
+  return `<p class="snote">${chosen.length} sets, mixed together</p>`;
 }
 
 // A whole number with a minus and a plus. The buttons carry the key and the

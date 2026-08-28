@@ -161,12 +161,23 @@ function patchCount(patch) {
 // names a set some later version removed is worse than a hex that comes up bare.
 export function detailPlacements(patches = []) {
   const out = [];
+  // How many places on each hex have been handed out already. Slots are what keep
+  // two instances off the same spot - see `buildProp` - and they carry on across
+  // the patches sharing a hex, so painting grass *and* stones onto one tile
+  // interleaves them instead of standing each set in the same six places. The
+  // count is per hex rather than per patch for that one reason.
+  const used = new Map();
   for (const patch of patches) {
     const set = DETAIL_SETS[patch.set];
     if (!set) continue;
     const { q, r } = patch;
     const seed = patch.seed ?? 0;
     const n = patchCount(patch);
+    const key = `${q},${r}`;
+    // Earlier patches keep the slots they had, so adding a second set to a tile
+    // never moves what is already growing there.
+    const base = used.get(key) ?? 0;
+    used.set(key, base + n);
 
     for (let i = 0; i < n; i++) {
       // Every draw below is keyed to this number, and it is keyed to the seed, so
@@ -179,7 +190,7 @@ export function detailPlacements(patches = []) {
       ];
       if (!PROP_TYPES[variant]) continue;
 
-      const placement = { type: variant, q, r, salt, spread: set.spread };
+      const placement = { type: variant, q, r, salt, slot: base + i, spread: set.spread };
       const scale = variedScale(patch.size ?? DETAIL_DEFAULTS.size, q, r, salt);
       const yaw = variedYaw(patch.spin ?? DETAIL_DEFAULTS.spin, q, r, salt);
       if (scale !== 1) placement.scale = scale;

@@ -135,7 +135,18 @@
       border: 1px solid rgba(143, 216, 232, 0.14);
     }
 
+    /* Two columns of icons. One column was fine at three tools and is a tall thin
+       strip at nine - and the rail is beside the settings card, so height is the
+       dimension that costs: a group of four is two rows here and four there. */
+    #tools .group {
+      display: grid;
+      grid-template-columns: repeat(2, 34px);
+      gap: 5px;
+    }
     #tools .group + .group { margin-top: 10px; }
+    /* The heading spans both columns, so it stays a heading over the pair rather
+       than becoming the first cell of the grid. */
+    #tools .glabel { grid-column: 1 / -1; }
     /* The category, small and quiet. It is a heading over two or three icons and
        it is what makes the rail legible once there are four of them. */
     #tools .glabel {
@@ -158,7 +169,7 @@
       cursor: pointer;
       transition: background 140ms ease, color 140ms ease;
     }
-    #tools button.tool + button.tool { margin-top: 5px; }
+
     #tools button.tool svg { width: 18px; height: 18px; }
     #tools button.tool:hover { background: rgba(143, 216, 232, 0.18); }
     /* The active tool is warm, which is the one place in this UI that colour

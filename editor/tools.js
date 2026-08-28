@@ -4,8 +4,8 @@ import {
 } from './level.js';
 import { PLACEABLES, PLACEABLE_BY_ID, placeableGroups, refusal } from './entities.js';
 import {
-  paletteGroups, chosen as palette, firstId, placeOne, scatterProps, paintOne,
-  canStand, LIGHT_DEFAULTS, HEIGHT_DEFAULT, HEIGHTS,
+  paletteGroups, chosen as palette, chosenMany, firstId, placeOne, scatterProps,
+  paintOne, canStand, LIGHT_DEFAULTS, HEIGHT_DEFAULT, HEIGHTS,
 } from './objects.js';
 import { DETAIL_RANGE } from '../game/detail.js';
 
@@ -252,7 +252,15 @@ export const TOOLS = [
     // what is there, it redraws the tile, so nudging it and painting again is how
     // an author says "not like that, again".
     settings: [
-      { key: 'what', label: 'Detail', groups: paletteGroups('detail'), value: firstId('detail') },
+      // Several at once, because ground cover is a *mixture* - grass with stones
+      // through it is what ground looks like, and painting two passes to get it
+      // means the two are laid out independently and stand in each other's way.
+      // A hex holds one patch per set, so the sets a brush is holding are the
+      // patches it leaves behind.
+      {
+        key: 'what', label: 'Detail', groups: paletteGroups('detail'),
+        multi: true, value: [firstId('detail')],
+      },
       { key: 'radius', label: 'Brush', min: 1, max: 4, value: 2 },
       { key: 'density', label: 'Density', min: 1, max: DETAIL_RANGE.density[1], value: 3 },
       { key: 'seed', label: 'Seed', min: DETAIL_RANGE.seed[0], max: DETAIL_RANGE.seed[1] },
@@ -270,7 +278,11 @@ export const TOOLS = [
     // settings match, which is what keeps a long stroke cheap.
     paint: (ctx, hexes) => {
       let changed = 0;
-      for (const h of hexes) changed += paintOne(ctx.level, entry(ctx, 'detail'), h.q, h.r, ctx.s);
+      for (const h of hexes) {
+        for (const set of chosenMany('detail', ctx.s.what)) {
+          changed += paintOne(ctx.level, set, h.q, h.r, ctx.s);
+        }
+      }
       return changed;
     },
 
@@ -449,12 +461,16 @@ export function toolGroups() {
 
 // Each tool's settings at their starting values. Held by the editor rather than
 // on the tool, so a tool stays a description of itself and two editors could not
-// end up sharing one brush size.
+// end up sharing one brush size - which is also why a list-valued setting is
+// copied rather than handed over: the descriptor is a description, and one that
+// got edited in place would be the default drifting.
 export function defaultSettings() {
   const out = {};
   for (const tool of TOOLS) {
     out[tool.id] = {};
-    for (const s of tool.settings ?? []) out[tool.id][s.key] = s.value ?? s.min;
+    for (const s of tool.settings ?? []) {
+      out[tool.id][s.key] = Array.isArray(s.value) ? [...s.value] : s.value ?? s.min;
+    }
   }
   return out;
 }

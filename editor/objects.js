@@ -107,6 +107,16 @@ export function firstId(category) {
   return PALETTES[category][0].id;
 }
 
+// Several of them, for a tool whose choice is a list rather than one entry. Order
+// follows the palette rather than the order they were clicked, so what gets
+// painted does not depend on which chip was pressed first. Never empty: a brush
+// holding nothing would paint nothing, which reads as a broken tool.
+export function chosenMany(category, ids) {
+  const want = new Set(Array.isArray(ids) ? ids : [ids]);
+  const picked = (PALETTES[category] ?? []).filter(e => want.has(e.id));
+  return picked.length ? picked : [PALETTES[category][0]];
+}
+
 // ---- Placing ----------------------------------------------------------------
 
 // Which variant this one draws. Keyed to the hex and to how many are already

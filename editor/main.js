@@ -556,7 +556,19 @@ const toolbar = new ToolBar({
     if (change.value !== undefined) {
       const known = (spec.groups ?? []).some(g => g.options.some(o => o.id === change.value));
       if (!known) return;
-      toolSettings[activeTool][key] = change.value;
+      if (spec.multi) {
+        // A chip toggles rather than replaces, and the last one cannot be turned
+        // off: a brush holding no sets at all would paint nothing, and a tool that
+        // silently does nothing reads as broken.
+        const held = toolSettings[activeTool][key] ?? [];
+        const next = held.includes(change.value)
+          ? held.filter(v => v !== change.value)
+          : [...held, change.value];
+        if (!next.length) return;
+        toolSettings[activeTool][key] = next;
+      } else {
+        toolSettings[activeTool][key] = change.value;
+      }
     } else {
       const at = toolSettings[activeTool][key] ?? spec.min;
       toolSettings[activeTool][key] = Math.min(spec.max, Math.max(spec.min, at + change.by));
