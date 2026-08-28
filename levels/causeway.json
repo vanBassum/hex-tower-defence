@@ -9,6 +9,7 @@
   "deck": ["swordsmen", "archers"],
   "king": { "q": -10, "r": 5 },
   "units": [
+    { "type": "scout", "q": -8, "r": 4, "dormant": true },
     { "type": "raiders", "q": -7, "r": 4 },
     { "type": "raiders", "q": 0, "r": 0 },
     { "type": "raiders", "q": 3, "r": -2 },

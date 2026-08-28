@@ -45,7 +45,8 @@ thing being changed - reach for them then, not by default.
       hex/visibility.js     what the player has seen - state only, no drawing
       hex/hex_noise.js      deterministic per-hex hash
       components/           camera, atmosphere, lights, terrain, water, overlays,
-                            visibility_mask (what the unknown looks like)
+                            marquee (the drag box), visibility_mask (what the
+                            unknown looks like)
     game/                   this game: what is on the island and what plays on it
       play.js               the game as a callable - every wire between components
       levels.js             the levels that ship in levels/, their index, and the
@@ -200,8 +201,9 @@ Break one of these and something three files away goes subtly wrong.
   something walkable-onto (a pickup) is simply not calling it.
 - **One yellow means "you can act here", and nothing else on the board is that
   yellow.** `MOOD.interact` is the colour of the tile under the pointer, the
-  route a group would walk, the ground it could walk to, the tiles a card may be
-  played onto, and the ring under a selected unit. Five answers to one question,
+  routes a selection would walk, the tiles they would end up on, the ground one
+  group could walk to, the tiles a card may be played onto, the box a drag draws,
+  and the ring under a selected unit. Seven answers to one question,
   so they are one colour - the point is that after a minute of play the colour
   *is* the question, and that only holds while nothing in the world borrows it.
   It was three colours doing this job and the cost was that none of them meant
@@ -301,14 +303,38 @@ Break one of these and something three files away goes subtly wrong.
   held in place was held forever, which is why `battle.js` used to say there was
   no zone of control at all.
 - **A move allowance is told to `UnitControl`, not checked beside it.**
-  `control.maxSteps` clamps `_pathTo`, so the reachable overlay, the route
-  preview and the right-button order are one answer rather than three that can
-  disagree - the same reason area verbs are handed `previewHexes()`. Being held
-  goes through the same channel: a pinned group gets `maxSteps = 0` and an empty
-  reachable set, so nothing has to test for it twice.
-- **The right button is shared by gesture.** A press is an order, a drag past
-  `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
-  learns which happened, and `main.js` throws the order away when it was a drag.
+  `control.limit` - `(unit) => hexes` - clamps `_pathTo`, so the reachable
+  overlay, the route preview and the right-button order are one answer rather
+  than three that can disagree, the same reason area verbs are handed
+  `previewHexes()`. It is a function of the unit rather than one number because a
+  group order moves several at once and Heavy Infantry and Cavalry do not share an
+  allowance. Being held goes through the same channel: a pinned group's answer is
+  nought, so nothing has to test for it twice. A route longer than the allowance
+  is **cut, not refused** - "everybody sets off and gets as far as they can" is
+  the order a mixed group was given, and the drawn thread stops where the walk
+  will.
+- **Selection is a list, and a group order is one aim with several
+  destinations.** `control.selection` is ordered by pick; `selected` is a reading
+  of its first entry and never a second field. Only one body of men can stand on
+  a tile, so `plan(hex)` hands the aim to the nearest group *that can actually
+  reach it* - not whoever starts nearest, or the slow one claims the tile and
+  stops two hexes short of it - and everybody else takes the closest unclaimed
+  free tile within two rings. `plan` is called twice with the same argument: once
+  by the hover to draw it and once by the click to do it, which is the game-side
+  version of the editor's `previewHexes()` rule. Truncated walks are deduped by
+  where they *end*, because two of them finishing on one hex would stack two
+  units.
+- **Both buttons are shared by gesture, and the left one never moves anybody.**
+  Right: a press is an order, a drag past `DRAG_SLOP` is a camera rotate. Left: a
+  click picks one group (shift adds to the selection), a drag is `Marquee`'s box
+  and picks every group inside it. `CameraRig.consumedRightPress` and
+  `Marquee.consumedPress` are how the game learns which gesture happened - set as
+  the press becomes a drag, cleared on the next press - and `play.js` throws the
+  click or the order away when it was a drag. The tactical loop briefly made a
+  left click on a reachable hex the commit and that was wrong: every game with a
+  mouse and an army has one button that only ever changes what is selected, and a
+  left click that sometimes marched fifteen men is a player who has to read the
+  overlays before they dare click.
 - **A unit type is the whole of a unit, and no system names one.** Six of them
   now, and what they differ in is what the player does with the board: `range`
   (Archers three, Spearmen two), `moveRange` (Heavy Infantry two, Cavalry seven),
@@ -464,6 +490,7 @@ Break one of these and something three files away goes subtly wrong.
 | A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
 | A way of marking hexes | a subclass of `HexOverlay` overriding `_rebuild` - the picker finds any of them |
 | Anything the player can act on | draw it in `MOOD.interact`, and never spend that yellow on the world |
+| Where a group order puts people | `plan()` in `game/components/unit_control.js` - the hover and the click are the same call |
 | A wire between components | `game/play.js`, never inside either component |
 | Something the *page* owns, not the level | `game/main.js` (or `editor/main.js`) |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |

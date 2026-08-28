@@ -16,23 +16,50 @@ import { HexOverlay, flatBar } from './hex_overlay.js';
 // Every run overshoots both ends by half its own width, so the turn between two
 // runs is filled rather than notched. On a 120 degree corner that is a couple of
 // pixels of overlap and it costs nothing to leave it there.
+//
+// ── Several routes at once ──────────────────────────────────────────────────
+// `setRoutes` draws more than one thread out of the same component, which is
+// what a group order needs: six units sent to one place walk six different ways
+// round the same crag, and the thing worth seeing before committing is all six.
+// One component rather than one per unit because the geometry is one buffer
+// either way and the alternative is a pool of overlays to grow and shrink with
+// the selection.
+//
+// `setHexes` is still the single-route call and is exactly `setRoutes([hexes])`.
+// The base's own `_hexes` is kept as the flattened lot, so anything that asks
+// whether there is a marking at all gets the right answer.
 export class HexRoute extends HexOverlay {
   constructor(grid, hexes = [], { width = 0.075, ...opts } = {}) {
     super(grid, hexes, opts);
     this._width = width * grid.size;
+    this._runs = hexes.length ? [hexes] : [];
+  }
+
+  setHexes(hexes) {
+    this._runs = hexes.length ? [hexes] : [];
+    super.setHexes(hexes);
+  }
+
+  setRoutes(runs) {
+    this._runs = (runs ?? []).filter(r => r && r.length > 1);
+    // Straight to the base, so `setHexes` above does not fold them back into one.
+    super.setHexes(this._runs.flat());
   }
 
   _rebuild() {
     this._clear();
-    if (this._hexes.length < 2) return;
+    const out = [];
+    for (const run of this._runs ?? []) this._thread(run, out);
+    if (out.length) this._emit(out);
+  }
 
+  _thread(run, out) {
+    if (run.length < 2) return;
     const w = this._width;
-    const pts = this._hexes.map(({ q, r }) => {
+    const pts = run.map(({ q, r }) => {
       const c = this._grid.hexToWorld(q, r);
       return { x: c.x, y: this._yAt(q, r), z: c.z };
     });
-
-    const out = [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1];
       const dx = b.x - a.x, dz = b.z - a.z;
@@ -40,6 +67,5 @@ export class HexRoute extends HexOverlay {
       const ex = (dx / len) * w * 0.5, ez = (dz / len) * w * 0.5;
       flatBar(out, a.x - ex, a.y, a.z - ez, b.x + ex, b.y, b.z + ez, w);
     }
-    this._emit(out);
   }
 }

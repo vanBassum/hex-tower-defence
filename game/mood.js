@@ -393,6 +393,12 @@ export const MOOD = {
     // time, and at the strength the cursor wants it turns the whole board into
     // scaffolding and buries the thing the player is actually looking at.
     field: 0.34,
+    // Where each group of a multiple selection would end up. Under the cursor and
+    // over the field: it is a handful of tiles rather than two dozen, and they are
+    // tiles the next click will actually put people on - but the one under the
+    // pointer still has to be the brightest thing, because that is the one the
+    // player is aiming.
+    dest: 0.78,
     // Where a card may be played is the same marking and is allowed to be louder,
     // for two reasons that are both about density rather than importance: it is
     // six tiles rather than two dozen, and it is only up for the second somebody

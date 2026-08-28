@@ -86,7 +86,6 @@ export class ActionLoop extends Component {
     this._movers = new Set();  // groups whose action has not finished playing out
     this._reacting = [];       // and the enemies answering the last one
     this._fighting = false;    // whether anybody was engaged a frame ago
-    this._reachKeys = new Set();
     this._sig = null;          // what the reachable set was last computed for
     this._epoch = 0;           // bumped when the board changed under it
   }
@@ -96,12 +95,19 @@ export class ActionLoop extends Component {
     // now, in answer to what the player did, and leaving both running would be
     // an enemy that reacts *and* hunts on a timer of its own.
     if (this._enemies) this._enemies.auto = false;
+    // How far any one group may be ordered, told to UnitControl once rather than
+    // written into it every frame. Every route it draws and every order it takes
+    // is cut to this, so the thread on the ground and the walk after the click
+    // are the same thing - and a group being held is simply a group whose
+    // allowance is nought.
+    this._control.limit = (u) => (this.pinnedBy(u) ? 0 : this.allowance(u));
     this._unsub = this._visibility?.onChange(() => { this._epoch++; });
   }
 
   destroy() {
     this._unsub?.();
     if (this._enemies) this._enemies.auto = true;
+    this._control.limit = null;   // back to the real-time game's unbounded move
     this._overlay?.setHexes([]);
     // The notice is the experiment's own DOM and nothing else on either page
     // knows about it, so it leaves with the session that put it there.
@@ -144,32 +150,29 @@ export class ActionLoop extends Component {
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
-  // A left click on a hex the selection can reach is the commit. Anywhere else
-  // and this says so, and the click goes on to mean what it always meant -
-  // picking a group up, or putting it down.
+  // The right button is the only one that moves anything.
   //
-  // Neither of these tests being held or being out of range. A group that cannot
-  // move has an empty reachable set, so the rule is applied in the one place
-  // that computes it and there is no second answer to disagree with the first.
-  handlePick(hex) {
-    if (!this._control.selected) return false;
-    if (!this._reachKeys.has(key(hex))) return false;
-    return this.commit(hex);
-  }
+  // A left click on a reachable hex used to be the commit as well, on the
+  // reasoning that the lit field was a set of destinations and clicking one meant
+  // going there. It made the safe button dangerous: every game with a mouse and
+  // an army has one button that only ever changes what is selected, and a left
+  // click that sometimes marched fifteen men is the player having to know which
+  // tiles are lit before they dare click. So the left button is selection and
+  // nothing else - see the note in unit_control.js - and `handlePick` is gone
+  // rather than emptied, so nothing is left looking like a gate that does nothing.
+  handleOrder(hex) { return this.commit(hex); }
 
-  // The right button still orders, through the same gate and the same range.
-  handleOrder(hex) {
-    if (!this._reachKeys.has(key(hex))) return false;
-    return this.commit(hex);
-  }
-
-  // One committed move is one player action, and the group stays picked up
-  // through it - the group you just moved is still the group in your hand, with
-  // its reachable set following it along as it walks.
+  // One committed move is one player action - or one per group, when several are
+  // picked up - and they stay picked up through it, with the reachable field
+  // following a lone group along as it walks.
+  //
+  // The range is not checked here. UnitControl was told the allowance and cuts
+  // every route to it, so whoever comes back from `handleOrder` is exactly
+  // whoever could move: one answer rather than two that can disagree.
   commit(hex) {
-    const unit = this._control.selected;
-    if (!unit || !this._control.handleOrder(hex)) return false;
-    this._movers.add(unit);
+    const moved = this._control.handleOrder(hex);
+    if (!moved.length) return false;
+    for (const u of moved) this._movers.add(u);
     return true;
   }
 
@@ -297,24 +300,25 @@ export class ActionLoop extends Component {
   // itself. A group's own coordinate is in there, so the reachable set follows
   // it along as it walks - which is what lets an order be changed halfway
   // through the last one.
+  //
+  // Only ever for *one* group. "Where may this go" has one answer for one unit
+  // and no honest answer for six of different speeds: the union lights tiles only
+  // the horsemen can reach and the intersection lights almost nothing, and either
+  // way the field would be describing a group rather than a unit. What a group
+  // order shows instead is the thing it can be exact about - a thread per unit
+  // and a mark on every tile they would end up on - and that is drawn on hover by
+  // UnitControl.
   _refreshReach() {
-    const u = this._control.selected;
+    const many = this._control.selection.length > 1;
+    const u = many ? null : this._control.selected;
     const held = this.pinnedBy(u);
     const sig = u ? `${u.id}:${u.q},${u.r}:${held ? 'held' : ''}:${this._epoch}` : '';
     if (sig === this._sig) return;
     this._sig = sig;
     this._setReach(u && !held ? this._reachable(u) : []);
-    // The route preview and the right-button order both go through UnitControl's
-    // own pathing, so the allowance is told to it rather than checked twice -
-    // which is what keeps a highlighted hex and an orderable hex the same set of
-    // hexes. Zero is how a group being held has nowhere to go.
-    this._control.maxSteps = !u ? null : held ? 0 : this.allowance(u);
   }
 
-  _setReach(hexes) {
-    this._reachKeys = new Set(hexes.map(key));
-    this._overlay?.setHexes(hexes);
-  }
+  _setReach(hexes) { this._overlay?.setHexes(hexes); }
 
   // A flood out to the allowance over ground that is walkable and known. Both
   // conditions are the ones UnitControl already puts on a route, so anything lit
@@ -349,10 +353,15 @@ export class ActionLoop extends Component {
   // yes.
   _say() {
     if (!this._status) return;
-    const u = this._control.selected;
-    const held = this.pinnedBy(u);
-    this._status.hidden = !held;
-    if (held) this._status.textContent = `${u.type.name} - held in the fight`;
+    const stuck = this._control.selection.filter(u => this.pinnedBy(u));
+    this._status.hidden = !stuck.length;
+    if (!stuck.length) return;
+    // One name while one group is held, a count when several are: the point is
+    // that the tiles under them are not lit, and with a mixed selection the
+    // player needs to know it is some of them rather than all.
+    this._status.textContent = stuck.length === 1
+      ? `${stuck[0].type.name} - held in the fight`
+      : `${stuck.length} groups - held in the fight`;
   }
 }
 

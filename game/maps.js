@@ -141,6 +141,21 @@ export const MAP_1 = {
     { type: 'raiders', q: -3, r: 0 },
   ],
 
+  // And the one friendly the board leaves standing: a Scout, two hexes from where
+  // the King wakes up, dormant so that finding him is the first thing that
+  // happens - see game/components/garrison.js.
+  //
+  // He was a card the run was dealt, once, and then he was not dealt at all. Both
+  // of those were fine while the King saw as far as a Scout did; the Scout sees
+  // three rings now and the King two, so a board of 219 hexes with no Scout on it
+  // is a board being explored by the one unit that must not be risked. Two hexes
+  // is inside the King's own view, so he is awake as the light comes up - which is
+  // the right opening for the board this game was built on: you are given the eyes
+  // and then you decide where to point them.
+  units: [
+    { type: 'scout', q: -2, r: 4, dormant: true },
+  ],
+
   // What is out there to be found. One cache, and where it sits is the whole of
   // the first map's teaching: three hexes east of where the Scout starts, on the
   // small hill by the southern tree, which is a landmark from the moment it is

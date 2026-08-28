@@ -26,7 +26,9 @@ export class HexPicker extends Component {
     ground = null,            // for tile height - the cursor sinks into hillsides without it
     color = 0x8fd8e8,
     onHover = null,           // (hex | null) => void
-    onPick = null,            // (hex) => void, left click
+    // The event goes with it, because a modifier changes what a click *means* and
+    // only the caller knows what into. Nothing here reads it.
+    onPick = null,            // (hex, event) => void, left click
     onOrder = null,           // (hex) => void, right click
     // A left press, its release, and the wheel. A click is enough to give an
     // order; a drag is what painting needs, and the caller assembles one out of
@@ -81,7 +83,7 @@ export class HexPicker extends Component {
     this._onClick = (e) => {
       // Alt+drag is the camera's rotate gesture and still ends in a click here.
       if (e.altKey) return;
-      if (e.button === 0 && this.hover) this._onPick?.(this.hover);
+      if (e.button === 0 && this.hover) this._onPick?.(this.hover, e);
     };
     // The right button is the order button. It arrives as `contextmenu` rather
     // than as a click, which is also the event that has to be swallowed anyway -

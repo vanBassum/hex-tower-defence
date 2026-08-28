@@ -7,6 +7,7 @@ import { HexGridRenderer } from '../engine/components/hex_grid_renderer.js';
 import { HexGround } from '../engine/components/hex_ground.js';
 import { HexCorners } from '../engine/components/hex_corners.js';
 import { HexRoute } from '../engine/components/hex_route.js';
+import { Marquee } from '../engine/components/marquee.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { VisibilityMask } from '../engine/components/visibility_mask.js';
 import { VisibilityMap } from '../engine/hex/visibility.js';
@@ -328,6 +329,16 @@ export function startPlay({
     color: MOOD.interact.color, opacity: MOOD.interact.route, y: 0.03,
     heightAt: (q, r) => hexGround.topY(q, r),
   }));
+  // And where each of them would end up. It only ever matters when more than one
+  // group is picked up - with one, the cursor is already sitting on the far end of
+  // the thread - and with six it is the whole of what a group order has to show
+  // before it is given. Brackets like the cursor's rather than the field's,
+  // because these are tiles a click is about to do something to.
+  const destOverlay = forceGO.addComponent(new HexCorners(map.grid, [], {
+    color: MOOD.interact.color, opacity: MOOD.interact.dest, y: 0.035,
+    arm: 0.22, width: 0.06,
+    heightAt: (q, r) => hexGround.topY(q, r),
+  }));
   const control = forceGO.addComponent(new UnitControl({
     grid: map.grid,
     ground: hexGround,
@@ -337,6 +348,7 @@ export function startPlay({
     // component that holds both halves of it.
     pickups,
     pathOverlay,
+    destOverlay,
   }));
 
   // Where a card may be played, lit up only while one is armed. It is the route
@@ -517,19 +529,28 @@ export function startPlay({
   // and nothing else, and the moment it is not armed the picker's callbacks reach
   // the force unchanged. The picker itself still knows about none of this - it
   // reports a hex, and what a hex means is decided here.
+  // A rectangle dragged across the board, which is the other half of selecting.
+  // It goes on the cursor's GameObject beside the picker because they are two
+  // readings of the same button: a click is one unit, a drag is all of them.
+  const marquee = cursor.addComponent(new Marquee({
+    items: () => control.units.map(u => ({ item: u, position: u.gameObject.position })),
+    onSelect: (units) => { if (units.length) control.selectMany(units); },
+    color: `#${MOOD.interact.color.toString(16).padStart(6, '0')}`,
+  }));
   cursor.addComponent(new HexPicker({
     grid: map.grid,
     ground: hexGround,
     color: MOOD.interact.color,
     onHover: (hex) => { deployment.handleHover(hex); control.handleHover(hex); },
-    // A hex the selection can reach is a destination, and everything else the
-    // left button always meant - pick a group up, or put it down. The order
-    // matters: the card gets first refusal, then the move, then selection, so
-    // clicking the tile you are already going to does not also deselect.
-    onPick:  (hex) => {
+    // The left button places an armed card or changes what is selected, and there
+    // is no third thing it can do - it never moves anybody. Shift adds to the
+    // selection; a press that turned into a drag was the box above, and the click
+    // the browser sends after it is thrown away here for the same reason an order
+    // at the end of a camera rotate is.
+    onPick:  (hex, e) => {
       if (deployment.handlePick(hex)) return;
-      if (loop?.handlePick(hex)) return;
-      control.handlePick(hex);
+      if (marquee.consumedPress) return;
+      control.handlePick(hex, e?.shiftKey === true);
     },
     // A right *drag* is the camera's rotate and a right *press* is the order, and
     // the rig is the one that knows which just happened - so an order that arrives
