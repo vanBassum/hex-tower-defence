@@ -204,7 +204,14 @@ Break one of these and something three files away goes subtly wrong.
   steps. No King on the board means nothing can be brought in - that is the
   point, not a bug. The King is the only unit the game places itself
   (`DEBUG.kingStart`); everything else, the Scout included, is a card the player
-  plays (`DEBUG.startingHand`).
+  plays (`DEBUG.startingHand`). **The editor has no palette for the player's own
+  troops, and that is the rule and not an omission** - a level says where the army
+  arrives and what is waiting for it, and which army comes is the player's answer
+  to that. The one player-side thing a level places is the King: the `start`
+  category in `editor/content.js`, one asset, no erase, because a board with
+  nowhere to arrive cannot be opened. The format still *carries* a friendly unit,
+  and `play.js` still hands one to the roster, so a level written before this
+  reads back unchanged - there is simply no way to author another.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.

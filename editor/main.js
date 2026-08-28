@@ -1292,6 +1292,8 @@ window.hex = {
   use: () => { step = 0; apply(); },
   remove: () => { removeAt(); refreshPanel(); },
   get selected() { return selected; },
+  // The content categories, so a script can ask what the editor offers.
+  contents: CONTENT,
   // A drag, as the mouse makes one: press, move, release. Without a pointer there
   // is no ray, so the press picks by hex - which is what `pick` falls back to.
   drag: (fromQ, fromR, toQ, toR, dx = 0, dz = 0) => {

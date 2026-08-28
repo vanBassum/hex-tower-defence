@@ -218,59 +218,85 @@ function placedContent({ id, name, category, tools, settings, spread }) {
   };
 }
 
-// ── Forces ──────────────────────────────────────────────────────────────────
-// Both sides are one implementation and the only difference between them is which
-// types they offer, which comes from `hostile` on the type - see the invariant in
-// CLAUDE.md. There is no side field anywhere in here to disagree with it.
+// ── Where the player starts ─────────────────────────────────────────────────
+// One asset, and it is not a troop. The player's army is a hand they choose - six
+// cards, played beside the King wherever he happens to be standing - so a level
+// says where they *start* and what is waiting for them, and never what they bring.
+// See the invariant in CLAUDE.md and the note at the top of cards.js.
+//
+// This category exists because the King is the one figure the game places itself,
+// and a board with nowhere to arrive cannot be opened. It has no erase for the
+// same reason: he moves, and there is nothing to take away.
+const playerStart = {
+  id: 'start',
+  name: 'Player start',
+  short: 'Start',
+  assets: () => [{
+    id: 'king',
+    name: 'King',
+    note: 'Where the army arrives - placing him again moves him',
+    preview: { kind: 'unit', type: 'king' },
+  }],
+  tools: ['tile', 'select'],
+  settings: [],
+
+  // There is one `king` field in a level, so there is one King: placing him again
+  // moves him, and the singleton is the shape of the data rather than a rule
+  // somebody has to remember.
+  tile: (ctx, hex) => {
+    const no = whyNot(ctx.level, 'king', hex.q, hex.r);
+    if (no) throw new Error(`The King cannot stand here - ${no}.`);
+    return moveKing(ctx.level, hex.q, hex.r) ? 1 : 0;
+  },
+
+  has: (level, q, r) => level.king.q === q && level.king.r === r,
+  refuse: (level, hex) => whyNot(level, 'king', hex.q, hex.r),
+  ghost: () => null,
+};
+
+// ── What is waiting on the board ────────────────────────────────────────────
+// The other side, and only the other side. Which side a type is on comes from
+// `hostile` on it - see the invariant in CLAUDE.md - so there is no side field in
+// here to disagree with the game about.
 //
 // Tile only. A body of men occupies its hex, so there is no sub-hex position to
 // place one at, and a brush that dropped nine of them over an area is not
 // something anybody would want to undo.
-function forceContent({ id, name, hostile, extra = [] }) {
-  const types = Object.keys(UNIT_TYPES).filter(k => !!UNIT_TYPES[k].hostile === hostile && k !== 'king');
-  return {
-    id,
-    name,
-    tools: ['tile', 'select', 'erase'],
-    settings: [],
-    assets: () => [
-      ...extra,
-      ...types.map(k => ({
-        id: k,
-        name: UNIT_TYPES[k].name,
-        note: `${UNIT_TYPES[k].people} men · sees ${UNIT_TYPES[k].viewDistance}`,
-        preview: { kind: 'unit', type: k },
-      })),
-    ],
+const enemy = {
+  id: 'enemy',
+  name: 'Enemy',
+  tools: ['tile', 'select', 'erase'],
+  settings: [],
+  assets: () => Object.entries(UNIT_TYPES)
+    .filter(([key, type]) => type.hostile && key !== 'king')
+    .map(([key, type]) => ({
+      id: key,
+      name: type.name,
+      note: `${type.people} men · sees ${type.viewDistance}`,
+      preview: { kind: 'unit', type: key },
+    })),
 
-    tile: (ctx, hex) => {
-      const asset = one(ctx.assets, hex, 0);
-      const no = whyNot(ctx.level, asset.id === 'king' ? 'king' : 'unit', hex.q, hex.r);
-      if (no) throw new Error(`Cannot place the ${asset.name} here - ${no}.`);
-      // There is one `king` field in a level, so there is one King: placing him
-      // again moves him, and the singleton is the shape of the data rather than a
-      // rule somebody has to remember.
-      return asset.id === 'king'
-        ? (moveKing(ctx.level, hex.q, hex.r) ? 1 : 0)
-        : (placeUnit(ctx.level, asset.id, hex.q, hex.r) ? 1 : 0);
-    },
+  tile: (ctx, hex) => {
+    const asset = one(ctx.assets, hex, 0);
+    const no = whyNot(ctx.level, 'unit', hex.q, hex.r);
+    if (no) throw new Error(`Cannot place the ${asset.name} here - ${no}.`);
+    return placeUnit(ctx.level, asset.id, hex.q, hex.r) ? 1 : 0;
+  },
 
-    erase: (ctx, hexes) => {
-      let gone = 0;
-      for (const h of hexes) if (removeEntityAt(ctx.level, h.q, h.r)) gone++;
-      return gone;
-    },
+  erase: (ctx, hexes) => {
+    let gone = 0;
+    for (const h of hexes) if (removeEntityAt(ctx.level, h.q, h.r)) gone++;
+    return gone;
+  },
 
-    has: (level, q, r) => {
-      const here = entityAt(level, q, r);
-      if (!here) return false;
-      return here.kind === 'king' ? !hostile : !!UNIT_TYPES[here.unit.type]?.hostile === hostile;
-    },
-    refuse: (level, hex, asset) =>
-      whyNot(level, asset?.id === 'king' ? 'king' : 'unit', hex.q, hex.r),
-    ghost: () => null,
-  };
-}
+  // Anything standing there that is not the King. A level out of an older editor
+  // may have friendly units on it - the format still carries them, because the
+  // game still knows what to do with one - so this answers for whatever is there
+  // rather than only for what this palette can place.
+  has: (level, q, r) => entityAt(level, q, r)?.kind === 'unit',
+  refuse: (level, hex) => whyNot(level, 'unit', hex.q, hex.r),
+  ghost: () => null,
+};
 
 export const CONTENT = [
   terrain,
@@ -297,21 +323,8 @@ export const CONTENT = [
     tools: ['place', 'tile', 'erase', 'select'],
     settings: ['size', 'spin', 'turn', 'scale', 'height', 'intensity', 'distance'],
   }),
-  forceContent({
-    id: 'friendly',
-    name: 'Friendly',
-    hostile: false,
-    // The King is not a unit in the file - he is one hex on his own - so he is the
-    // one asset with a hand-written entry. A level that stands friendly units on
-    // the board hands them to the player's roster when it opens; see play.js.
-    extra: [{
-      id: 'king',
-      name: 'King',
-      note: 'The player start - moves the existing King',
-      preview: { kind: 'unit', type: 'king' },
-    }],
-  }),
-  forceContent({ id: 'enemy', name: 'Enemy', hostile: true }),
+  playerStart,
+  enemy,
 ];
 
 export const CONTENT_BY_ID = Object.fromEntries(CONTENT.map(c => [c.id, c]));
