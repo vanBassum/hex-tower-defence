@@ -434,7 +434,40 @@
       border-radius: 3px;
       background: rgba(224, 160, 92, 0.14);
     }
+    /* A system level is not yours, and the badge is the whole of how that is
+       said - cool where an open level's badge is warm, which is the vocabulary
+       the rest of this project already uses for information as against action. */
+    #levels .card .badge.is-system {
+      color: #9fd8ee;
+      background: rgba(143, 216, 232, 0.14);
+    }
     #levels .card .meta { color: #6d8195; padding: 5px 0 9px; line-height: 1.35; }
+
+    /* Which of the two kinds is showing. Text rather than chips, for the reason
+       the card's own buttons are: the levels are the thing being looked at and a
+       row of boxes above them competes with the boards. */
+    #levels .filters {
+      display: flex;
+      gap: 3px;
+      padding: 0 0 12px;
+    }
+    #levels .filters button {
+      font: inherit;
+      font-size: 11.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #6d8195;
+      background: none;
+      border: 0;
+      border-radius: 4px;
+      padding: 4px 9px;
+      cursor: pointer;
+    }
+    #levels .filters button:hover { color: #dcecf6; }
+    #levels .filters button.is-on {
+      color: #dcecf6;
+      background: rgba(143, 216, 232, 0.12);
+    }
 
     /* Five words on a card is a lot of buttons, so they are text rather than
        boxes - a row of chips would outweigh the name they belong to. */

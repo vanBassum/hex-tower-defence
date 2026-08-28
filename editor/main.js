@@ -29,6 +29,7 @@ import { SelectionMarker } from './marker.js';
 import { thumbnails, thumbnailStats, forgetThumbnails } from './thumbnails.js';
 import { downloadLevel, readFile } from './files.js';
 import { startPlay } from '../game/play.js';
+import { loadSystemLevels } from '../game/levels.js';
 import { buildMap } from '../game/maps.js';
 import { fogWanted, setFogWanted } from './prefs.js';
 import * as storage from './storage.js';
@@ -787,7 +788,23 @@ function loadLevel(next) {
   commit();
   storage.setOpenId(level.id);
   selected = null;
+  // Whatever tool was in hand belonged to the board that just went away. The
+  // first thing anybody does with a level they have just opened is look at it,
+  // and the first click should not paint - see `disarm`.
+  disarm();
   refreshSelection();
+  refreshBrush();
+  refreshPanel();
+}
+
+// Back to the one tool that changes nothing. It is what the editor falls back to
+// whenever it cannot be sure the next click is still meant for the thing that was
+// in hand: a level has just been opened, or the window was left and come back to.
+// Select is the only tool with no verb, so putting it down is the whole of being
+// safe, and picking the brush back up is one key.
+function disarm() {
+  if (activeTool === 'select') return;
+  activeTool = 'select';
   refreshBrush();
   refreshPanel();
 }
@@ -845,8 +862,22 @@ for (const c of CONTENT) chosen[c.id] = new Set([c.assets()[0]?.id].filter(Boole
 // they are not shared by key.
 const toolSettings = defaultSettings();
 
+// Both kinds in one list: what this browser holds, and what ships with the game.
+// System levels are fetched once and kept - they are files and cannot change
+// under a running page - so the library reads a variable rather than waiting on
+// anything, and the first open of a session simply has none of them in it yet.
+// That is a tenth of a second on a page that has already loaded the game, and it
+// is the reason nothing here had to become asynchronous.
+let systemLevels = [];
+loadSystemLevels().then((all) => {
+  systemLevels = all;
+  if (library.isOpen) library.render(levelList(), level.id);
+});
+
 function levelList() {
-  try { return storage.list(); } catch { return []; }
+  let mine = [];
+  try { mine = storage.list(); } catch { /* an unreadable store is an empty one */ }
+  return [...mine, ...systemLevels];
 }
 
 function refreshPanel() {
@@ -1119,6 +1150,20 @@ const library = new LevelLibrary({
     return `Duplicated as "${copy.name}"`;
   }),
 
+  // The only thing a system level offers, and the copy is opened rather than
+  // left in the list: taking one is always the first half of working on it, and
+  // a level that appears somewhere behind a modal is a level you then have to go
+  // and find. It goes through `storage.duplicate` like any other copy, so the new
+  // one gets its own id and is in no way still the file it came from.
+  onFork: act((id) => {
+    const from = systemLevels.find(e => e.id === id)?.level;
+    if (!from) throw new Error('that system level did not load');
+    const copy = storage.duplicate(from, storage.uniqueName(from.name));
+    loadLevel(storage.load(copy.id));
+    library.close();
+    return `Copied "${from.name}" into this browser as "${copy.name}"`;
+  }),
+
   // The one place a click is asked to confirm itself: everything else here can
   // be undone by doing it again, and this is the only button that destroys work.
   //
@@ -1171,7 +1216,9 @@ const library = new LevelLibrary({
 // The first level in the library that can actually be read, or null.
 function anyStoredLevel() {
   for (const entry of levelList()) {
-    if (entry.error) continue;
+    // Stored, which is now a thing the list has to be asked: a system level is a
+    // file and `storage.load` has never heard of it.
+    if (entry.error || entry.system) continue;
     try { return storage.load(entry.id); } catch { /* try the next one */ }
   }
   return null;
@@ -1190,6 +1237,17 @@ function anyStoredLevel() {
   }
   loadLevel(opening ?? anyStoredLevel() ?? defaultLevel());
   editorMouse(true);
+}
+
+// Leaving the window puts the tool down. Coming back to a tab with a brush still
+// armed, at whatever hex the pointer happens to be over, is one click away from a
+// change nobody meant to make - and the click that returns focus to the page is
+// exactly that click. Both events, because they do not cover the same thing: a
+// tab switch fires `visibilitychange` and clicking another window fires `blur`.
+// It is deliberately not restored afterwards; guessing what somebody wants on the
+// way back in is how you end up painting on their behalf again.
+for (const [target, type] of [[window, 'blur'], [document, 'visibilitychange']]) {
+  target.addEventListener(type, () => { if (!session) disarm(); });
 }
 
 // Open looking at the middle of the board. Nothing ever moves the camera again -

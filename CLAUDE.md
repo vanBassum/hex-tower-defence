@@ -48,6 +48,7 @@ thing being changed - reach for them then, not by default.
                             visibility_mask (what the unknown looks like)
     game/                   this game: what is on the island and what plays on it
       play.js               the game as a callable - every wire between components
+      levels.js             the levels that ship in levels/, and their index
       main.js               the game as a *page*: renderer, hour, camera, one level
       maps.js               the level: outline, elevation, props, pickups
       mood.js               every colour and the one wind, in one place
@@ -72,8 +73,9 @@ thing being changed - reach for them then, not by default.
       main.js               second composition root; edits rebuild the board
       ui/                   editbar (tool/content/assets/settings), panel,
                             levels (library)
-    levels/                 editor levels as files, for importing - skirmish.json
-                            is the encounter the action loop is tested against
+    levels/                 the system levels, as the editor's own JSON. Listed in
+                            game/levels.js; ?level=<id> plays one, and the editor's
+                            library shows them beside the browser's own
     tools/                  map.mjs (authoring), check.py (verification)
 
 ## Invariants
@@ -355,6 +357,23 @@ Break one of these and something three files away goes subtly wrong.
   than to the session, which is why Play is a change of what is on the board and
   not a journey. A second, simpler simulation living in the editor is the thing
   this arrangement exists to make unnecessary.
+- **A system level is a file, and this browser does not own it.** The levels in
+  `levels/` are exactly what the editor exports - one format, one parser
+  (`parseLevel`), no second authoring path - and `game/levels.js` is the index
+  plus the one place that imports the format module from `editor/`. They can be
+  played (`?level=<id>` on the game page) and duplicated, and they cannot be
+  opened, renamed, overwritten or deleted from the editor: a copy is what you
+  edit, and it gets its own id through `storage.duplicate` so it is in no way
+  still the file it came from. The library shows both kinds in one list because
+  they are the same kind of thing - the filter is for the rarer question of which
+  sort you are looking at - and what tells them apart is `entry.system` and the
+  buttons a card offers.
+- **The editor puts the tool down whenever it cannot be sure the next click is
+  meant.** `disarm()` in `editor/main.js` falls back to Select - the one tool with
+  no verb - after opening a level and after the window is left, because the click
+  that returns focus to a page lands on the board at whatever hex the pointer
+  happens to be over. It is deliberately not restored on the way back: guessing is
+  how you end up painting on somebody's behalf again.
 - **`buildMap` reads two dialects of the same map.** An authored level draws its
   outline as text with hills as regions; an editor level is a list of tiles each
   carrying its own terrain and height. Both land in the same built map. Adding a
@@ -385,6 +404,7 @@ Break one of these and something three files away goes subtly wrong.
 | An enemy kind | `UNIT_TYPES` with `hostile` + a behaviour field; place it in `maps.js` `enemies` |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
+| A level that ships with the game | the exported JSON in `levels/`, plus a line in `SYSTEM_LEVELS` in `game/levels.js` |
 | A reaction rule, or how far a group moves | `TACTICS` in `game/components/action_loop.js` |
 | A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
 | A way of marking hexes | a subclass of `HexOverlay` overriding `_rebuild` - the picker finds any of them |

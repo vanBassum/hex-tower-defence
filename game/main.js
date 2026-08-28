@@ -3,6 +3,7 @@ import { GameObject } from '../engine/gameobject.js';
 import { CameraRig } from '../engine/components/camera_rig.js';
 import { Atmosphere } from '../engine/components/atmosphere.js';
 import { MAP_1, buildMap } from './maps.js';
+import { SYSTEM_LEVEL_BY_ID, loadSystemLevel } from './levels.js';
 import { MOOD } from './mood.js';
 import { startPlay } from './play.js';
 
@@ -18,8 +19,34 @@ import { startPlay } from './play.js';
 
 window.__boot = { t0: performance.now() };
 const game = new Game();
-const map  = buildMap(MAP_1);
+
+// Which board. `?level=skirmish` plays one of the levels that ship in `levels/`
+// - see game/levels.js - and nothing in the query string plays the hand-authored
+// island, which is still what the game opens on.
+//
+// A query string rather than a menu, because a menu is a screen and this page has
+// never had one. The editor's library is where levels are browsed; this is the
+// address of one. A name nothing answers to falls back to the island with a line
+// in the console rather than a blank page, since the only way to mistype it is by
+// hand.
+const wanted = new URLSearchParams(location.search).get('level');
+const map = buildMap(await pickLevel(wanted));
 window.__boot.map = performance.now();
+
+async function pickLevel(id) {
+  if (!id) return MAP_1;
+  if (!SYSTEM_LEVEL_BY_ID[id]) {
+    console.warn(`No level called "${id}" - playing the island. Try one of: ` +
+                 Object.keys(SYSTEM_LEVEL_BY_ID).join(', '));
+    return MAP_1;
+  }
+  try {
+    return await loadSystemLevel(id);
+  } catch (e) {
+    console.warn(`Could not load level "${id}": ${e.message} - playing the island.`);
+    return MAP_1;
+  }
+}
 
 const camera = new GameObject('Camera');
 // Closer again than the last time this was pulled in. A run opens on nothing but
@@ -45,6 +72,10 @@ game.add(air);
 
 startPlay({
   game, map, rig,
+  // What the run opens with. A shipped level says - the same field the editor's
+  // Play reads - and the island says nothing, which is the empty hand it has
+  // always been dealt.
+  deck: map.def.deck ?? undefined,
   hand: document.getElementById('hand'),
   // The loading message goes with the last of the waiting, which is the throwaway
   // frame play.js draws to compile its shaders - a message that leaves before the
