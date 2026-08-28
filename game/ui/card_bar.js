@@ -1,3 +1,5 @@
+import { cardStats } from '../cards.js';
+
 // The hand, along the bottom of the screen.
 //
 // The first piece of the game that is not the world. It is DOM rather than
@@ -67,6 +69,7 @@ export class CardBar {
       `<span class="card-art">${ART[entry.card.unit] ?? ART.default}</span>` +
       `<span class="card-name"></span>` +
       `<span class="card-role"></span>` +
+      `<span class="card-stats"></span>` +
       `<span class="card-fill"><i></i></span>` +
       `<span class="card-state">Deploy</span>`;
     el.querySelector('.card-name').textContent = name(entry.card);
@@ -74,6 +77,25 @@ export class CardBar {
     // the face of a card is a number nobody asked for in the one second they
     // have to read it.
     el.querySelector('.card-role').textContent = entry.card.role ?? '';
+    // Built once rather than on every update, because a unit type's figures do
+    // not change - what changes is how the unit that was played is doing, and
+    // that is the fill and the footer below.
+    //
+    // One rendering for every card there will ever be: the row is whatever
+    // `cardStats` returns, so a fourth number is an entry in cards.js and an icon
+    // here, and never a special case for one card.
+    const stats = el.querySelector('.card-stats');
+    for (const s of cardStats(entry.card)) {
+      const item = document.createElement('span');
+      item.className = 'card-stat';
+      // The icons have to be learnable, and there is nowhere on a card this size
+      // to write a word. Hovering one says what it is - which is the whole of the
+      // discovery, and costs no space at all.
+      item.title = s.label;
+      item.setAttribute('aria-label', s.label);
+      item.innerHTML = `${STAT_ICONS[s.key] ?? ''}<b>${s.text}</b>`;
+      stats.append(item);
+    }
     el.addEventListener('click', () => this._onArm?.(entry));
     return el;
   }
@@ -114,6 +136,44 @@ const NAMES = { king: 'King', scout: 'Scout', footman: 'Footmen', archers: 'Arch
 // what the player has to match against the thing standing on the board - the
 // spears above the helmets are how a Footman is told apart at the game's camera,
 // so they are how the card is told apart too.
+// The three figures, drawn in the same hand as the card art above them: flat
+// shapes in `currentColor`, no strokes finer than the art uses, and each one the
+// thing it counts rather than a symbol for it. A crowd is people, an attack is a
+// spear - which is what most of this army is actually holding - and range is the
+// ring the game already draws on the ground round a unit.
+//
+// Emoji were the obvious answer and are the wrong one: they arrive in whatever
+// the operating system feels like, in full colour, at a weight nothing else on
+// this card shares, and a card that is warm parchment everywhere else gets a
+// bright blue cartoon in the middle of it.
+const STAT_ICONS = {
+  people: /* html */`
+    <svg viewBox="0 0 14 12" aria-hidden="true">
+      <g fill="currentColor">
+        <circle cx="4" cy="3.4" r="2"/><path d="M1 11 l2.4 -5.2 h1.2 L7 11z"/>
+        <circle cx="10" cy="4.4" r="1.6" opacity="0.62"/>
+        <path d="M7.6 11 l1.9 -4.2 h1 L12.4 11z" opacity="0.62"/>
+      </g>
+    </svg>`,
+  // Upright with a crossguard, rather than the obvious diagonal blade: at eleven
+  // pixels a diagonal is a slash and nothing else - it was drawn that way first
+  // and read as punctuation. The guard is the whole of what makes it a weapon,
+  // and it only works across the vertical.
+  attack: /* html */`
+    <svg viewBox="0 0 14 12" aria-hidden="true">
+      <g fill="currentColor">
+        <path d="M7 0.6 L8.5 3.2 V7 H5.5 V3.2z"/>
+        <path d="M3.6 7 H10.4 V8.3 H3.6z"/>
+        <path d="M6.3 8.3 H7.7 V11.2 H6.3z" opacity="0.7"/>
+      </g>
+    </svg>`,
+  range: /* html */`
+    <svg viewBox="0 0 14 12" aria-hidden="true">
+      <circle cx="7" cy="6" r="4.6" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.62"/>
+      <circle cx="7" cy="6" r="1.6" fill="currentColor"/>
+    </svg>`,
+};
+
 const ART = {
   // The two things that find the King on the board are the standard over the
   // tile and the one figure taller than the rest, so they are the two things

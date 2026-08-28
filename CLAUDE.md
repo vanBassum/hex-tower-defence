@@ -319,6 +319,7 @@ Break one of these and something three files away goes subtly wrong.
 | A landmark with settings of its own | a word on its type (`lights`), which is what `when` on a setting reads |
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
 | A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js`. `role` says what the troop is *for* - never a stat |
+| A figure on the face of a card | `cardStats` in `game/cards.js` (it reads `UNIT_TYPES`, so nothing is copied) + an icon in `STAT_ICONS` |
 | A unit others deploy beside | `deployAnchor: true` on its type |
 | An enemy kind | `UNIT_TYPES` with `hostile` + a behaviour field; place it in `maps.js` `enemies` |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |

@@ -53,7 +53,7 @@
      next to it a different height. */
   display: grid;
   position: relative;      /* for the strike across a card that has been lost */
-  grid-template-rows: 44px auto 1fr auto auto;
+  grid-template-rows: 44px auto 1fr auto auto auto;
   gap: 6px;
   width: 122px;
   padding: 11px 11px 9px;
@@ -108,6 +108,8 @@
 .card.is-spent .card-art { color: #93a8bd; }
 .card.is-spent .card-name { color: #cddceb; }
 .card.is-spent .card-role { color: #7f93a4; }
+.card.is-spent .card-stat { color: #93a8bd; }
+.card.is-spent .card-stat b { color: #cddceb; }
 .card.is-spent .card-fill { background: rgba(143, 216, 232, 0.14); }
 .card.is-spent .card-fill i { background: #9fd8ee; }
 
@@ -122,6 +124,35 @@
 
 .card-name { font-size: 13px; color: #f0dcc0; letter-spacing: 0.01em; }
 .card-role { font-size: 10.5px; line-height: 1.35; color: #9d9382; }
+
+/* The figures. Deliberately the third thing read on a card - the name, then what
+   it is for, then what it is worth - so they are small, spaced out, and the icons
+   are dimmer than the numbers beside them. Comparing two cards is comparing three
+   pairs of digits, and the icons only have to say which pair is which.
+
+   Spread across the full width rather than bunched, so the same stat sits at the
+   same x on every card in the hand and the eye reads down a column instead of
+   hunting along a row. */
+.card-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1px;
+}
+.card-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #8d8272;
+  cursor: help;
+}
+.card-stat svg { width: 11px; height: 10px; opacity: 0.72; }
+.card-stat b {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #c8b494;
+}
 /* How the unit this card played is doing. It replaces the border the footer
    used to draw, so a card that has been played gains a reading rather than a
    decoration - and an unplayed one draws an empty track, which is the line
@@ -173,6 +204,8 @@
 .card.is-lost .card-art { color: #a4726a; }
 .card.is-lost .card-name { color: #c9a49b; }
 .card.is-lost .card-role { color: #8b6a66; }
+.card.is-lost .card-stat { color: #a4726a; }
+.card.is-lost .card-stat b { color: #c9a49b; }
 .card.is-lost .card-state { color: #e09a8c; }
 .card.is-lost .card-fill { background: rgba(217, 145, 132, 0.2); }
 /* The line. It is the one signal that needs no colour vision and no reading, and

@@ -20,9 +20,14 @@ import { UNIT_TYPES } from './units.js';
 // in front of somebody deciding where to put a unit down. A hand is read at a
 // glance, in the second between finding a card and choosing a tile, and what has
 // to survive that second is the *job*: this one goes ahead, that one stands in
-// front. Numbers are for comparing two of something you already understand, and
-// they will get their own place on the card when there are enough of them to
-// compare - a row of figures, not prose pretending to be a description.
+// front.
+//
+// The numbers have their own place on the card now - see `cardStats` at the
+// bottom of this file - because there are finally enough of them to compare.
+// That is the condition this was always waiting on: one number is trivia, and
+// three is a decision. They are a row of figures under the role rather than a
+// sentence pretending to be one, and they are still the quieter half of the
+// card, because what a troop is *for* is what you read first.
 // How many cards a run may open with, unless a level says otherwise. It is
 // stated here rather than wherever a hand is dealt because it is a rule about the
 // hand and not about any one way of filling it - the player choosing six at the
@@ -83,4 +88,32 @@ export function dealable() {
 // their hand to what is standing on the board.
 export function cardName(card) {
   return UNIT_TYPES[card.unit]?.name ?? card.key;
+}
+
+// The figures on the face of a card, read straight off the unit type. It lives
+// here for the reason `cardName` does: a card points into UNIT_TYPES and carries
+// no copy of anything the unit already knows, so there is one place `attack` is
+// written down and a card cannot go stale against the thing it plays.
+//
+// Three, and only three, because they are the three that differ in a way the
+// player can act on. `viewDistance` is left out - it is a real difference and it
+// is not one you spend while choosing where to put somebody down - and there is
+// no defence or armour here because there is none in the game: a stat row that
+// listed one would be describing rules that do not exist.
+//
+// A unit with no `range` has one hex, which is what everything assumed before
+// Archers. It is stated rather than left blank because a blank reads as "none".
+export function cardStats(card) {
+  const t = UNIT_TYPES[card.unit];
+  if (!t) return [];
+  return [
+    { key: 'people', text: String(t.people ?? 1),
+      label: 'People - how many are in it, and the only health it has' },
+    // The one that has to be spelled to a decimal: 1.1 and 2.2 are the whole
+    // difference between Archers and Footmen, and rounding it hides that.
+    { key: 'attack', text: (t.attack ?? 0).toFixed(1),
+      label: 'Attack - people it kills a second while it is fighting' },
+    { key: 'range', text: String(t.range ?? 1),
+      label: 'Range - how many hexes away it can hurt something' },
+  ];
 }
