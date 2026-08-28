@@ -166,6 +166,57 @@ export const UNIT_TYPES = {
     build: (colors, tuning) => buildSquad(UNIT_TYPES.footman, colors, tuning),
   },
 
+  // The first troop that kills something it is not standing next to.
+  //
+  // `range` is the whole of it: Battle already resolves a fight as a fact about
+  // where two units are standing, and this widens the distance at which that is
+  // true from one hex to three. Nothing is aimed, nothing is spent, there is no
+  // volley to order - walk them within three of something and they are killing
+  // it, walk them out and they have stopped. That is the same shape as every
+  // other rule on this board, which is why it cost ten lines rather than a
+  // system.
+  //
+  // What it buys is the first *asymmetric* exchange the game has had. Everything
+  // until now hurt whatever hurt it, so a fight was only ever a question of who
+  // had more people; a body of Archers two hexes off takes nothing back, so the
+  // question becomes whether the thing being shot can reach them before it dies.
+  // The answer is usually yes - which is the point. They are thin, they hit for
+  // half what Footmen do, and the only thing standing between them and a
+  // Spearmen unit that has noticed them is somebody else.
+  //
+  // Being shot is what makes an enemy notice: see `_relevant` in action_loop.js.
+  // Without that the range simply outruns a picket's threat ring and a volley
+  // from three hexes is free damage forever.
+  archers: {
+    key: 'archers',
+    name: 'Archers',
+    // Far enough to see most of what they can hit. Not all of it - shooting into
+    // ground somebody else is watching is the rest of the force doing its job.
+    viewDistance: 2,
+    people: 12,
+    // Three hexes. Two was the other candidate and it is a worse number for one
+    // reason: at two, every enemy that can be shot is already inside its own
+    // threat ring, so the range buys a single free tick and then the fight is
+    // the fight it always was. At three there is a hex of ground where they are
+    // hurting something that has not started walking yet, and deciding whether
+    // to stand in it is the whole of what this unit is for.
+    range: 3,
+    // Half of what Footmen hit for. They are not a better line, they are damage
+    // that arrives from somewhere the line is not.
+    attack: 1.1,
+    // Ranks like Footmen, because they are a body of troops and not a party -
+    // what tells them apart is above the heads rather than in the outline of the
+    // crowd. A row of short curves standing upright reads as instantly *not* the
+    // bristle of straight shafts leaning forward, at any zoom and in any light.
+    formation: 'block',
+    jitter: 0.20,
+    bows: true,
+    // Near enough upright. The stave is the silhouette and a stave shouldered at
+    // a spear's angle is a spear again.
+    spearTilt: 0.10,
+    build: (colors, tuning) => buildSquad(UNIT_TYPES.archers, colors, tuning),
+  },
+
   // ── The other side ─────────────────────────────────────────────────────────
   // The first thing on this island that is not the player's, and the shape the
   // rest of them will be poured into: a type with `hostile` on it and a
@@ -209,6 +260,7 @@ const DEFAULT_COLORS = {
   skin:  0x8c8377,
   steel: 0x99a3b3,
   gold:  0xc9a55e,
+  bow:   0xb08a52,
   banner: 0xb8894a,
   pole:  0x2f2721,
   lampGlow: 0xffb45c,
@@ -262,12 +314,35 @@ function buildSquad(type, colors = {}, tuning = {}) {
   // A spear is drawn as one tapered shaft with no head on it: a tip at this
   // scale is a third of a pixel, and what carries is the line and the fact that
   // it catches light the cloaks do not.
+  //
+  // A bow goes through the same pass - one InstancedMesh, one geometry swapped -
+  // because what a unit carries is a shape and not a system. It is a curved
+  // stave standing upright rather than a straight shaft leaning forward, and it
+  // is drawn tall enough to break the silhouette above the heads, because that
+  // is the only part of a formation that reads at the game's camera.
   let spears = null;
-  if (type.spears) {
-    const spearGeo = new THREE.CylinderGeometry(h * 0.008, h * 0.022, h * 1.7, 3);
-    spearGeo.translate(0, h * 0.85, 0);
-    const spearMat = new THREE.MeshLambertMaterial({ color: c.steel, flatShading: true });
-    spears = new THREE.InstancedMesh(spearGeo, spearMat, n);
+  if (type.spears || type.bows) {
+    let geo;
+    if (type.bows) {
+      const arc = 2.3;
+      geo = new THREE.TorusGeometry(h * 0.46, h * 0.022, 3, 7, arc);
+      geo.rotateZ(-arc / 2);          // the arc symmetric about +X
+      geo.rotateY(-Math.PI / 2);      // and swung round into the plane he faces
+      // Held at the chest and standing well past the head. The first pass had it
+      // ending about level with the helmets, which is exactly where a silhouette
+      // stops working: the read is the *outline*, and a bow inside the crowd's
+      // own outline is a crowd. It has to clear the heads the way a spear does.
+      geo.translate(0, h * 0.62, 0);
+    } else {
+      geo = new THREE.CylinderGeometry(h * 0.008, h * 0.022, h * 1.7, 3);
+      geo.translate(0, h * 0.85, 0);
+    }
+    // Wood rather than steel. Half the read is that the curves are dull where
+    // the shafts opposite them are bright.
+    const mat = new THREE.MeshLambertMaterial({
+      color: type.bows ? c.bow : c.steel, flatShading: true,
+    });
+    spears = new THREE.InstancedMesh(geo, mat, n);
     group.add(spears);
     own.push(spears);
   }

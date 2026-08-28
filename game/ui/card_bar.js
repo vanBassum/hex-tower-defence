@@ -108,7 +108,7 @@ function name(card) {
 
 // Kept here rather than imported from units.js so the bar has no opinion about
 // the scene: it is handed cards and draws them.
-const NAMES = { king: 'King', scout: 'Scout', footman: 'Footmen' };
+const NAMES = { king: 'King', scout: 'Scout', footman: 'Footmen', archers: 'Archers' };
 
 // The art is the unit's silhouette and nothing else, because the silhouette is
 // what the player has to match against the thing standing on the board - the
@@ -139,6 +139,22 @@ const ART = {
         <line x1="8"  y1="29" x2="10" y2="3"/>
         <line x1="23" y1="29" x2="22" y2="2"/>
         <line x1="38" y1="29" x2="36" y2="4"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="12" cy="21" r="3.6"/><circle cx="26" cy="20" r="3.6"/><circle cx="40" cy="21" r="3.6"/>
+        <path d="M8 30 l3.5 -6 h1 L16 30z M22 30 l3.5 -7 h1 L30 30z M36 30 l3.5 -6 h1 L44 30z" opacity="0.75"/>
+      </g>
+    </svg>`,
+  // The same ranks the Footmen card draws, with the one difference the board
+  // itself uses: curves standing over the heads instead of straight shafts
+  // leaning forward. Nothing here says three hexes - what has to be matched is
+  // the shape of the thing on the tile.
+  archers: /* html */`
+    <svg viewBox="0 0 48 32" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1.3" fill="none" opacity="0.85" stroke-linecap="round">
+        <path d="M7 4 q5 8 0 16"/>
+        <path d="M21 3 q5 8 0 16"/>
+        <path d="M35 4 q5 8 0 16"/>
       </g>
       <g fill="currentColor">
         <circle cx="12" cy="21" r="3.6"/><circle cx="26" cy="20" r="3.6"/><circle cx="40" cy="21" r="3.6"/>

@@ -422,7 +422,12 @@ export function startPlay({
   // both rosters and neither of them is told: a side is anything with a `units`
   // array, so the day there is a third one it is one more entry here.
   const battleGO = new GameObject('Battle');
-  battleGO.addComponent(new Battle({ grid: map.grid, sides: [control, enemies] }));
+  // Blows land only while the board is resolving an action. With no loop that is
+  // always, which is the real-time game.
+  battleGO.addComponent(new Battle({
+    grid: map.grid, sides: [control, enemies],
+    active: () => loop == null || busy(),
+  }));
   add(battleGO);
 
   // And - the experiment - the thing that decides when either side may act at

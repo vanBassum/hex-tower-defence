@@ -40,7 +40,7 @@ export const TACTICS = {
   // How far a group may walk on one action, by unit type. A Scout goes furthest
   // because looking is what it is for; the King the least, because the whole
   // force is deployed around him and moving him moves where the army can arrive.
-  move: { scout: 5, king: 3, footman: 4, spearmen: 4 },
+  move: { scout: 5, king: 3, footman: 4, archers: 3, spearmen: 4 },
   moveDefault: 4,
 
   // How close you have to come before an enemy answers, by stance. This is the
@@ -143,6 +143,16 @@ export class ActionLoop extends Component {
   // ── Resolution ────────────────────────────────────────────────────────────
   update(dt) {
     switch (this.state) {
+      // A fight can start without anybody having moved - a card played onto a
+      // tile beside something, or Archers whose range reaches further than the
+      // last action took them. It is still the player's doing, so it is still an
+      // action's worth of consequence: the enemies it concerns answer it and the
+      // board resolves, rather than a fight quietly running while nobody is
+      // being asked anything.
+      case STATE.READY:
+        if (this._engaged()) this._react();
+        break;
+
       case STATE.MOVING:
         if (this._mover && !this._mover.dead && this._mover.isMoving) break;
         this._react();
@@ -167,10 +177,10 @@ export class ActionLoop extends Component {
   }
 
   // Who answers, and it is deliberately the plainest rule that can be written:
-  // any enemy with a player group inside its own threat ring walks at the
-  // nearest one and stops a hex short, and every other enemy on the island does
-  // nothing at all. No line of sight, no memory, no coordination - all of which
-  // are things to try *after* the rhythm is known to be worth keeping.
+  // an enemy that has been made relevant walks at the nearest player group and
+  // stops a hex short, and every other enemy on the island does nothing at all.
+  // No line of sight, no memory, no coordination - all of which are things to
+  // try *after* the rhythm is known to be worth keeping.
   //
   // In id order, so the same board and the same move give the same answer twice.
   _react() {
@@ -178,12 +188,11 @@ export class ActionLoop extends Component {
     const roster = [...(this._enemies?.units ?? [])].sort((a, b) => a.id - b.id);
     for (const e of roster) {
       if (e.dead) continue;
+      if (!this._relevant(e)) continue;
       const target = this._nearest(e);
       if (!target) continue;
 
       const d = this._grid.hexDistance(e.q, e.r, target.q, target.r);
-      const ring = TACTICS.react[e.type.stance] ?? TACTICS.reactDefault;
-      if (d > ring) continue;      // it has no reason to have noticed
       if (d <= 1) continue;        // already alongside: Battle is its answer
 
       // `findPath` will happily end on the target's own hex - that exception is
@@ -199,6 +208,25 @@ export class ActionLoop extends Component {
     this._setState(STATE.REACTING);
   }
 
+  // What makes an enemy the business of the action that just happened. Two
+  // things, and the second is not a nicety: somebody has come inside its own
+  // threat ring, *or* somebody is close enough to be shooting it.
+  //
+  // Archers outrange a picket's ring, so without the second half a volley from
+  // three hexes is free damage forever and the thing being shot stands there
+  // being killed. That is not a difficulty knob, it is a rhythm with a hole in
+  // it - the whole model is that what you do makes something relevant, and
+  // hurting a thing is the plainest way there is of doing that.
+  _relevant(enemy) {
+    const ring = TACTICS.react[enemy.type.stance] ?? TACTICS.reactDefault;
+    for (const u of this._control?.units ?? []) {
+      if (u.dead) continue;
+      const d = this._grid.hexDistance(enemy.q, enemy.r, u.q, u.r);
+      if (d <= Math.max(ring, u.type.range ?? 1)) return true;
+    }
+    return false;
+  }
+
   _nearest(enemy) {
     let best = null, bestD = Infinity;
     for (const u of this._control?.units ?? []) {
@@ -209,12 +237,17 @@ export class ActionLoop extends Component {
     return best;
   }
 
+  // Whether anybody is still hurting anybody, which is Battle's rule read back:
+  // a pair is fighting while either of them can reach the other. Archers three
+  // hexes out are an encounter that has not finished, so control does not come
+  // back while they are still shooting.
   _engaged() {
     for (const u of this._control.units) {
       if (u.dead) continue;
       for (const e of this._enemies?.units ?? []) {
         if (e.dead) continue;
-        if (this._grid.hexDistance(u.q, u.r, e.q, e.r) === 1) return true;
+        const d = this._grid.hexDistance(u.q, u.r, e.q, e.r);
+        if (d <= Math.max(u.type.range ?? 1, e.type.range ?? 1)) return true;
       }
     }
     return false;

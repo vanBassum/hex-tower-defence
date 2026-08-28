@@ -61,6 +61,15 @@ export const CARD_TYPES = {
     unit: 'footman',
     role: 'Holds the ground the King takes.',
   },
+
+  // The job, not the number. "Three hexes" is a stat wearing a sentence, and
+  // what has to survive the second between finding this card and choosing a tile
+  // is that these are the ones who do not have to be there.
+  archers: {
+    key: 'archers',
+    unit: 'archers',
+    role: 'Kills what it never has to reach.',
+  },
 };
 
 // Which cards a hand can be *dealt*. The King is never among them: he is on the

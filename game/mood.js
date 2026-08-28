@@ -212,6 +212,17 @@ export const MOOD = {
       steel: 0x9db4d0,
     },
 
+    // Paler and greener than the line, and the bow is the warm thing on them.
+    // Both halves of that are the same read: Footmen are the blue with the
+    // bright steel over it, so Archers have to be the blue *without* it - the
+    // staves are dull wood, which at blue hour is the only warm note the player
+    // owns that is not a lamp.
+    archers: {
+      cloak: 0x44708c,
+      trim:  0xa8c2c6,
+      bow:   0xc09154,
+    },
+
     spearmen: {
       cloak: 0x6e2b2b,
       trim:  0xb0554a,

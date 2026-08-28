@@ -239,6 +239,22 @@ Break one of these and something three files away goes subtly wrong.
 - **The right button is shared by gesture.** A press is an order, a drag past
   `DRAG_SLOP` is a camera rotate. `CameraRig.consumedRightPress` is how the game
   learns which happened, and `main.js` throws the order away when it was a drag.
+- **How far an attack carries is `range` on the type, and Battle asks each half
+  of a pair separately.** It defaults to the one hex everything assumed before
+  Archers, so nothing that predates them changed. What it introduces is the first
+  uneven exchange on the board: at two hexes only the shooter reaches, so it
+  costs people and pays none - and the counterweight is not a stat, it is that
+  being shot makes an enemy *relevant* (`_relevant` in `action_loop.js`) and it
+  comes for you. Widening the range without that is free damage forever. Only a
+  pair standing next to each other forms a front line; at range the shooters are
+  handed a direction and do nothing with it but turn onto it, because a volley is
+  not a line and turning is the only thing on screen that says where the
+  casualties are coming from.
+- **Battle describes a fight every frame and only charges for it sometimes.** Its
+  `active` predicate gates the *cost*, never the description - the poses are
+  worked out either way, or pausing the damage would freeze fifteen men
+  mid-thrust. That split is what lets the action loop have stretches where
+  nothing is happening without the board looking broken.
 - **A unit's strength IS the men left standing.** Damage lowers `people`; the
   instances past it are the same men lying on the ground, so the roster and the
   display are one array and cannot drift. `count` stays at the full roster -
@@ -285,6 +301,8 @@ Break one of these and something three files away goes subtly wrong.
 | Adding | Touch |
 | --- | --- |
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
+| A troop that kills at a distance | `range` on its type - Battle already asks, and `_relevant` already makes the target notice |
+| What a unit carries | `spears` / `bows` on its type - one InstancedMesh, one geometry swapped, never a fourth pass |
 | A prop, tree or landmark | `game/props.js` `PROP_TYPES` (a `name` and a `category`) - the matching category's palette picks it up |
 | A kind of ground cover | `PROP_TYPES` with `category: 'detail'` - `detailKinds()` finds it |
 | A picture for a new kind of asset | a `preview: { kind, ... }` on the asset entry, and a branch in `build()` in `editor/thumbnails.js` |

@@ -6,7 +6,7 @@
   "hexSize": 1,
   "radius": 6,
   "deckLimit": 6,
-  "deck": ["scout", "footman"],
+  "deck": ["scout", "footman", "archers"],
   "king": { "q": -3, "r": 1 },
   "units": [
     { "type": "spearmen", "q": 2, "r": -2 },

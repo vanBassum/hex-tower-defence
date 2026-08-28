@@ -132,6 +132,7 @@ export class Unit extends Component {
     this._total = 0;        // and how long the route is in total
     this._facing = 0;       // where the formation is pointed, eased toward the leg
     this._clock = 0;        // seconds of fighting, for the thrusts
+    this._aim = null;       // the way it is shooting, when that is not a melee
     this._corpses = 0;      // men down and still lying there, at the tail of `spots`
 
     // Several things want to hear about a step - fog, the route preview, later
@@ -430,6 +431,17 @@ export class Unit extends Component {
     this._fights = fights;
   }
 
+  // And where it is shooting, when what it is hurting is not next to it. A
+  // direction and nothing else: a volley is not a front line, so nobody steps
+  // anywhere - the body turns onto it, which is the one thing on screen saying
+  // where the casualties over there are coming from. A melee wins over it,
+  // because a unit being shot at while somebody is standing on the next tile has
+  // a more pressing arrangement to be in.
+  setAim(dir) {
+    if (dir) this._settling = true;
+    this._aim = dir;
+  }
+
   // A fight is a front line and the people behind it.
   //
   // The first few of a unit's people walk out to the edge it shares with the
@@ -538,6 +550,12 @@ export class Unit extends Component {
           if (home && !sp.landed) e.foe?.struck(file, this);
           sp.landed = home;
         }
+      } else if (this._aim && i < live) {
+        // Shooting at something a hex or more away. Everyone stays on their own
+        // formation spot - `tx`/`tz` are untouched - and only turns onto it.
+        const dx = this._aim.x * ca - this._aim.z * sa;
+        const dz = this._aim.x * sa + this._aim.z * ca;
+        tyaw = Math.atan2(dx, dz) + sp.yaw;
       }
 
       sp.cx += (tx - sp.cx) * k;
@@ -555,13 +573,13 @@ export class Unit extends Component {
       g.write(i, sp.cx, sp.cz, sp.cyaw, lunge, sp.flinch / HIT_TIME);
     }
     g.flush();
-    if (!f && moved < 0.002) this._settling = false;
+    if (!f && !this._aim && moved < 0.002) this._settling = false;
   }
 
   update(dt) {
     // Corpses are pinned to the world, so they have to be rewritten for as long
     // as they exist - the unit standing over them can still walk away.
-    if (this._fights || this._settling || this._corpses) this._writeMelee(dt);
+    if (this._fights || this._aim || this._settling || this._corpses) this._writeMelee(dt);
     if (this._born < 1) {
       this._born = Math.min(1, this._born + this._emergeRate * dt);
       const s = this._born * this._born * (3 - 2 * this._born);
