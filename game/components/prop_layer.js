@@ -84,6 +84,12 @@ export class PropLayer extends Component {
       const { x, z } = this._grid.hexToWorld(placement.q, placement.r);
       const y = this._ground ? this._ground.topY(placement.q, placement.r) : 0;
       const obj = buildProp(placement, this._mats, { x, z, y }, this._tuning);
+      // The placement that made it, hung on the object. Nothing in the game reads
+      // this: it is for the editor, which picks objects with a raycast and has to
+      // get from a mesh it hit back to the entry in the level that put it there.
+      // Cheap enough to always do, and an editor-only branch in here would be
+      // worse than one field.
+      obj.userData.placement = placement;
       this.gameObject.object3D.add(obj);
       this.count++;
 

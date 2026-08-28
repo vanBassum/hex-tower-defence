@@ -59,7 +59,13 @@ export class HexPicker extends Component {
     this.point = null;        // {x, z} or null
 
     this._ndc = new THREE.Vector2();
-    this._ray = new THREE.Raycaster();
+    // Public, because the hex is not always the answer. A caller that wants to
+    // know *what* is under the cursor rather than which tile has to hit-test the
+    // scene, and the ray for that was already worked out here - handing it over
+    // costs nothing and stops the caller building a second one from the same
+    // camera and the same pointer position.
+    this.ray = new THREE.Raycaster();
+    this._ray = this.ray;
     this._plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this._point = new THREE.Vector3();
   }

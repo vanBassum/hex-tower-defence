@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Game } from '../engine/game.js';
 import { GameObject } from '../engine/gameobject.js';
 import { CameraRig } from '../engine/components/camera_rig.js';
@@ -8,11 +9,15 @@ import { HexOverlay } from '../engine/components/hex_overlay.js';
 import { HexPicker } from '../engine/components/hex_picker.js';
 import { HexGrid } from '../engine/hex/hex_grid.js';
 import { MOOD, WIND } from '../game/mood.js';
+import { PROP_TYPES } from '../game/props.js';
+import { UNIT_TYPES } from '../game/units.js';
 import { Unit } from '../game/components/unit.js';
 import { PropLayer } from '../game/components/prop_layer.js';
 import {
-  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt, describeAt,
-  addCard, removeCard, setDeckLimit, deckLimit, topPropAt, moveProp, isStandable,
+  defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt,
+  addCard, removeCard, setDeckLimit, deckLimit, moveProp, moveUnit, moveKing,
+  isStandable, detailAt, entityAt, topPropAt, removePropsAt, removeEntityAt,
+  thinDetail,
 } from './level.js';
 import { detailPlacements } from '../game/detail.js';
 import { CONTENT, CONTENT_BY_ID } from './content.js';
@@ -20,6 +25,7 @@ import {
   TOOLS, TOOL_BY_ID, SETTINGS, defaultSettings, visibleSettings, toolsFor,
 } from './tools.js';
 import { Ghost } from './ghost.js';
+import { SelectionMarker } from './marker.js';
 import { thumbnails, thumbnailStats, forgetThumbnails } from './thumbnails.js';
 import { downloadLevel, readFile } from './files.js';
 import { startPlay } from '../game/play.js';
@@ -118,6 +124,7 @@ let world = null;            // grid, elevation and crags, derived from `level`
 let envelope = null;         // every hex that can be pointed at, board or not
 let terrain = [];            // the GameObjects that belong to this level
 let units = [];              // the ones that are people, a subset of the above
+let propsGO = null;          // the decoration, kept so a click can hit-test it
 let hexGround = null;
 
 // Which lights belong to which type, the same pair the game names. Anything not
@@ -176,10 +183,17 @@ function buildTerrain() {
   // expands it in `buildMap` - same function, same seeds, same tufts. That is
   // what makes the editor's board and the playtest's board the same board: if
   // this drew its own idea of grass, the fight would open on a different island.
-  const propsGO = new GameObject('Props');
+  // Ground cover is marked as *derived* on the way in. Both lists become meshes
+  // the same way, and the difference only matters when one is clicked: a placed
+  // prop is an entry in the level that can be picked up, and a scattered tuft is
+  // a consequence of the patch under it, so clicking one selects the patch.
+  const cover = detailPlacements(level.detail ?? []);
+  for (const c of cover) c.derived = true;
+
+  propsGO = new GameObject('Props');
   propsGO.addComponent(new PropLayer({
     grid: world.grid, ground: hexGround,
-    props: [...(level.props ?? []), ...detailPlacements(level.detail ?? [])],
+    props: [...(level.props ?? []), ...cover],
     colors: MOOD.props, wind: WIND,
     tuning: {
       lanternLight: MOOD.lanternLight,
@@ -194,6 +208,12 @@ function buildTerrain() {
   // editor coloured it.
   for (const u of [{ type: 'king', ...level.king }, ...(level.units ?? [])]) {
     const go = new GameObject(`Unit:${u.type}`);
+    // Which entry in the level this figure is, for the same reason a prop's mesh
+    // carries its placement: a click hit-tests the scene and has to get back to
+    // the thing in the level. The King is not in `units`, so he is marked as
+    // himself.
+    go.object3D.userData.unit = level.units?.includes(u) ? u : null;
+    go.object3D.userData.king = u.type === 'king' && !level.units?.includes(u);
     go.addComponent(new Unit({
       grid: world.grid,
       ground: hexGround,
@@ -219,6 +239,7 @@ function clearTerrain() {
   for (const go of terrain) game.remove(go);
   terrain = [];
   units = [];
+  propsGO = null;
   hexGround = null;
 }
 
@@ -227,15 +248,29 @@ function clearTerrain() {
 let hovered = null;          // the hex under the cursor, or null
 let spot = null;             // where in the world the cursor is, or null
 let painting = false;        // a left button held down, mid-stroke
-let selected = null;         // the hex the arrow has picked, or null
+// What the arrow has picked, or null. Not a hex: a hex is one of the things it
+// can be. `{ kind, q, r, ... }` where kind is 'prop', 'cover', 'unit', 'king' or
+// 'tile' - because clicking a tree and clicking the ground under it are two
+// different selections and the editor used to have no way to say so.
+let selected = null;
 // How far into the current stroke we are: 1 on the press, counting up while the
 // button is held. A tool that acts on the press only says so with `continuous`,
 // and this is what lets the drag be told from the press it started with.
 let step = 0;
-// And what the arrow has hold of: the prop the press landed on, carried while the
-// button stays down. Null for a hex with nothing pickable on it, which is most of
-// them - the drag then does nothing, rather than the camera being fought over.
+// And what the arrow has hold of while the button is down: the thing the press
+// landed on, plus its mesh, so a drag can move both without rebuilding the board.
+// Null for a press that landed on bare ground, and then a drag does nothing rather
+// than the camera being fought over.
 let carried = null;
+// Whether the current drag actually moved anything, so the release knows whether
+// there is something to store.
+let dragged = false;
+// Whether a real pointer aimed the cursor. It matters for one thing only: with a
+// ray, a click can tell a tree from the grass beside it, and without one - the
+// console and tools/check.py drive the editor by coordinates - the only question
+// that can be answered is what is on the hex. So the fallback is not a lesser
+// version of picking, it is the honest answer to a different question.
+let aimed = false;
 
 // The footprint the active tool would act on, in that tool's colour. One overlay
 // for every tool, because there is only ever one - and it is the only thing on
@@ -259,6 +294,13 @@ const selection = selectGO.addComponent(new HexOverlay(geometry, [], {
   heightAt: (q, r) => hexGround?.topY(q, r) ?? 0,
 }));
 game.add(selectGO);
+
+// A ring round whatever single thing is selected. The hex overlay above says "this
+// tile", this says "this object on it", and having both is the whole of being able
+// to select the two separately.
+const markGO = new GameObject('SelectionMark');
+const mark = markGO.addComponent(new SelectionMarker());
+game.add(markGO);
 
 // The see-through preview of what a precise placement would leave behind. Built
 // once and reused, because it outlives every edit - and because building it is the
@@ -292,6 +334,7 @@ function buildCursor() {
     ground: { topY: (q, r) => hexGround?.topY(q, r) ?? 0 },
     onHover: (hex) => {
       hovered = hex;
+      aimed = true;
       // Where in the tile, not just which tile. The Place tool is the reason the
       // picker keeps this: everything else rounds it off to a hex immediately.
       spot = picker?.point ?? null;
@@ -301,12 +344,27 @@ function buildCursor() {
     },
     onDown: (hex) => {
       hovered = hex;
+      aimed = true;
       spot = picker?.point ?? null;
       painting = true;
       step = 0;
       apply();
     },
-    onUp: () => { painting = false; carried = null; },
+    // The end of a drag is where it is stored. Nothing is committed while the
+    // pointer is moving: a drag used to rebuild the whole board *and* write the
+    // level to local storage on every pointer move, which on a full board is ten
+    // milliseconds and a serialise per frame for the whole gesture.
+    onUp: () => {
+      painting = false;
+      carried = null;
+      if (dragged) {
+        dragged = false;
+        // One rebuild at the end, which settles everything a moved thing touches -
+        // the ground it was standing on, the slots on the hex it left.
+        edited(1);
+        refreshPanel();
+      }
+    },
     // The right button, and it is the same intention whatever the tool: take away
     // what this *content* puts down. A right drag is the camera's rotate and a
     // right press is the removal, and the rig is the one that knows which just
@@ -473,56 +531,248 @@ function offsetIn(hex) {
 function removeAt() {
   if (session || !hovered) return;
   try {
-    edited(content().erase?.(ctx(), [hovered]) ?? 0);
+    // The arrow is the one tool that works on a *thing* rather than on a category,
+    // so its right button takes away the thing under the cursor whatever kind it
+    // is. Every other tool keeps its category's own erase, which is what stops a
+    // lamp being taken back felling the tree beside it.
+    edited(!tool().verb ? removeUnder() : (content().erase?.(ctx(), [hovered]) ?? 0));
     panel.clearError();
   } catch (e) {
     say(e.message, true);
   }
 }
 
+// Whatever the cursor is pointing at, in the order the layers stack: the object
+// standing there first, then the ground cover, and the tile itself last and only
+// once it is carrying nothing - which is `removeTile`'s own rule.
+function removeUnder() {
+  const hit = aimed ? pickObject() : pickByHex();
+  if (hit?.kind === 'prop') {
+    const i = level.props.indexOf(hit.prop);
+    if (i < 0) return 0;
+    level.props.splice(i, 1);
+    return 1;
+  }
+  if (hit?.kind === 'unit') return removeEntityAt(level, hit.q, hit.r) ? 1 : 0;
+  if (hit?.kind === 'king') throw new Error('The King cannot be removed - move him instead.');
+  if (hit?.kind === 'cover') return thinDetail(level, hit.q, hit.r);
+  // Nothing was hit, so this is a click on bare ground: take whatever the hex has
+  // in the same order, which is what makes one right button enough.
+  return removePropsAt(level, hovered.q, hovered.r)
+    || thinDetail(level, hovered.q, hovered.r)
+    || (removeEntityAt(level, hovered.q, hovered.r) ? 1 : 0);
+}
+
 // What the arrow does. A hex with something on it becomes the selection and a bare
 // one clears it; the level is not touched, so there is nothing to rebuild and
 // nothing to store - a selection is something the editor is holding, not something
 // the level says.
+// What the arrow does: pick whatever the cursor is actually pointing at, which is
+// the thing standing there if the ray hits one and the tile if it does not.
+//
+// That distinction is the reason this hit-tests the scene rather than reading the
+// level by hex. "What is on this hex" cannot tell a click on a tree from a click
+// on the grass beside it, and those are two different intentions - one of them is
+// about the tree and the other is about the ground.
 function pick() {
-  const what = hovered && describeAt(level, hovered.q, hovered.r);
-  selected = what ? { ...hovered } : null;
-  // Whatever is on top of the hex, held for as long as the button is. Ground cover
-  // is deliberately not among them: there is no instance under the cursor to move,
-  // only a patch saying how thick the tile is.
-  carried = hovered ? topPropAt(level, hovered.q, hovered.r) : null;
+  const hit = (aimed ? pickObject() : pickByHex())
+    ?? (hovered ? { kind: 'tile', q: hovered.q, r: hovered.r } : null);
+  selected = hit;
+  // Only a placed instance can be carried. Ground cover has nothing under the
+  // cursor to move - the tufts are a consequence of the patch - and a tile is the
+  // board itself.
+  carried = null;
+  dragged = false;
+  if (hit?.kind === 'prop' || hit?.kind === 'unit' || hit?.kind === 'king') {
+    carried = {
+      ...hit,
+      // Where the mesh sits above its own tile, so the drag can keep it sitting
+      // there as the ground under it changes height.
+      lift: hit.object ? hit.object.position.y - groundY(hit.q, hit.r) : 0,
+    };
+  }
   refreshSelection();
-  say(what ? `Selected ${what} at ${hovered.q}, ${hovered.r}.` : null);
+  say(hit ? `Selected ${describeSelection(hit)}.` : null);
   refreshPanel();
 }
 
-// The rest of the stroke: whatever was picked up follows the cursor. This is the
-// whole of "move it", and it is here rather than on a tool because what is
-// selected is something the editor is holding - the level has no idea anything is
-// being carried. A hex it may not be put on simply does not take it, which reads
-// as the thing staying where it is.
-function carry() {
-  if (!carried || !hovered || !standable(hovered) ||
-      !moveProp(level, carried, hovered.q, hovered.r)) {
-    // Nothing moved, so nothing is rebuilt - but the preview still has to follow
-    // the cursor, which `edited` would otherwise have been the one to do.
-    refreshBrush();
-    return;
+// The nearest thing the cursor's ray actually hits, as a selection, or null for
+// bare ground. Falls back to nothing when there is no ray - which is the console
+// and tools/check.py driving the editor without a pointer, and `pick` then treats
+// the hex as the answer.
+function pickObject() {
+  if (!picker?.ray || !hovered) return null;
+  const targets = [propsGO?.object3D, ...units.map(go => go.object3D)].filter(Boolean);
+  if (!targets.length) return null;
+
+  // A raycast reads `matrixWorld`, and what keeps those current is the renderer
+  // doing it once a frame. A click is not a frame: an edit rebuilds the board and
+  // the very next pointer event can arrive before anything has been drawn, and
+  // every object in it would still be sitting at the origin as far as the ray is
+  // concerned. Updating here costs a walk of the tree per click and removes the
+  // dependency on when the last frame happened.
+  for (const t of targets) t.updateMatrixWorld(true);
+
+  for (const hit of picker.ray.intersectObjects(targets, true)) {
+    const owner = ownerOf(hit.object);
+    if (!owner) continue;
+    // A scattered tuft is not a thing you can hold. What is really there is the
+    // patch that grew it, so that is what a click on one selects.
+    if (owner.placement?.derived) {
+      const { q, r } = owner.placement;
+      return detailAt(level, q, r) ? { kind: 'cover', q, r } : null;
+    }
+    if (owner.placement) {
+      const prop = owner.placement;
+      return { kind: 'prop', q: prop.q, r: prop.r, prop, object: owner.object };
+    }
+    if (owner.unit) {
+      const u = owner.unit;
+      return { kind: 'unit', q: u.q, r: u.r, unit: u, object: owner.object };
+    }
+    if (owner.king) {
+      return { kind: 'king', q: level.king.q, r: level.king.r, object: owner.object };
+    }
   }
-  selected = { ...hovered };
-  edited(1);
+  return null;
+}
+
+// What is on the hex, in the order the layers stack, for when there is no ray to
+// ask. This is what the whole editor did before objects could be picked
+// individually, and it is still exactly right when the cursor is a pair of
+// coordinates rather than a position on screen.
+function pickByHex() {
+  if (!hovered) return null;
+  const { q, r } = hovered;
+  const prop = topPropAt(level, q, r);
+  if (prop) return { kind: 'prop', q, r, prop, object: null };
+  const here = entityAt(level, q, r);
+  if (here?.kind === 'king') return { kind: 'king', q, r };
+  if (here?.kind === 'unit') return { kind: 'unit', q, r, unit: here.unit };
+  if (detailAt(level, q, r)) return { kind: 'cover', q, r };
+  return null;
+}
+
+// From a mesh the ray hit, up to the object that knows what it belongs to. The
+// tags are put on by PropLayer and by `buildTerrain`; everything between them and
+// the mesh is geometry.
+function ownerOf(mesh) {
+  for (let o = mesh; o; o = o.parent) {
+    if (o.userData?.placement) return { placement: o.userData.placement, object: o };
+    if (o.userData?.unit) return { unit: o.userData.unit, object: o };
+    if (o.userData?.king) return { king: true, object: o };
+  }
+  return null;
+}
+
+// The rest of the stroke: whatever was picked up follows the cursor. This is the
+// whole of "drag and drop", and it is here rather than on a tool because what is
+// held is something the editor is holding - the level has no idea anything is
+// being carried. A hex it may not be put on simply does not take it, which reads
+// as the thing staying where it is until the cursor comes back.
+//
+// **The board is not rebuilt while dragging.** The level is updated as usual - it
+// is still the only state - and then the one visual consequence of that update is
+// applied by hand, which is moving the mesh that is already there. Rebuilding
+// would be ten milliseconds and a serialise to local storage per pointer move,
+// for a picture that differs from the last one by one object having moved. The
+// rebuild happens once, on release.
+function carry() {
+  if (!carried || !hovered || !standable(hovered)) { refreshBrush(); return; }
+
+  const at = carried.kind === 'prop' ? offsetIn(hovered) : null;
+  const moved = carried.kind === 'prop'
+    ? moveProp(level, carried.prop, hovered.q, hovered.r, at)
+    // A unit's position *is* its hex, so it snaps - and `moveUnit` refuses a hex
+    // that is taken, which is what stops a drag stacking two bodies on one tile.
+    : carried.kind === 'king'
+      ? moveKing(level, hovered.q, hovered.r)
+      : moveUnit(level, carried.unit, hovered.q, hovered.r);
+  if (!moved) { refreshBrush(); return; }
+
+  dragged = true;
+  carried.q = hovered.q;
+  carried.r = hovered.r;
+  if (carried.object) {
+    const { x, z } = world.grid.hexToWorld(hovered.q, hovered.r);
+    carried.object.position.set(
+      x + (at?.dx ?? 0), groundY(hovered.q, hovered.r) + carried.lift, z + (at?.dz ?? 0));
+  }
+  selected = { ...carried };
+  refreshSelection();
+  refreshBrush();
   refreshPanel();
+}
+
+function groundY(q, r) {
+  return hexGround?.topY(q, r) ?? 0;
 }
 
 function standable(hex) {
   return isStandable(level, hex.q, hex.r) || tileAt(level, hex.q, hex.r)?.terrain === 'crag';
 }
 
+// In words, for the panel and the status line.
+function describeSelection(sel) {
+  if (!sel) return null;
+  const where = `${sel.q}, ${sel.r}`;
+  if (sel.kind === 'prop') return `${PROP_TYPES[sel.prop.type]?.name ?? sel.prop.type} at ${where}`;
+  if (sel.kind === 'unit') return `${UNIT_TYPES[sel.unit.type]?.name ?? sel.unit.type} at ${where}`;
+  if (sel.kind === 'king') return `the King at ${where}`;
+  if (sel.kind === 'cover') {
+    const patch = detailAt(level, sel.q, sel.r);
+    return `ground cover at ${where}${patch ? `, ${patch.density} thick` : ''}`;
+  }
+  const tile = tileAt(level, sel.q, sel.r);
+  return tile ? `${tile.terrain} at ${where}, height ${tile.level ?? 0}` : `nothing at ${where}`;
+}
+
 // A selection cannot outlive the thing it is on: whatever was picked may have just
-// been erased, or the whole level replaced.
+// been erased, or the whole level replaced. A rebuild also throws away the mesh the
+// selection was holding, so that is found again rather than kept.
 function refreshSelection() {
-  if (selected && !describeAt(level, selected.q, selected.r)) selected = null;
-  selection.setHexes(selected && !session ? [selected] : []);
+  if (selected && !stillThere(selected)) selected = null;
+  if (selected && selected.kind !== 'tile' && selected.kind !== 'cover') {
+    selected.object = meshFor(selected) ?? selected.object;
+  }
+
+  // The hex for a tile or a patch of ground, the ring for one object standing on
+  // it. Never both: which of the two is lit is the answer to what was clicked.
+  const onTile = selected && (selected.kind === 'tile' || selected.kind === 'cover');
+  selection.setHexes(selected && onTile && !session ? [selected] : []);
+  if (!selected || onTile || session || !selected.object) mark.hide();
+  else {
+    const box = new THREE.Box3().setFromObject(selected.object);
+    const size = box.getSize(new THREE.Vector3());
+    mark.show(
+      selected.object.position.x, groundY(selected.q, selected.r), selected.object.position.z,
+      Math.max(size.x, size.z) * 0.62,
+    );
+  }
+}
+
+// Is what was picked still on the board? Asked of the thing itself rather than of
+// its hex, because the hex having something on it is not the same question - the
+// tree that was selected may be gone and a rock still be standing there.
+function stillThere(sel) {
+  if (sel.kind === 'prop') return (level.props ?? []).includes(sel.prop);
+  if (sel.kind === 'unit') return (level.units ?? []).includes(sel.unit);
+  if (sel.kind === 'king') return true;
+  if (sel.kind === 'cover') return !!detailAt(level, sel.q, sel.r);
+  return !!tileAt(level, sel.q, sel.r);
+}
+
+// The mesh currently standing for a selection, found by the same tag the ray used.
+// The terrain is rebuilt on every edit, so a held reference is stale as soon as
+// anything else happens.
+function meshFor(sel) {
+  if (sel.kind === 'prop') {
+    return propsGO?.object3D.children.find(o => o.userData.placement === sel.prop) ?? null;
+  }
+  const go = units.find(u => (sel.kind === 'king'
+    ? u.object3D.userData.king
+    : u.object3D.userData.unit === sel.unit));
+  return go?.object3D ?? null;
 }
 
 // ── Changing things ──────────────────────────────────────────────────────────
@@ -604,9 +854,7 @@ function refreshPanel() {
     level,
     hex: hovered,
     tile: hovered ? tileAt(level, hovered.q, hovered.r) : null,
-    selected: selected
-      ? `${describeAt(level, selected.q, selected.r)} at ${selected.q}, ${selected.r}`
-      : null,
+    selected: describeSelection(selected),
     fog: fogWanted(),
     playing: !!session,
   });
@@ -629,9 +877,7 @@ function refreshPanel() {
     // the whole of "show the properties of the selection" for now: what it is and
     // where, plus the move and the delete that already work on it.
     note: activeTool === 'select'
-      ? (selected
-        ? `${describeAt(level, selected.q, selected.r)} at ${selected.q}, ${selected.r}`
-        : 'Nothing picked')
+      ? (describeSelection(selected) ?? 'Nothing picked')
       : null,
   });
   // The library is repainted out of storage rather than told what changed, so a
@@ -1034,6 +1280,7 @@ window.hex = {
   // Where in the hex, for the one tool that cares. Given as a fraction of the
   // tile so a script does not have to know the hex size.
   at: (q, r, dx = 0, dz = 0) => {
+    aimed = false;
     hovered = { q, r };
     const { x, z } = world.grid.hexToWorld(q, r);
     spot = { x: x + dx, z: z + dz };
@@ -1044,6 +1291,26 @@ window.hex = {
   // thing per call, the way a click does.
   use: () => { step = 0; apply(); },
   remove: () => { removeAt(); refreshPanel(); },
+  get selected() { return selected; },
+  // A drag, as the mouse makes one: press, move, release. Without a pointer there
+  // is no ray, so the press picks by hex - which is what `pick` falls back to.
+  drag: (fromQ, fromR, toQ, toR, dx = 0, dz = 0) => {
+    aimed = false;
+    hovered = { q: fromQ, r: fromR };
+    spot = null;
+    step = 0;
+    painting = true;
+    apply();
+    hovered = { q: toQ, r: toR };
+    const { x, z } = world.grid.hexToWorld(toQ, toR);
+    spot = { x: x + dx, z: z + dz };
+    step++;
+    if (!tool().verb) carry();
+    painting = false;
+    if (dragged) { dragged = false; edited(1); }
+    carried = null;
+    refreshPanel();
+  },
   scroll: (dir) => {
     const hexes = footprint();
     if (hexes.length && content().wheel) edited(content().wheel(ctx(), hexes, dir));

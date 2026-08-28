@@ -696,17 +696,44 @@ export function addProp(level, type, q, r, opts = {}) {
 // coming out of the salt and the salt cannot travel - it may already be taken on
 // the hex it is going to. Pinning them is what stops a move quietly redrawing the
 // thing being moved.
-export function moveProp(level, prop, q, r) {
-  if (prop.q === q && prop.r === r) return false;
+// `at` is an exact {dx, dz} inside the hex, which is what a drag has: the thing
+// follows the cursor, so where it lands is a position and not a tile. Without it
+// the prop takes the next free slot on its new hex, which is what a move by any
+// other means means.
+export function moveProp(level, prop, q, r, at = null) {
+  const sameHex = prop.q === q && prop.r === r;
+  const sameSpot = at
+    ? sameHex && round(at.dx) === (prop.dx ?? null) && round(at.dz) === (prop.dz ?? null)
+    : sameHex;
+  if (sameSpot) return false;
+
+  // Its size and heading are pinned into the entry on the way, because both were
+  // coming out of the salt and the salt cannot travel - it may already be taken on
+  // the hex it is going to. Pinning them is what stops a move quietly redrawing
+  // the thing being moved.
   prop.scale ??= 1;
   prop.yaw ??= round(hashHex(prop.q, prop.r, 31 + (prop.salt ?? 0) * 7) * Math.PI * 2);
-  // An instance placed at an exact spot keeps that spot relative to its new hex,
-  // rather than snapping back to a slot: it was put there by hand once, and a move
-  // is a move rather than a second placement.
   prop.q = q;
   prop.r = r;
-  prop.salt = propsAt(level, q, r).filter(o => o !== prop)
-    .reduce((m, o) => Math.max(m, o.salt ?? 0), -1) + 1;
+  if (at) {
+    prop.dx = round(at.dx);
+    prop.dz = round(at.dz);
+  }
+  if (!sameHex) {
+    prop.salt = propsAt(level, q, r).filter(o => o !== prop)
+      .reduce((m, o) => Math.max(m, o.salt ?? 0), -1) + 1;
+  }
+  return true;
+}
+
+// A unit's position *is* its hex - see the invariant in CLAUDE.md - so this is the
+// one thing on the board that a drag cannot place between tiles. It snaps, and
+// that is not a limitation of the drag: a body of men occupies a tile.
+export function moveUnit(level, unit, q, r) {
+  if (unit.q === q && unit.r === r) return false;
+  if (whyNot(level, 'unit', q, r)) return false;
+  unit.q = q;
+  unit.r = r;
   return true;
 }
 

@@ -64,6 +64,7 @@ thing being changed - reach for them then, not by default.
       content.js            WHAT you edit: seven categories, each implementing
                             the same verbs over the game's own definitions
       ghost.js              the see-through preview of a precise placement
+      marker.js             the ring round the one object that is selected
       thumbnails.js         the palette's pictures: renders each asset once,
                             caches the PNG, packs the renderer away
       main.js               second composition root; edits rebuild the board
@@ -132,6 +133,25 @@ Break one of these and something three files away goes subtly wrong.
   handed `previewHexes()`, not the raw footprint. Not a nicety - a brush that
   acted on hexes it had not highlighted wrote ground cover into the sea, and the
   editor then refused to reopen the level it had just saved.
+- **A click picks what it points at, not what is on the hex.** The arrow
+  hit-tests the scene with the picker's own ray, so clicking a tree selects the
+  tree and clicking the grass beside it selects the tile - two different
+  intentions that "what is on this hex" cannot tell apart. A mesh gets back to the
+  level through `userData.placement`, hung on every prop by `PropLayer`, and
+  through `userData.unit` on a figure. A *scattered* tuft has no entry to select,
+  so clicking one selects the patch that grew it. With no pointer - the console,
+  tools/check.py - there is no ray, and picking falls back to the top thing on the
+  hex: not a lesser answer, the honest answer to the only question that can be
+  asked by coordinates.
+- **A selected tile is a lit hex; a selected object is a ring.** Two visuals
+  because they are two selections, and that is the only thing on screen that says
+  which of them a click found.
+- **A drag does not rebuild the board.** The level is updated as always - it is
+  still the only state - and then the one visual consequence is applied by hand,
+  which is moving the mesh that is already there. A rebuild is ten milliseconds
+  and a write to local storage on a full board, and a drag would pay both on every
+  pointer move to draw a picture that differs by one object having moved. The
+  rebuild and the store happen once, on release.
 - **A category's erase takes only its own.** Right-click and the Erase tool both
   go through the chosen category's `erase`, so removing a lamp cannot fell the
   tree beside it, and ground can only be destroyed while Terrain is the category
@@ -252,6 +272,7 @@ Break one of these and something three files away goes subtly wrong.
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |
 | A level-wide editor control | a mutator in `editor/level.js`, a control in `editor/ui/panel.js`, one `act()` in `editor/main.js` |
 | A setting that only applies half the time | `when(state)` on the descriptor, not a second tool |
+| A new kind of selectable thing | a `userData` tag where its mesh is built, plus a branch in `ownerOf`, `pickByHex`, `stillThere` and `describeSelection` in `editor/main.js` |
 
 ## Conventions
 
