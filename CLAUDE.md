@@ -52,6 +52,8 @@ thing being changed - reach for them then, not by default.
       maps.js               the level: outline, elevation, props, pickups
       mood.js               every colour and the one wind, in one place
       props.js / units.js / pickups.js / cards.js     what things are
+      detail.js             the ground cover: sets, and the scatter that derives
+                            it from a patch rather than storing it
       components/           prop_layer, unit, unit_control, pickup, deployment
       ui/card_bar.js        the hand, in DOM
       debug.js              window.hex - developer knobs, not game UI
@@ -60,6 +62,7 @@ thing being changed - reach for them then, not by default.
       storage.js            levels in localStorage, keyed by id
       tools.js              what the mouse can do; entities.js / objects.js what
                             it can place - both read the game's own definitions
+                            (objects.js is the four environment palettes)
       main.js               second composition root; edits rebuild the board
       ui/                   toolbar (tools + settings), panel, levels (library)
     tools/                  map.mjs (authoring), check.py (verification)
@@ -95,6 +98,28 @@ Break one of these and something three files away goes subtly wrong.
 - **`mask.patch` is one call per layer in `main.js`**, never an argument threaded
   through a constructor. Anything new added to the scene obeys fog of war by
   being in that sweep.
+- **Decoration is sorted by how it is *authored*, not by how big it is.**
+  `category` on a prop type is the whole rule, and there are four:
+  `detail` (ground cover, painted by the hundred and derived from a patch),
+  `prop` (placed *or* scattered, and either way a real instance),
+  `tree` (placed only - a thing tall enough to hide a unit behind is never
+  scattered), `landmark` (placed one at a time, and the only category whose
+  placements carry settings of their own). Size correlates, but it is not the
+  rule: the rule is how much control the author gets per object, and it goes up as
+  the object matters more. The four editor tools are that list, and a new kind of
+  thing is an entry in `PROP_TYPES` with a category - never a new tool.
+- **Nothing is ever stored about one tuft.** A painted hex stores a patch - which
+  set, how thick, and a seed - and `detailPlacements` regenerates the tufts from
+  it identically on every load. There is nowhere to put a fact about an individual
+  tuft, so anything the author needs to control has to be a number on the patch.
+  That is what keeps a lush board a few hundred bytes, and it is the one thing the
+  three placed categories do the opposite of.
+- **A scattering is patchy because it varies over more than one hex.** `clumpAt`
+  is smooth across tiles and everything scattered - ground cover *and* props -
+  draws from the same field, so rocks thin out where the grass thins out. A count
+  taken from each hex's own hash reads as speckle on a grid; the per-hex hash is
+  in there at half weight, and only to stop two tiles in one thick patch both
+  coming out exactly full.
 - **Occupancy lives in the grid.** Crags and units hold a key; `isWalkable` and
   A* already ask. Making something impassable is `grid.occupy`, and making
   something walkable-onto (a pickup) is simply not calling it.
@@ -163,7 +188,10 @@ Break one of these and something three files away goes subtly wrong.
 | Adding | Touch |
 | --- | --- |
 | A unit type | `game/units.js` (+ its palette block in `MOOD.units`) |
-| A prop | `game/props.js` `PROP_TYPES` (give it a `name`) - the editor's palette picks it up |
+| A prop, tree or landmark | `game/props.js` `PROP_TYPES` (a `name` and a `category`) - the right editor tool's palette picks it up |
+| A kind of ground cover | `PROP_TYPES` with `category: 'detail'`, then name it in a set's `variants` in `game/detail.js` |
+| A detail *set* | `DETAIL_SETS` in `game/detail.js` - the palette and the brush follow |
+| A landmark with settings of its own | a word on its type (`lights`), then a descriptor with `when` on the Landmarks tool |
 | A pickup | `game/pickups.js` `PICKUP_TYPES`; place it in `maps.js` `pickups` |
 | A card | `game/cards.js` `CARD_TYPES`; art in `game/ui/card_bar.js`. `role` says what the troop is *for* - never a stat |
 | A unit others deploy beside | `deployAnchor: true` on its type |
@@ -174,6 +202,7 @@ Break one of these and something three files away goes subtly wrong.
 | Something the *page* owns, not the level | `game/main.js` (or `editor/main.js`) |
 | A developer knob | `game/debug.js` (`window.hex`), not game UI |
 | An editor tool | a mutator in `editor/level.js`, a control in `editor/ui/panel.js`, one `act()` in `editor/main.js` ending in `rebuild()` |
+| A setting that only applies half the time | `when(s)` on the descriptor, not a second tool |
 
 ## Conventions
 

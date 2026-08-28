@@ -12,8 +12,10 @@ import { Unit } from '../game/components/unit.js';
 import { PropLayer } from '../game/components/prop_layer.js';
 import {
   defaultLevel, buildLevel, parseLevel, stringifyLevel, newId, tileAt, describeAt,
-  addCard, removeCard, setDeckLimit, deckLimit,
+  addCard, removeCard, setDeckLimit, deckLimit, topPropAt, moveProp,
 } from './level.js';
+import { canStand } from './objects.js';
+import { detailPlacements } from '../game/detail.js';
 import { TOOLS, TOOL_BY_ID, toolGroups, defaultSettings } from './tools.js';
 import { downloadLevel, readFile } from './files.js';
 import { startPlay } from '../game/play.js';
@@ -160,9 +162,15 @@ function buildTerrain() {
   // visibility, so every lamp is simply lit - which is what an editor wants, and
   // what PropLayer already does when nothing tells it about fog. The wind is the
   // level's one breeze, so a wood sways here exactly as it will in the fight.
+  //
+  // The ground cover is expanded here rather than stored, exactly as the game
+  // expands it in `buildMap` - same function, same seeds, same tufts. That is
+  // what makes the editor's board and the playtest's board the same board: if
+  // this drew its own idea of grass, the fight would open on a different island.
   const propsGO = new GameObject('Props');
   propsGO.addComponent(new PropLayer({
-    grid: world.grid, ground: hexGround, props: level.props ?? [],
+    grid: world.grid, ground: hexGround,
+    props: [...(level.props ?? []), ...detailPlacements(level.detail ?? [])],
     colors: MOOD.props, wind: WIND,
     tuning: {
       lanternLight: MOOD.lanternLight,
@@ -210,6 +218,16 @@ function clearTerrain() {
 let hovered = null;          // the hex under the cursor, or null
 let painting = false;        // a left button held down, mid-stroke
 let selected = null;         // the hex the arrow has picked, or null
+// How far into the current stroke we are: 1 on the press, counting up while the
+// button is held. It is handed to the tools, and it is the only way one of them
+// can tell a click from a drag - which the Props tool needs, because a press
+// places one thing on purpose and a drag scatters. See the contract at the top of
+// tools.js.
+let step = 0;
+// And what the arrow has hold of: the prop the press landed on, carried while the
+// button stays down. Null for a hex with nothing pickable on it, which is most of
+// them - the drag then does nothing, rather than the camera being fought over.
+let carried = null;
 
 // The brush: the footprint the active tool would act on, in that tool's colour.
 // One overlay for every tool, because there is only ever one brush - and it is
@@ -268,9 +286,10 @@ function buildCursor() {
     onDown: (hex) => {
       hovered = hex;
       painting = true;
+      step = 0;
       apply();
     },
-    onUp: () => { painting = false; },
+    onUp: () => { painting = false; carried = null; },
     // The right button, and it is the same intention for every tool: take away
     // what this tool puts down. A right *drag* is the camera's rotate and a right
     // *press* is the removal, and the rig is the one that knows which just
@@ -317,7 +336,7 @@ function tool() {
 // own settings. Rebuilt per call because `level` and `envelope` are both replaced
 // out from under it.
 function ctx() {
-  return { level, envelope, s: toolSettings[activeTool] };
+  return { level, envelope, s: toolSettings[activeTool], step };
 }
 
 function brushHexes() {
@@ -336,9 +355,10 @@ function refreshBrush() {
 // costs nothing, which is what keeps a long stroke cheap.
 function apply() {
   if (session) return;
+  step++;
   // The arrow changes nothing, so it never reaches a tool - see `select` in
-  // tools.js.
-  if (tool().select) return pick();
+  // tools.js. The press picks something up and the rest of the stroke carries it.
+  if (tool().select) return step === 1 ? pick() : carry();
   const hexes = brushHexes();
   if (!hexes.length) { refreshBrush(); return; }
   try {
@@ -374,8 +394,30 @@ function removeAt() {
 function pick() {
   const what = hovered && describeAt(level, hovered.q, hovered.r);
   selected = what ? { ...hovered } : null;
+  // Whatever is on top of the hex, held for as long as the button is. Ground
+  // cover is deliberately not among them: there is no instance under the cursor
+  // to move, only a patch that says how thick the tile is.
+  carried = hovered ? topPropAt(level, hovered.q, hovered.r) : null;
   refreshSelection();
   say(what ? `Selected ${what} at ${hovered.q}, ${hovered.r}.` : null);
+  refreshPanel();
+}
+
+// The rest of the stroke: whatever was picked up follows the cursor. This is the
+// whole of "move it", and it is here rather than on the tool because what is
+// selected is something the editor is holding - the level has no idea anything is
+// being carried. A hex it may not be put on simply does not take it, which reads
+// as the thing staying where it is.
+function carry() {
+  if (!carried || !hovered || !canStand(level, hovered) ||
+      !moveProp(level, carried, hovered.q, hovered.r)) {
+    // Nothing moved, so nothing is rebuilt - but the preview still has to follow
+    // the cursor, which `edited` would otherwise have been the one to do.
+    refreshBrush();
+    return;
+  }
+  selected = { ...hovered };
+  edited(1);
   refreshPanel();
 }
 
@@ -794,7 +836,9 @@ window.hex = {
   // whatever is active.
   pick: (id) => { activeTool = id; refreshBrush(); refreshPanel(); },
   at: (q, r) => { hovered = { q, r }; refreshBrush(); refreshPanel(); },
-  use: () => { apply(); },
+  // A press, not a continuation of one: the check script and the console place
+  // one thing per call, the way a click does.
+  use: () => { step = 0; apply(); },
   scroll: (dir) => {
     const hexes = brushHexes();
     if (hexes.length && tool().wheel) edited(tool().wheel(ctx(), hexes, dir));

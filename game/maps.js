@@ -1,5 +1,6 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
 import { hashHex } from '../engine/hex/hex_noise.js';
+import { detailPlacements } from './detail.js';
 
 // A map is terrain, and the few places on it that hold something. There is still
 // no route through it and nothing scheduled to arrive: where anything goes and
@@ -185,6 +186,11 @@ export function buildMap(def) {
       throw new Error(`Map "${def.name}": ${p.type} prop is off the board at ${p.q},${p.r}`);
     }
   }
+  for (const d of def.detail ?? []) {
+    if (!grid.inBounds(d.q, d.r)) {
+      throw new Error(`Map "${def.name}": ${d.set} detail is off the board at ${d.q},${d.r}`);
+    }
+  }
   // Solid rock: marked occupied so it is impassable, and so the one rule lives in
   // the grid rather than in every consumer that has to ask.
   const blockedKeys = new Set(crags.map(c => `${c.q},${c.r}`));
@@ -234,7 +240,13 @@ export function buildMap(def) {
     props: def.props ?? [],
     pickups: def.pickups ?? [],
     enemies: def.enemies ?? [],
-    scatter: buildScatter(def, grid, new Set([
+    // Everything on the board that was not placed one at a time. Two ways of
+    // saying it, for the same reason there are two ways of saying the outline: an
+    // authored map states a rule for the whole board, because that is what a
+    // sentence about an island sounds like, and an editor level stores a patch
+    // per painted hex, because that is what a brush produces. Both expand to the
+    // same placements and nothing downstream can tell which it was.
+    scatter: [...detailPlacements(def.detail ?? []), ...buildScatter(def, grid, new Set([
       ...blockedKeys,
       ...(def.props ?? []).map(p => `${p.q},${p.r}`),
       // Nothing grows through the colours either: a pickup is the one thing on
@@ -243,7 +255,7 @@ export function buildMap(def) {
       ...(def.pickups ?? []).map(p => `${p.q},${p.r}`),
       ...(def.enemies ?? []).map(e => `${e.q},${e.r}`),
       ...(def.units ?? []).map(u => `${u.q},${u.r}`),
-    ])),
+    ]))],
   };
 }
 

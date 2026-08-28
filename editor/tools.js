@@ -1,11 +1,13 @@
 import {
   addTile, removeTile, raiseTile, tileAt, removeEntityAt, entityAt, describeAt,
-  propsAt, removePropsAt, removeLastPropAt, removeLightsAt, tuneLights, isStandable,
+  propsAt, removePropsAt, removeLastPropAt, removeDetailAt, thinDetail, tuneLandmarks,
 } from './level.js';
 import { PLACEABLES, PLACEABLE_BY_ID, placeableGroups, refusal } from './entities.js';
 import {
-  OBJECT_BY_ID, MIXED, objectGroups, scatterOnto, placeObject, LIGHT_DEFAULTS,
+  paletteGroups, chosen as palette, firstId, placeOne, scatterProps, paintOne,
+  canStand, LIGHT_DEFAULTS, HEIGHT_DEFAULT, HEIGHTS,
 } from './objects.js';
+import { DETAIL_RANGE } from '../game/detail.js';
 
 // What the editor can do to a board, as a list of tools.
 //
@@ -30,7 +32,9 @@ import {
 //   icon              inline SVG, 16x16, currentColor
 //   settings          [{ key, label, min, max, step }] for a number, or
 //                     [{ key, label, groups }] for a choice - the toolbar builds
-//                     whichever it finds
+//                     whichever it finds. `when(s)` on a descriptor hides it
+//                     while it means nothing, which is how one tool covers two
+//                     workflows without becoming two tools
 //   continuous        false for a tool that acts on the press only, not on the
 //                     hexes a drag crosses afterwards
 //   brush(ctx, hex)   the hexes the tool would affect, for preview and for use
@@ -44,8 +48,17 @@ import {
 //                     keeps the hex and nothing is handed to the tool
 //   wheel(ctx, hexes, dir)  the wheel over the board; returns how many changed
 //
-// `ctx` is `{ level, envelope, s }` - the level being edited, the lattice of
-// hexes that can be pointed at, and this tool's own settings values.
+// `ctx` is `{ level, envelope, s, step }` - the level being edited, the lattice
+// of hexes that can be pointed at, this tool's own settings values, and how far
+// into the current stroke this call is. `step` is 1 on the press and counts up
+// while the button is held, which is what lets one tool tell a click from a drag:
+// see the Props tool, where a press places one thing on purpose and a drag
+// scatters.
+//
+// Every `paint` a continuous tool declares has to be *idempotent per hex*: the
+// pointer reports every move, not every new hex, so a stroke calls the tool many
+// times over the same tile. Tools that place a countable number therefore either
+// count what is already there or act on the press only.
 
 const HEX = 'M8 1.2 13.9 4.6 13.9 11.4 8 14.8 2.1 11.4 2.1 4.6Z';
 const ARROW = 'M3.4 1.9 3.4 12.9 6.4 10.1 8.5 14.3 10.4 13.4 8.3 9.3 12.3 9.3Z';
@@ -55,17 +68,21 @@ export const TOOLS = [
     id: 'select',
     name: 'Select',
     group: 'Edit',
-    hint: 'Click to pick what is on a hex. Right-click takes it away.',
+    hint: 'Click to pick what is on a hex, drag to move it. Right-click takes it away.',
     color: 0xf0dcc0,
     icon: `<svg viewBox="0 0 16 16"><path d="${ARROW}" fill="currentColor"/></svg>`,
 
     // It places nothing, so it paints nothing: main.js sees `select` and keeps
     // the hex rather than handing it to a tool. What the tool *is* is the readout
-    // in the panel and the right button, which is the same right button every
-    // other tool has - so "point at the thing and get rid of it" needs no mode
-    // of its own.
+    // in the panel, the right button - the same right button every other tool has,
+    // so "point at the thing and get rid of it" needs no mode of its own - and the
+    // drag, which carries whatever the press picked up.
     select: true,
-    continuous: false,
+    // Continuous so that main.js keeps calling while the button is held, which is
+    // what the drag needs. Moving what has been picked up is handled there rather
+    // than here, because what is selected is something the editor holds and not
+    // something the level says. See `pick` and `carry` in main.js.
+    continuous: true,
 
     brush: (ctx, hex) => (hex ? [hex] : []),
     // Warm where there is something to pick and cold where there is not, so the
@@ -206,124 +223,213 @@ export const TOOLS = [
     },
   },
 
+  // ---- The environment, in four categories ---------------------------------
+  // The categories are the same four the prop types declare - see the note above
+  // `PROP_TYPES` - and they are ordered here the way they are ordered there: from
+  // the numerous and derived to the singular and placed. That ordering *is* the
+  // workflow. Ground cover is painted by the hundred and never touched again; a
+  // landmark is one decision with its own settings. What changes between these
+  // four tools is how much control the author gets per object, and it goes up as
+  // the object gets bigger and matters more.
+  //
+  // They are four entries in one list rather than four systems: they share the
+  // brush, the palette control, the variation vocabulary and the level's own
+  // mutators. The only thing each states for itself is what a press means.
+
   {
-    id: 'object',
-    name: 'Object',
-    group: 'Decor',
-    hint: 'Click to stand one here, again for another. Right-click takes the last back.',
-    color: 0x9fe8b0,
-    icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
-      `stroke-width="1.1" opacity="0.45"/><path d="M8 13V8.4" stroke="currentColor" ` +
-      `stroke-width="1.3" stroke-linecap="round"/><path d="M8 3.2 11.2 9H4.8Z" ` +
-      `fill="currentColor"/></svg>`,
+    id: 'detail',
+    name: 'Terrain detail',
+    group: 'Environment',
+    hint: 'Drag to paint ground cover. Right-click thins it out.',
+    color: 0x8fd8a8,
+    icon: `<svg viewBox="0 0 16 16"><path d="M4 13.4c0-2.6.7-4.4 1.6-5.6M8 13.4C8 9.6 8.9 6.7 10 4.8` +
+      `M12 13.4c0-2 .5-3.4 1.2-4.5M2.2 13.4h11.6" fill="none" stroke="currentColor" ` +
+      `stroke-width="1.2" stroke-linecap="round"/></svg>`,
 
-    // Which one, and nothing else. Which way it faces, how big it is and where in
-    // the tile it stands are all decided from its salt in `buildProp` - the
-    // variation the board already has, per instance, without a control for it.
-    settings: [{ key: 'what', label: 'Object', groups: objectGroups({ mixed: false }), value: 'tree' }],
+    // The whole vocabulary of a scatter, and every one of these numbers ends up
+    // on the patch rather than on any tuft - which is what keeps a painted hex one
+    // line in the file. `seed` is the one worth explaining: it does not add to
+    // what is there, it redraws the tile, so nudging it and painting again is how
+    // an author says "not like that, again".
+    settings: [
+      { key: 'what', label: 'Detail', groups: paletteGroups('detail'), value: firstId('detail') },
+      { key: 'radius', label: 'Brush', min: 1, max: 4, value: 2 },
+      { key: 'density', label: 'Density', min: 1, max: DETAIL_RANGE.density[1], value: 3 },
+      { key: 'seed', label: 'Seed', min: DETAIL_RANGE.seed[0], max: DETAIL_RANGE.seed[1] },
+      { key: 'size', label: 'Size vary', min: DETAIL_RANGE.size[0], max: DETAIL_RANGE.size[1], value: 2 },
+      { key: 'spin', label: 'Turn', min: DETAIL_RANGE.spin[0], max: DETAIL_RANGE.spin[1], value: 2 },
+    ],
 
-    // The press only, so one click is one tree. A hex takes as many as you press
-    // onto it and they do not stack, because each gets its own salt.
-    continuous: false,
+    // Only the tiles that could take something, so the preview is the ground you
+    // are about to paint rather than the circle the brush is.
+    brush: (ctx, hex) => spread(ctx, hex, ctx.s.radius).filter(h => canStand(ctx.level, h)),
 
-    brush: (ctx, hex) => (hex ? [hex] : []),
-    colorAt: (ctx, hex) => (canStand(ctx, hex) ? 0x9fe8b0 : 0xe8a09a),
-
+    // Painting a hex that is already painted *updates* its patch, so a drag back
+    // over ground you have just done changes how thick it is instead of laying a
+    // second scatter over the first - and reports nothing changed when the
+    // settings match, which is what keeps a long stroke cheap.
     paint: (ctx, hexes) => {
-      const hex = hexes[0];
-      if (!canStand(ctx, hex)) throw new Error('Objects need a tile that is not water.');
-      return placeObject(ctx.level, object(ctx), hex.q, hex.r);
+      let changed = 0;
+      for (const h of hexes) changed += paintOne(ctx.level, entry(ctx, 'detail'), h.q, h.r, ctx.s);
+      return changed;
     },
 
-    // One per press either way round, so a clump is built and unbuilt at the same
-    // rate. Clearing the whole hex is what the Erase brush is for.
-    erase: (ctx, hexes) => removeLastPropAt(ctx.level, hexes[0].q, hexes[0].r),
+    // Less of it, not none of it. There is no individual tuft to take away, so
+    // the inverse of a density brush is a lower density - and pressing again gets
+    // there in the end.
+    erase: (ctx, hexes) => {
+      let changed = 0;
+      for (const h of hexes) changed += thinDetail(ctx.level, h.q, h.r);
+      return changed;
+    },
   },
 
   {
-    id: 'scatter',
-    name: 'Scatter',
-    group: 'Decor',
-    hint: 'Drag to paint, right-click to clear a hex. Density is a ceiling.',
-    color: 0x8fd8a8,
+    id: 'props',
+    name: 'Props',
+    group: 'Environment',
+    hint: 'A one-hex brush places one. Wider scatters. Right-click takes them back.',
+    color: 0x9fe8b0,
     icon: `<svg viewBox="0 0 16 16"><path d="${HEX}" fill="none" stroke="currentColor" ` +
-      `stroke-width="1.1" opacity="0.4"/><circle cx="5.4" cy="6.4" r="1.5" fill="currentColor"/>` +
-      `<circle cx="10.4" cy="5.4" r="1.1" fill="currentColor"/>` +
-      `<circle cx="8.4" cy="10.2" r="1.7" fill="currentColor"/></svg>`,
+      `stroke-width="1.1" opacity="0.4"/><circle cx="5.4" cy="6.4" r="1.6" fill="currentColor"/>` +
+      `<circle cx="10.6" cy="5.6" r="1.1" fill="currentColor"/>` +
+      `<circle cx="8.4" cy="10.2" r="1.9" fill="currentColor"/></svg>`,
 
+    // The brush radius is the mode, and the settings that only mean something to
+    // a scatter disappear at radius 1. That is the one place this tool is two
+    // workflows: a prop is worth placing on purpose *and* worth having a hundred
+    // of, and a separate tool for each would be the same palette twice.
     settings: [
-      { key: 'what', label: 'Paint', groups: objectGroups({ mixed: true, lights: false }), value: MIXED.id },
+      { key: 'what', label: 'Prop', groups: paletteGroups('prop'), value: firstId('prop') },
       { key: 'radius', label: 'Brush', min: 1, max: 4 },
-      { key: 'density', label: 'Density', min: 1, max: 4 },
+      { key: 'density', label: 'Density', min: 1, max: 4, value: 2, when: (s) => s.radius > 1 },
+      { key: 'spacing', label: 'Spacing', min: 1, max: 4, value: 2, when: (s) => s.radius > 1 },
+      { key: 'size', label: 'Size vary', min: 0, max: 3, value: 2 },
+      { key: 'spin', label: 'Turn', min: 0, max: 2, value: 2 },
     ],
 
-    // Only the tiles that could take something, so the preview is the wood you
-    // are about to paint rather than the circle the brush is.
-    brush: (ctx, hex) => spread(ctx, hex, ctx.s.radius).filter(h => canStand(ctx, h)),
+    brush: (ctx, hex) => spread(ctx, hex, ctx.s.radius).filter(h => canStand(ctx.level, h)),
+    colorAt: (ctx, hex) => (canStand(ctx.level, hex) ? 0x9fe8b0 : 0xe8a09a),
 
-    // Density is a ceiling. How many actually land on a given tile is decided per
-    // hex, so some come out thick, some thin and some bare - which is the whole
-    // difference between a scattering and a plantation. See objects.js.
-    //
-    // Anything already there counts toward that tile's total, so a second pass
-    // over ground already painted adds nothing and a long drag stays cheap.
+    // A press with a one-hex brush is somebody placing a thing; anything else is
+    // a scatter. `step` is how it can tell - see the note at the top of this file
+    // - and it is also why the deliberate case cannot run on the drag: one press
+    // has to mean one prop, and the pointer reports every move.
     paint: (ctx, hexes) => {
-      let added = 0;
-      for (const h of hexes) added += scatterOnto(ctx.level, object(ctx), h.q, h.r, ctx.s.density);
-      return added;
+      const entryFor = entry(ctx, 'prop');
+      if (ctx.s.radius === 1) {
+        if (ctx.step > 1) return 0;
+        const hex = hexes[0];
+        if (!canStand(ctx.level, hex)) throw new Error('Props need a tile that is not water.');
+        return placeOne(ctx.level, entryFor, hex.q, hex.r, ctx.s);
+      }
+      return scatterProps(ctx.level, entryFor, hexes, ctx.s);
     },
 
-    // A brush's inverse is a brush: what it painted onto a hex it takes off the
-    // same hex, all of it, because nothing here placed a countable number.
+    // The inverse of whichever half just ran: one back off the tile under the
+    // cursor, or the props off everything the brush covers. Only props - the tree
+    // standing on the same tile is not this tool's business.
     erase: (ctx, hexes) => {
+      if (ctx.s.radius === 1) return removeLastPropAt(ctx.level, hexes[0].q, hexes[0].r, 'prop');
       let gone = 0;
-      for (const h of hexes) gone += removePropsAt(ctx.level, h.q, h.r);
+      for (const h of hexes) gone += removePropsAt(ctx.level, h.q, h.r, 'prop');
       return gone;
     },
   },
 
   {
-    id: 'light',
-    name: 'Light',
-    group: 'Decor',
-    hint: 'Click to set a lamp, again to re-tune it. Right-click puts it out.',
+    id: 'trees',
+    name: 'Trees',
+    group: 'Environment',
+    hint: 'Click to plant one. Right-click fells the last. No brush, on purpose.',
+    color: 0x86d69a,
+    icon: `<svg viewBox="0 0 16 16"><path d="M8 14v-2.6" stroke="currentColor" ` +
+      `stroke-width="1.3" stroke-linecap="round"/><path d="M8 1.8 12 8H4Z" fill="currentColor"/>` +
+      `<path d="M8 6 11.4 11.6H4.6Z" fill="currentColor"/></svg>`,
+
+    // No radius and no density, and that absence is the category. A tree is tall
+    // enough to stand between the camera and a unit, so a board gets one wherever
+    // somebody decided to put one - a brush that dropped nine would be a brush for
+    // hiding the thing the player is trying to read. Specialised forest painting
+    // can come later; it wants its own answer to that problem, not a wider brush.
+    settings: [
+      { key: 'what', label: 'Tree', groups: paletteGroups('tree'), value: firstId('tree') },
+      // Modest: trees are the thing the eye measures the board against, and one
+      // twice the size of its neighbour reads as being much closer.
+      { key: 'size', label: 'Size vary', min: 0, max: 2, value: 1 },
+      { key: 'spin', label: 'Turn', min: 0, max: 2, value: 2 },
+    ],
+
+    // One press, one tree. The preview is the brush overlay on the hex under the
+    // cursor, in this tool's own colour, and red where it will refuse.
+    continuous: false,
+
+    brush: (ctx, hex) => (hex ? [hex] : []),
+    colorAt: (ctx, hex) => (canStand(ctx.level, hex) ? 0x86d69a : 0xe8a09a),
+
+    paint: (ctx, hexes) => {
+      const hex = hexes[0];
+      if (!canStand(ctx.level, hex)) throw new Error('A tree needs a tile that is not water.');
+      return placeOne(ctx.level, entry(ctx, 'tree'), hex.q, hex.r, ctx.s);
+    },
+
+    erase: (ctx, hexes) => removeLastPropAt(ctx.level, hexes[0].q, hexes[0].r, 'tree'),
+  },
+
+  {
+    id: 'landmarks',
+    name: 'Landmarks',
+    group: 'Environment',
+    hint: 'Click to set one, again to re-tune it. Right-click takes it away.',
     color: 0xf0c88c,
     icon: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.4" fill="currentColor"/>` +
       `<circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.1" ` +
       `opacity="0.45"/></svg>`,
 
-    // Two numbers, and they are the two a level is placing a light *for*: how
-    // bright this corner is and how far the pool reaches. What colour it is
-    // belongs to the hour rather than to the level - see mood.js, and the note in
-    // `buildProp` about which half of a light a placement gets to state.
+    // The one category with per-instance settings, because a landmark *is* its
+    // settings: a lamp is a decision about how bright this corner of the board is.
+    // The two light controls are the two a level places a light for - what colour
+    // it is belongs to the hour and lives in mood.js - and they are hidden for a
+    // landmark that carries no light, which the type says and this only reads.
     settings: [
-      { key: 'intensity', label: 'Bright', min: 2, max: 40, step: 2, value: LIGHT_DEFAULTS.intensity },
-      { key: 'distance', label: 'Reach', min: 2, max: 18, value: LIGHT_DEFAULTS.distance },
+      { key: 'what', label: 'Landmark', groups: paletteGroups('landmark'), value: firstId('landmark') },
+      { key: 'height', label: 'Height', min: 1, max: HEIGHTS.length, value: HEIGHT_DEFAULT },
+      {
+        key: 'intensity', label: 'Bright', min: 2, max: 40, step: 2,
+        value: LIGHT_DEFAULTS.intensity, when: (s) => lights(s),
+      },
+      {
+        key: 'distance', label: 'Reach', min: 2, max: 18,
+        value: LIGHT_DEFAULTS.distance, when: (s) => lights(s),
+      },
     ],
 
     continuous: false,
 
     brush: (ctx, hex) => (hex ? [hex] : []),
-    colorAt: (ctx, hex) => (canStand(ctx, hex) ? 0xf0c88c : 0xe8a09a),
+    colorAt: (ctx, hex) => (canStand(ctx.level, hex) ? 0xf0c88c : 0xe8a09a),
 
-    // A lamp where a lamp already stands is somebody adjusting that lamp, not
-    // asking for a second one on the same post. It is the whole of "edit the
-    // thing that is already there" in this pass, and it is the only bit of it
-    // anybody needs: the two numbers are what a placed light is for.
+    // One where one already stands is somebody adjusting *that* one, not asking
+    // for a second on the same spot. It is the whole of "edit the thing that is
+    // already there" in this pass, and for this category it is all that is
+    // needed: the numbers are what a placed landmark is for.
     paint: (ctx, hexes) => {
       const hex = hexes[0];
-      if (!canStand(ctx, hex)) throw new Error('A lamp needs a tile that is not water.');
-      const light = { intensity: ctx.s.intensity, distance: ctx.s.distance };
-      const tuned = tuneLights(ctx.level, hex.q, hex.r, light);
+      const it = entry(ctx, 'landmark');
+      if (!canStand(ctx.level, hex)) throw new Error('A landmark needs a tile that is not water.');
+      const light = it.lights
+        ? { intensity: ctx.s.intensity, distance: ctx.s.distance }
+        : null;
+      const tuned = tuneLandmarks(ctx.level, hex.q, hex.r, it.variants[0],
+        { light, scale: HEIGHTS[ctx.s.height - 1] });
       if (tuned) return tuned;
-      // Nothing here carries a light yet, so stand one.
-      if (propsAt(ctx.level, hex.q, hex.r).some(o => OBJECT_BY_ID[o.type]?.lights)) return 0;
-      return placeObject(ctx.level, OBJECT_BY_ID.lantern, hex.q, hex.r, light);
+      if (propsAt(ctx.level, hex.q, hex.r, 'landmark').some(o => o.type === it.variants[0])) return 0;
+      return placeOne(ctx.level, it, hex.q, hex.r, { light, height: ctx.s.height });
     },
 
-    // The lamps only. A hex holds a lantern and the tree beside it, and putting
-    // the light out is not clearing the corner.
-    erase: (ctx, hexes) => removeLightsAt(ctx.level, hexes[0].q, hexes[0].r),
+    // The landmarks only. A hex holds a lantern and the tree beside it, and
+    // putting the light out is not clearing the corner.
+    erase: (ctx, hexes) => removeLastPropAt(ctx.level, hexes[0].q, hexes[0].r, 'landmark'),
   },
 ];
 
@@ -373,6 +479,7 @@ function eraseTop(ctx, hexes) {
   for (const h of hexes) {
     if (isKing(ctx.level, h)) continue;
     changed += removePropsAt(ctx.level, h.q, h.r)
+      || removeDetailAt(ctx.level, h.q, h.r)
       || (removeEntityAt(ctx.level, h.q, h.r) ? 1 : 0)
       || (removeTile(ctx.level, h.q, h.r) ? 1 : 0);
   }
@@ -390,15 +497,15 @@ function chosen(ctx) {
   return PLACEABLE_BY_ID[ctx.s.what] ?? PLACEABLES[0];
 }
 
-// And which object the decorating tools are holding.
-function object(ctx) {
-  return ctx.s.what === MIXED.id ? MIXED : (OBJECT_BY_ID[ctx.s.what] ?? OBJECT_BY_ID.tree);
+// And which palette entry an environment tool is holding, out of its own
+// category's palette. One helper for all four, because the entry shape is the
+// same whether it names a grass set or one lantern - see editor/objects.js.
+function entry(ctx, category) {
+  return palette(category, ctx.s.what);
 }
 
-// Somewhere a thing can be stood. Land or bare rock; not water, and not a hex
-// with no tile on it - a tree in the sea is the level saying something it did not
-// mean.
-function canStand(ctx, hex) {
-  if (!hex) return false;
-  return isStandable(ctx.level, hex.q, hex.r) || tileAt(ctx.level, hex.q, hex.r)?.terrain === 'crag';
+// Whether the landmark currently chosen carries a light, which is what decides
+// whether the two light controls are on screen at all.
+function lights(s) {
+  return !!palette('landmark', s.what).lights;
 }

@@ -66,7 +66,10 @@ export function createPropMaterials(colors = {}) {
   };
 }
 
-function buildTree(mats, height) {
+// `girth` scales the crown without touching the height, which is the whole
+// difference between one tree and another at this distance: a narrow spire and a
+// broad canopy read as two species where two heights read as one tree twice.
+function buildTree(mats, height, { girth = 1 } = {}) {
   const group = new THREE.Group();
 
   const trunk = new THREE.Mesh(
@@ -79,14 +82,14 @@ function buildTree(mats, height) {
   // Two stacked cones read as a conifer and give the silhouette a break, which
   // one cone does not.
   const lower = new THREE.Mesh(
-    new THREE.ConeGeometry(height * 0.27, height * 0.5, 7),
+    new THREE.ConeGeometry(height * 0.27 * girth, height * 0.5, 7),
     mats.foliage,
   );
   lower.position.y = height * 0.46;
   group.add(lower);
 
   const upper = new THREE.Mesh(
-    new THREE.ConeGeometry(height * 0.19, height * 0.42, 7),
+    new THREE.ConeGeometry(height * 0.19 * girth, height * 0.42, 7),
     mats.foliage2,
   );
   upper.position.y = height * 0.76;
@@ -114,18 +117,23 @@ function buildBush(mats, size) {
 
 // A tuft: a few tapered blades splayed out from one point. Cheap, and at this
 // scale the only thing that matters is that the top moves and the base does not.
-function buildGrass(mats, size, blades = 4) {
+//
+// Four numbers rather than one builder per kind of grass, because the difference
+// between a tall reed and a low mat *is* those numbers - and a detail set is only
+// worth having if its variants are genuinely different silhouettes rather than
+// the same tuft at three sizes, which the per-instance size jitter already does.
+function buildGrass(mats, size, { blades = 4, tall = 1, splay = 0.3, thick = 0.16 } = {}) {
   const group = new THREE.Group();
   for (let i = 0; i < blades; i++) {
     const a = (i / blades) * Math.PI * 2 + size * 3;
     const blade = new THREE.Mesh(
-      new THREE.ConeGeometry(size * 0.16, size * 1.6, 3),
+      new THREE.ConeGeometry(size * thick, size * 1.6 * tall, 3),
       mats.blade,
     );
-    blade.position.set(Math.cos(a) * size * 0.3, size * 0.8, Math.sin(a) * size * 0.3);
+    blade.position.set(Math.cos(a) * size * 0.3, size * 0.8 * tall, Math.sin(a) * size * 0.3);
     // Splayed outward, so the tuft has a shape instead of being a spike.
-    blade.rotation.z = -Math.cos(a) * 0.3;
-    blade.rotation.x =  Math.sin(a) * 0.3;
+    blade.rotation.z = -Math.cos(a) * splay;
+    blade.rotation.x =  Math.sin(a) * splay;
     group.add(blade);
   }
   return group;
@@ -258,25 +266,90 @@ function buildStake(mats, height) {
   return group;
 }
 
-function buildRock(mats, size) {
+function buildRock(mats, size, { squash = 0.62 } = {}) {
   const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), mats.rock);
   // Squashed and slightly sunk, so it sits like a boulder rather than floating
   // like a ball.
-  rock.scale.y = 0.62;
-  rock.position.y = size * 0.34;
+  rock.scale.y = squash;
+  rock.position.y = size * squash * 0.55;
   return rock;
+}
+
+// A cut trunk lying where it fell. Sunk to just under half its radius so it sits
+// *in* the ground rather than balancing on it - a cylinder resting exactly on the
+// surface reads as a pipe somebody delivered.
+function buildLog(mats, size) {
+  const log = new THREE.Mesh(
+    new THREE.CylinderGeometry(size, size * 0.86, size * 6.5, 6),
+    mats.trunk,
+  );
+  log.rotation.z = Math.PI / 2;
+  log.position.y = size * 0.8;
+  return log;
+}
+
+// What is left where a tree was taken. Wider than it is tall, which is the only
+// thing that stops it reading as a very short log standing on end.
+function buildStump(mats, size) {
+  const group = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(size * 0.82, size, size * 1.1, 7),
+    mats.trunk,
+  );
+  trunk.position.y = size * 0.5;
+  group.add(trunk);
+  // One root breaking the outline, so the base is not a clean circle.
+  const root = new THREE.Mesh(new THREE.DodecahedronGeometry(size * 0.5, 0), mats.trunk);
+  root.scale.y = 0.4;
+  root.position.set(size * 0.75, size * 0.14, size * 0.3);
+  group.add(root);
+  return group;
 }
 
 // `sway` is the tilt amplitude in radians, and it is a property of the prop
 // because it is the prop that says whether it is the kind of thing wind moves. A
 // rock has none. A tree at ~1.4 tall tilting 0.055 rad moves its tip about 0.08
 // units - small enough to read as a breeze rather than as a storm.
+// `category` is how a type is *authored*, and it is the only thing that decides
+// which editor tool a type turns up under. It is on the type rather than in the
+// editor because it is a fact about the thing: a tuft of grass is ground texture
+// wherever it is used, and a lantern is a decision somebody made. Four of them,
+// from numerous-and-derived to singular-and-placed:
+//
+//   detail    ground cover. Not stored one at a time - a painted hex stores a
+//             patch and the tufts are regenerated from it. See game/detail.js.
+//   prop      a thing you notice but may see again. Placed or scattered, and
+//             either way it becomes a real instance in the level.
+//   tree      large enough to hide a unit behind, so it is placed and never
+//             scattered.
+//   landmark  a decision: a lamp, a marker. Placed one at a time, and the only
+//             category with per-instance settings of its own.
+//
+// A new kind of thing is an entry here with a category, and it appears in the
+// right tool's palette with no editor-side change at all.
 export const PROP_TYPES = {
   tree: {
     key: 'tree',
-    name: 'Tree',
+    name: 'Pine',
+    category: 'tree',
     sway: 0.042,
     build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.36 + n * 0.10)),   // ~0.72 to ~0.92 tall, so ~5 to ~6.5 m
+  },
+  // The same tree twice more, once narrow and once wide. Height alone does not
+  // make a second species - see the note on `girth`.
+  tree_spire: {
+    key: 'tree_spire',
+    name: 'Spire',
+    category: 'tree',
+    sway: 0.05,
+    build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.44 + n * 0.12), { girth: 0.66 }),
+  },
+  tree_broad: {
+    key: 'tree_broad',
+    name: 'Broadleaf',
+    category: 'tree',
+    sway: 0.034,
+    build: (mats, n) => buildTree(mats, HEX_WIDTH * (0.32 + n * 0.08), { girth: 1.45 }),
   },
   // Shorter things get a bigger angle, because what the eye reads is how far the
   // top travels: a tuft leaning 0.2 rad moves its tip about as far as a tree
@@ -285,22 +358,118 @@ export const PROP_TYPES = {
   bush: {
     key: 'bush',
     name: 'Bush',
+    category: 'prop',
     sway: 0.075,
     build: (mats, n) => buildBush(mats, HEX_WIDTH * (0.055 + n * 0.028)),  // ~0.11 to ~0.17 radius
-  },
-  grass: {
-    key: 'grass',
-    name: 'Grass',
-    sway: 0.2,
-    // A tuft is smaller than a shadow map texel at this range, so casting from it
-    // costs a draw call per blade and buys a flicker.
-    shadow: false,
-    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019)),  // ~0.12 to ~0.18 tall
   },
   rock: {
     key: 'rock',
     name: 'Rock',
+    category: 'prop',
     build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.085 + n * 0.038)),   // ~0.17 to ~0.25 radius
+  },
+  boulder: {
+    key: 'boulder',
+    name: 'Boulder',
+    category: 'prop',
+    // Something to walk round rather than over, and no larger: at a third of a
+    // hex across a boulder stops reading as a rock and starts reading as a
+    // building nobody can enter.
+    build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.105 + n * 0.032), { squash: 0.85 }),
+  },
+  log: {
+    key: 'log',
+    name: 'Log',
+    category: 'prop',
+    build: (mats, n) => buildLog(mats, HEX_WIDTH * (0.028 + n * 0.014)),
+  },
+  stump: {
+    key: 'stump',
+    name: 'Stump',
+    category: 'prop',
+    build: (mats, n) => buildStump(mats, HEX_WIDTH * (0.055 + n * 0.022)),
+  },
+
+  // Ground cover. Five tufts out of one builder, and the numbers are the whole
+  // difference between them - a set whose variants are one shape at three sizes
+  // is a set that reads as repetition, which is the thing a scatter is for
+  // avoiding. Flowers and mushrooms are the obvious next entries and want a
+  // colour each in mood.js, which is why they are not here yet.
+  //
+  // A tuft is smaller than a shadow map texel at this range, so casting from one
+  // costs a draw call per blade and buys a flicker. None of them do.
+  grass: {
+    key: 'grass',
+    name: 'Short tuft',
+    category: 'detail',
+    sway: 0.2,
+    shadow: false,
+    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019)),  // ~0.12 to ~0.18 tall
+  },
+  grass_tall: {
+    key: 'grass_tall',
+    name: 'Tall tuft',
+    category: 'detail',
+    sway: 0.24,
+    shadow: false,
+    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019),
+      { blades: 4, tall: 1.55, splay: 0.16, thick: 0.13 }),
+  },
+  grass_broad: {
+    key: 'grass_broad',
+    name: 'Broad tuft',
+    category: 'detail',
+    sway: 0.16,
+    shadow: false,
+    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019),
+      { blades: 6, tall: 0.85, splay: 0.5, thick: 0.22 }),
+  },
+  grass_low: {
+    key: 'grass_low',
+    name: 'Low mat',
+    category: 'detail',
+    sway: 0.12,
+    shadow: false,
+    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019),
+      { blades: 5, tall: 0.5, splay: 0.66, thick: 0.2 }),
+  },
+  grass_fine: {
+    key: 'grass_fine',
+    name: 'Sparse tuft',
+    category: 'detail',
+    sway: 0.26,
+    shadow: false,
+    build: (mats, n) => buildGrass(mats, HEX_WIDTH * (0.036 + n * 0.019),
+      { blades: 3, tall: 0.85, splay: 0.2, thick: 0.1 }),
+  },
+  pebble: {
+    key: 'pebble',
+    name: 'Pebble',
+    category: 'detail',
+    shadow: false,
+    build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.022 + n * 0.014)),
+  },
+  pebble_flat: {
+    key: 'pebble_flat',
+    name: 'Flat stone',
+    category: 'detail',
+    shadow: false,
+    build: (mats, n) => buildRock(mats, HEX_WIDTH * (0.03 + n * 0.016), { squash: 0.3 }),
+  },
+
+  lantern: {
+    key: 'lantern',
+    name: 'Lantern',
+    category: 'landmark',
+    // What a placement of this type may say about itself, beyond where it is.
+    // The editor reads it to decide which extra controls to offer, so a landmark
+    // with settings of its own is a word here and not a branch over there.
+    lights: true,
+    // `flicker` is the swing in the light's output, as a fraction. Small: a lamp
+    // that visibly pulses reads as a fault, not as a flame.
+    flicker: 0.09,
+    build: (mats, n, tuning) =>
+      buildLantern(mats, HEX_WIDTH * (0.30 + n * 0.045), tuning),   // ~0.60 to ~0.69 tall, so ~4.5 m
   },
   // Taller than a person and thinner than everything else, so it reads at a
   // distance without taking any room. It sways more than a tree does: a light
@@ -308,20 +477,18 @@ export const PROP_TYPES = {
   // move.
   stake: {
     key: 'stake',
-    name: 'Stake',
+    name: 'Marker',
+    category: 'landmark',
     sway: 0.055,
     build: (mats, n) => buildStake(mats, HEX_WIDTH * (0.19 + n * 0.03)),   // ~0.38 to ~0.44 tall
   },
-  lantern: {
-    key: 'lantern',
-    name: 'Lantern',
-    // `flicker` is the swing in the light's output, as a fraction. Small: a lamp
-    // that visibly pulses reads as a fault, not as a flame.
-    flicker: 0.09,
-    build: (mats, n, tuning) =>
-      buildLantern(mats, HEX_WIDTH * (0.30 + n * 0.045), tuning),   // ~0.60 to ~0.69 tall, so ~4.5 m
-  },
 };
+
+// The types in one category, in the order they are declared here - which is the
+// order a palette shows them in.
+export function propTypesIn(category) {
+  return Object.values(PROP_TYPES).filter(t => t.category === category);
+}
 
 // Builds one placement into an Object3D positioned on the tile surface. Jitter is
 // keyed to the hex, so props never look pinned to the exact centre of a cell and
@@ -356,7 +523,16 @@ export function buildProp(placement, mats, { x, z, y }, tuning = {}) {
   obj.position.x = x + (hashHex(q, r, 23 + salt) - 0.5) * spread;
   obj.position.z = z + (hashHex(q, r, 27 + salt) - 0.5) * spread;
   obj.position.y += y;
-  obj.rotation.y = hashHex(q, r, 31 + salt) * Math.PI * 2;
+  // Which way it faces is its hash unless the placement says otherwise, which is
+  // what lets a whole scattering be turned the same way without storing an angle
+  // per instance - the default costs no data and is already varied.
+  obj.rotation.y = placement.yaw ?? hashHex(q, r, 31 + salt) * Math.PI * 2;
+  // And how big, on top of the size its hash already gave it. Applied to the
+  // built object rather than folded into that hash because a placement is
+  // scaling *this instance* of something, not choosing a different one.
+  if (placement.scale !== undefined && placement.scale !== 1) {
+    obj.scale.multiplyScalar(placement.scale);
+  }
 
   // Taller props lean further, and the amplitude is settled here because this is
   // where the size that decided the height is known. The phase and rate are the

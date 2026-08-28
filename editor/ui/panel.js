@@ -1,4 +1,5 @@
 import { esc } from './dom.js';
+import { detailInstances } from '../../game/detail.js';
 
 // What the editor has to say about itself, in DOM. It holds no level state: it is
 // handed the level and whatever the mouse is over and paints what it finds.
@@ -64,6 +65,12 @@ export class EditorPanel {
           ['Tiles', String(level.tiles.length)],
           ['On it', `${level.units.length} ${level.units.length === 1 ? 'enemy' : 'enemies'}` +
                     ` · ${(level.props ?? []).length} props`],
+          // Two numbers, because they are two different things: how many objects
+          // the level *stores*, and how much ground cover it *grows* from a
+          // handful of patches. The second one is the point of the category, and
+          // it is the only place in the editor you can see the difference.
+          ['Ground', `${(level.detail ?? []).length} patches` +
+                     ` · ${detailInstances(level.detail ?? [])} tufts`],
           // What Play will deal. It is in the readout rather than only in the
           // modal because it is the one thing about a playtest you want to know
           // without opening anything.

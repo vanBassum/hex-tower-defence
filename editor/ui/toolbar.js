@@ -15,6 +15,12 @@ import { esc } from './dom.js';
 // control types - a whole number, and a choice out of grouped options - and a
 // third is a third branch in `control()`.
 //
+// A descriptor may also carry `when(values)`, and a control that says no to its
+// own settings is left off the panel rather than greyed out. That is what lets
+// one tool cover two workflows - the Props brush places one thing at radius 1 and
+// scatters above it - without the controls for the half you are not in sitting
+// there inviting a press.
+//
 // It holds no state but which tool is active - the values live with the editor,
 // because they outlive any one render of this panel.
 export class ToolBar {
@@ -61,7 +67,9 @@ export class ToolBar {
     }
     this._settings.innerHTML = `
       <div class="sname">${esc(tool.name)}</div>
-      ${(tool.settings ?? []).map(s => control(s, values[s.key])).join('')}
+      ${(tool.settings ?? [])
+        .filter(s => !s.when || s.when(values))
+        .map(s => control(s, values[s.key])).join('')}
       <p class="shint">${esc(tool.hint)}</p>
     `;
   }

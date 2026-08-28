@@ -1,6 +1,10 @@
 import { HexGrid } from '../engine/hex/hex_grid.js';
+import { hashHex } from '../engine/hex/hex_noise.js';
 import { UNIT_TYPES } from '../game/units.js';
 import { PROP_TYPES } from '../game/props.js';
+import {
+  DETAIL_SETS, DETAIL_SET_LIST, SET_OF_VARIANT, DETAIL_DEFAULTS, DETAIL_RANGE,
+} from '../game/detail.js';
 import { CARD_TYPES, HAND_LIMIT } from '../game/cards.js';
 
 // What a level *is*, as data, and how that data becomes the pieces the scene
@@ -25,7 +29,7 @@ import { CARD_TYPES, HAND_LIMIT } from '../game/cards.js';
 // in the middle of building a scene; the version is here so the day the shape
 // changes, a file written before it can say so.
 export const LEVEL_FORMAT = 'hex-tower-defence.level';
-export const LEVEL_VERSION = 5;
+export const LEVEL_VERSION = 6;
 
 // A level's identity, and the reason it is not the name: a name is a label a
 // person changes their mind about, and everything that has to keep pointing at
@@ -82,6 +86,9 @@ export function defaultLevel(name = 'Untitled') {
     king: { q: 0, r: 0 },
     units: [],
     props: [],
+    // Ground cover, one entry per painted hex rather than one per tuft - see
+    // game/detail.js for why that is the whole point of the category.
+    detail: [],
     tiles: discTiles(2).map(({ q, r }) => ({ q, r, terrain: 'land', level: 0 })),
   };
 }
@@ -114,6 +121,10 @@ export function stringifyLevel(level) {
   // a level reloads the same forest down to which way each tree is facing, and
   // nothing has to store four hundred positions to manage it.
   const props = (level.props ?? []).map(o => '    ' + JSON.stringify(o));
+  // And a patch of ground cover is a hex, a set and four numbers. One line per
+  // *hex*, not per tuft: a lush board is a few hundred bytes here and thousands
+  // of instances on screen, which is the whole reason detail is a category.
+  const detail = (level.detail ?? []).map(d => '    ' + JSON.stringify(d));
   return [
     '{',
     `  "format": ${JSON.stringify(level.format)},`,
@@ -127,6 +138,7 @@ export function stringifyLevel(level) {
     `  "king": { "q": ${level.king.q}, "r": ${level.king.r} },`,
     ...block('units', units, ','),
     ...block('props', props, ','),
+    ...block('detail', detail, ','),
     ...block('tiles', tiles, ''),
     '}',
     '',
@@ -176,7 +188,7 @@ export function parseLevel(text) {
   // the version number doing harm rather than work. Anything newer was written by
   // an editor that knows something this one does not, so that is refused rather
   // than guessed at.
-  if (![1, 2, 3, 4, LEVEL_VERSION].includes(raw.version)) {
+  if (![1, 2, 3, 4, 5, LEVEL_VERSION].includes(raw.version)) {
     throw new Error(`level version ${JSON.stringify(raw.version ?? null)} is not supported ` +
                     `(this editor reads version ${LEVEL_VERSION})`);
   }
@@ -273,6 +285,21 @@ export function parseLevel(text) {
     const prop = { type: o.type, q: o.q, r: o.r, salt: o.salt ?? 0, spread: o.spread ?? 0.35 };
     if (!Number.isInteger(prop.salt)) throw new Error(`${at} has a non-integer "salt"`);
     if (typeof prop.spread !== 'number' || !(prop.spread >= 0)) throw new Error(`${at} has a bad "spread"`);
+    // What a placement may say about this one instance beyond where it is. Both
+    // are optional and both have a default that costs no bytes: left out, the
+    // size and the heading come from the salt, which is varied already.
+    if (o.scale !== undefined) {
+      if (typeof o.scale !== 'number' || !(o.scale > 0) || o.scale > 4) {
+        throw new Error(`${at} has a bad "scale" - expected a number between 0 and 4`);
+      }
+      prop.scale = o.scale;
+    }
+    if (o.yaw !== undefined) {
+      if (typeof o.yaw !== 'number' || !Number.isFinite(o.yaw)) {
+        throw new Error(`${at} has a bad "yaw" - expected an angle in radians`);
+      }
+      prop.yaw = o.yaw;
+    }
     if (o.light !== undefined) {
       if (!o.light || typeof o.light !== 'object') throw new Error(`${at} has a bad "light"`);
       const light = {};
@@ -286,6 +313,67 @@ export function parseLevel(text) {
       if (Object.keys(light).length) prop.light = light;
     }
     props.push(prop);
+  }
+
+  // The ground cover. A patch is a hex, a set and how to draw it - and that is
+  // the whole of what is stored, because the tufts themselves are regenerated
+  // from it. Validated as strictly as everything else: a patch naming a set this
+  // version does not have would come up as bare ground, silently, on a board
+  // somebody had painted.
+  const detail = [];
+  if (raw.detail !== undefined && !Array.isArray(raw.detail)) throw new Error('"detail" must be an array');
+  const patched = new Set();
+  for (const [i, d] of (raw.detail ?? []).entries()) {
+    const at = `detail[${i}]`;
+    if (!d || typeof d !== 'object') throw new Error(`${at} is not an object`);
+    if (!DETAIL_SETS[d.set]) {
+      throw new Error(`${at} is a ${JSON.stringify(d.set ?? null)}, which is not a detail set`);
+    }
+    if (!Number.isInteger(d.q) || !Number.isInteger(d.r)) throw new Error(`${at} needs whole "q" and "r"`);
+    const tile = tiles.find(t => t.q === d.q && t.r === d.r);
+    if (!tile) throw new Error(`${at} is at ${d.q},${d.r}, where there is no tile`);
+    if (tile.terrain === 'water') throw new Error(`${at} is in the water`);
+    // One patch per set per hex. Two of them is not richer ground, it is the same
+    // scatter drawn twice in the same place - and the brush cannot make one,
+    // because painting a hex again tops up the patch that is there.
+    const key = `${d.set}:${d.q},${d.r}`;
+    if (patched.has(key)) throw new Error(`two ${d.set} patches at ${d.q},${d.r}`);
+    patched.add(key);
+    const patch = { set: d.set, q: d.q, r: d.r };
+    for (const [field, [lo, hi]] of Object.entries(DETAIL_RANGE)) {
+      const n = d[field] ?? DETAIL_DEFAULTS[field];
+      if (!Number.isInteger(n) || n < lo || n > hi) {
+        throw new Error(`${at} has a bad "${field}" - expected a whole number from ${lo} to ${hi}`);
+      }
+      patch[field] = n;
+    }
+    detail.push(patch);
+  }
+
+  // Ground cover written one tuft at a time is brought forward into patches.
+  // Every level painted before detail was its own category stored a prop per
+  // tuft; they are still perfectly good props, and they are also thousands of
+  // lines describing something a handful of patches describe better. The count
+  // that was there becomes the density, so a board comes back about as thick as
+  // it was drawn - not tuft for tuft, which nothing could promise once the
+  // positions stopped being stored.
+  const placed = [];
+  const cover = new Map();
+  for (const p of props) {
+    if (PROP_TYPES[p.type]?.category !== 'detail') { placed.push(p); continue; }
+    const set = SET_OF_VARIANT[p.type] ?? DETAIL_SET_LIST[0].key;
+    const key = `${set}:${p.q},${p.r}`;
+    cover.set(key, (cover.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of cover) {
+    if (patched.has(key)) continue;          // the file already says what is here
+    const [set, at] = key.split(':');
+    const [q, r] = at.split(',').map(Number);
+    detail.push({
+      set, q, r,
+      ...DETAIL_DEFAULTS,
+      density: Math.min(DETAIL_RANGE.density[1], count),
+    });
   }
 
   const king = raw.king;
@@ -305,7 +393,7 @@ export function parseLevel(text) {
     version: LEVEL_VERSION,
     id, name, hexSize, radius, deckLimit, deck,
     king: { q: king.q, r: king.r },
-    units, props, tiles,
+    units, props: placed, detail, tiles,
   };
 }
 
@@ -374,7 +462,7 @@ export function removeTile(level, q, r) {
   // Nothing is left standing in mid-air. Erase takes what is on a hex first and
   // the ground on the next pass, which is also the order that reads correctly:
   // you clear a tile before you remove it.
-  if (entityAt(level, q, r) || propsAt(level, q, r).length) return false;
+  if (entityAt(level, q, r) || propsAt(level, q, r).length || detailAt(level, q, r).length) return false;
   level.tiles.splice(i, 1);
   // The envelope is deliberately *not* shrunk. It costs nothing to leave it
   // wide - it is a bound, not a board - and pulling it in behind a delete would
@@ -492,56 +580,159 @@ export function removeEntityAt(level, q, r) {
   return true;
 }
 
-// ── What is standing about on it ────────────────────────────────────────────
+// ---- What is standing about on it ------------------------------------------
 // Props are the one layer where a hex holds *several* things, which is the whole
 // reason they are keyed by nothing: a tile has a list, and what separates two
 // trees on one tile is their `salt`. Everything else about them - which way they
 // face, how big they are, where in the tile they stand - falls out of that number
 // in `buildProp`, so the level stores a seed rather than a transform.
+//
+// One array holds all three placed categories - props, trees and landmarks - and
+// which one a thing is comes from `category` on its type. That is deliberate:
+// three arrays would be three of every mutator below and three chances for the
+// salt on a hex to collide, and every rule that matters here ("what is on this
+// hex", "take the last one back") is the same rule whatever the category is. The
+// category is an argument, not a second system.
 
-export function propsAt(level, q, r) {
-  return (level.props ?? []).filter(o => o.q === q && o.r === r);
+export function propsAt(level, q, r, category = null) {
+  return (level.props ?? []).filter(o => o.q === q && o.r === r &&
+    (!category || PROP_TYPES[o.type]?.category === category));
 }
 
 // A new one, on a hex that already has any number of them. The salt is one past
 // the highest already there rather than the count, so deleting one and adding
-// another does not put the new one exactly where the old one stood.
-export function addProp(level, type, q, r, { spread = 0.35, light = null } = {}) {
+// another does not put the new one exactly where the old one stood - and it is
+// counted across every category, because it is what separates two things sharing
+// a tile whether or not they are the same kind of thing.
+//
+// `scale` and `yaw` are written only when they say something: left off, the size
+// and the heading come from the salt, which is varied already. That is what keeps
+// a scattered rock one short line in the file.
+export function addProp(level, type, q, r, { spread = 0.35, light = null, scale = null, yaw = null } = {}) {
   level.props ??= [];
   const salt = propsAt(level, q, r).reduce((m, o) => Math.max(m, o.salt ?? 0), -1) + 1;
   const prop = { type, q, r, salt, spread };
+  if (scale != null && scale !== 1) prop.scale = round(scale);
+  if (yaw != null) prop.yaw = round(yaw);
   if (light) prop.light = { ...light };
   level.props.push(prop);
   return prop;
 }
 
-// Everything on a hex, in one go. Erase takes a hex rather than an object,
-// because at this size picking one tree out of a clump is a gizmo and this is a
-// brush.
-export function removePropsAt(level, q, r) {
-  const before = (level.props ?? []).length;
-  level.props = (level.props ?? []).filter(o => !(o.q === q && o.r === r));
-  return before - level.props.length;
+// Somewhere else, the same instance. Which is the point of a prop being stored
+// rather than derived: one that has been placed can be picked up again, and it is
+// the same one when it lands.
+//
+// Its size and heading are pinned into the entry on the way, because both were
+// coming out of the salt and the salt cannot travel - it may already be taken on
+// the hex it is going to. Pinning them is what stops a move quietly redrawing the
+// thing being moved.
+export function moveProp(level, prop, q, r) {
+  if (prop.q === q && prop.r === r) return false;
+  prop.scale ??= 1;
+  prop.yaw ??= round(hashHex(prop.q, prop.r, 31 + (prop.salt ?? 0) * 7) * Math.PI * 2);
+  prop.q = q;
+  prop.r = r;
+  prop.salt = propsAt(level, q, r).filter(o => o !== prop)
+    .reduce((m, o) => Math.max(m, o.salt ?? 0), -1) + 1;
+  return true;
 }
 
-// The most recent one on a hex, which is what pairs with the Object tool putting
-// one there per press: the right button takes back the tree you just stood, not
-// the whole clump. Highest salt is newest - see `addProp`.
-export function removeLastPropAt(level, q, r) {
-  const here = propsAt(level, q, r);
-  if (!here.length) return 0;
-  const last = here.reduce((m, o) => ((o.salt ?? 0) >= (m.salt ?? 0) ? o : m), here[0]);
+// Everything on a hex, or everything of one category on it. Erase takes a hex
+// rather than an object, because at this size picking one tuft out of a clump is
+// a gizmo and this is a brush - but a *category* is worth filtering by: clearing
+// the scrub off a tile should not fell the tree standing in it.
+export function removePropsAt(level, q, r, category = null) {
+  const going = new Set(propsAt(level, q, r, category));
+  if (!going.size) return 0;
+  level.props = level.props.filter(o => !going.has(o));
+  return going.size;
+}
+
+// The most recent one on a hex, which is what pairs with a tool putting one there
+// per press: the right button takes back the tree you just stood, not the whole
+// clump. Highest salt is newest - see `addProp`.
+export function removeLastPropAt(level, q, r, category = null) {
+  const last = topPropAt(level, q, r, category);
+  if (!last) return 0;
   level.props.splice(level.props.indexOf(last), 1);
   return 1;
 }
 
-// Only what carries a light, which is the Light tool's own inverse: a hex holds a
-// lantern and a tree at once, and taking the lamp back should not fell the tree.
-export function removeLightsAt(level, q, r) {
-  const lamps = propsAt(level, q, r).filter(o => PROP_TYPES[o.type]?.flicker);
-  if (!lamps.length) return 0;
-  level.props = level.props.filter(o => !lamps.includes(o));
-  return lamps.length;
+// The topmost placed thing on a hex, which is what the arrow picks up: the
+// newest, because that is the one on top of the pile. Ground cover is never among
+// them - there is no instance there to hold.
+export function topPropAt(level, q, r, category = null) {
+  const here = propsAt(level, q, r, category);
+  if (!here.length) return null;
+  return here.reduce((m, o) => ((o.salt ?? 0) >= (m.salt ?? 0) ? o : m), here[0]);
+}
+
+// Re-tunes the landmarks of one kind already on a hex instead of standing another
+// one on the same spot. Placing a lamp where a lamp is is somebody adjusting that
+// lamp, and it is the whole of "edit the thing that is already there" - which is
+// all a landmark needs, because what a placed landmark is *for* is its numbers.
+export function tuneLandmarks(level, q, r, type, { light = null, scale = null } = {}) {
+  let changed = 0;
+  for (const o of propsAt(level, q, r, 'landmark')) {
+    if (o.type !== type) continue;
+    let touched = false;
+    if (light) {
+      const next = { ...o.light, ...light };
+      if (JSON.stringify(next) !== JSON.stringify(o.light)) { o.light = next; touched = true; }
+    }
+    if (scale != null && round(scale) !== (o.scale ?? 1)) { o.scale = round(scale); touched = true; }
+    if (touched) changed++;
+  }
+  return changed;
+}
+
+// ---- And the ground cover on it --------------------------------------------
+// The one layer that is not stored as itself. A hex holds at most one patch per
+// set - see game/detail.js - and painting a hex that already has one *updates*
+// it, which is what makes dragging back over ground you have just painted change
+// how thick it is rather than pile a second scatter on top of the first.
+
+export function detailAt(level, q, r, set = null) {
+  return (level.detail ?? []).filter(d => d.q === q && d.r === r && (!set || d.set === set));
+}
+
+// Paints one hex, and reports whether anything about it changed - so a drag over
+// ground already painted at these settings costs no rebuild.
+export function paintDetail(level, set, q, r, settings = {}) {
+  if (!DETAIL_SETS[set]) return 0;
+  // Written in this order on purpose: it is the order `parseLevel` builds a patch
+  // in, and a patch is one line in a file somebody reads. Two orders would mean a
+  // level whose lines change shape the first time it is loaded and saved again.
+  const want = { set, q, r };
+  for (const f of DETAIL_FIELDS) want[f] = settings[f] ?? DETAIL_DEFAULTS[f];
+  level.detail ??= [];
+  const at = level.detail.find(d => d.q === q && d.r === r && d.set === set);
+  if (!at) { level.detail.push(want); return 1; }
+  if (DETAIL_FIELDS.every(f => at[f] === want[f])) return 0;
+  Object.assign(at, want);
+  return 1;
+}
+
+// One step thinner, on every set on the hex, and gone at nothing. This is the
+// erase for a layer where erase cannot mean "take that one away", because there
+// is no that one. What the author wants from a right button here is *less of it*,
+// and repeating it clears the hex.
+export function thinDetail(level, q, r) {
+  let changed = 0;
+  for (const patch of detailAt(level, q, r)) {
+    patch.density -= 1;
+    changed++;
+    if (patch.density <= 0) level.detail.splice(level.detail.indexOf(patch), 1);
+  }
+  return changed;
+}
+
+export function removeDetailAt(level, q, r) {
+  const going = new Set(detailAt(level, q, r));
+  if (!going.size) return 0;
+  level.detail = level.detail.filter(d => !going.has(d));
+  return going.size;
 }
 
 // What is on a hex, in a few words, or null for a hex the board does not reach.
@@ -553,26 +744,26 @@ export function describeAt(level, q, r) {
   if (here) return here.kind === 'king' ? 'the King' : (UNIT_TYPES[here.unit.type]?.name ?? here.unit.type);
   const props = propsAt(level, q, r);
   if (props.length) {
-    const name = PROP_TYPES[props[0].type]?.name ?? props[0].type;
-    return props.length === 1 ? name : `${name} ×${props.length}`;
+    const top = topPropAt(level, q, r);
+    const name = PROP_TYPES[top.type]?.name ?? top.type;
+    return props.length === 1 ? name : `${name} +${props.length - 1}`;
+  }
+  // Ground cover is named by its set and how thick it is, because that is what
+  // there is to say about it: which tufts came up is the seed's business.
+  const patches = detailAt(level, q, r);
+  if (patches.length) {
+    return patches.map(d => `${DETAIL_SETS[d.set]?.name ?? d.set} ${d.density}`).join(' + ');
   }
   const tile = tileAt(level, q, r);
   return tile ? `${tile.terrain} at ${tile.level ?? 0}` : null;
 }
 
-// Re-tunes the lights already on a hex instead of adding another lamp to it.
-// Placing a light where one stands is somebody adjusting that light, which is
-// the only bit of "edit the thing that is already there" this pass needs.
-export function tuneLights(level, q, r, light) {
-  let changed = 0;
-  for (const o of propsAt(level, q, r)) {
-    if (!PROP_TYPES[o.type]?.flicker) continue;      // not something that carries a light
-    const next = { ...o.light, ...light };
-    if (JSON.stringify(next) === JSON.stringify(o.light)) continue;
-    o.light = next;
-    changed++;
-  }
-  return changed;
+const DETAIL_FIELDS = ['density', 'seed', 'size', 'spin'];
+
+// Three decimals. A stored angle or scale is written into a file a person reads,
+// and seventeen digits of float is noise in a diff.
+function round(n) {
+  return Math.round(n * 1000) / 1000;
 }
 
 // How far a hex is from the middle, which is what `radius` bounds.
