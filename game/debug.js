@@ -28,7 +28,8 @@ const VISION_COLOR = 0xffc07a;
 
 export function installDebug({ game, grid, ground, rig, mask, control, visibility,
                                spawn = null, pickups = [], deployment = null, enemies = null,
-                               loop = null, garrison = null }) {
+                               loop = null, garrison = null,
+                               add = null }) {
   // Its own GameObject, because the picker's cursor and the move highlight each
   // already own the one overlay on theirs.
   const go = new GameObject('DebugVision');
@@ -36,7 +37,7 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     color: VISION_COLOR, opacity: 0.30, y: 0.035,
     heightAt: (q, r) => (grid.inBounds(q, r) ? ground.topY(q, r) : 0),
   }));
-  game.add(go);
+  (add ?? ((x) => game.add(x)))(go);
 
   const refreshVision = () => {
     if (!DEBUG.showVision) { overlay.setHexes([]); return; }
@@ -135,8 +136,9 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
   // Speed slider, bottom right. Purely for watching a fight at 10% or skipping a
   // walk at 100% - on the keyboard already, and here so the one knob anybody
   // actually reaches for is visible rather than remembered.
+  let wrap;
   {
-    const wrap = document.createElement('div');
+    wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;gap:8px;'
       + 'align-items:center;padding:8px 11px;border-radius:7px;background:rgba(9,16,30,0.55);'
       + 'border:1px solid rgba(143,216,232,0.14);color:#b9cfe0;font:12px system-ui;user-select:none';
@@ -156,12 +158,25 @@ export function installDebug({ game, grid, ground, rig, mask, control, visibilit
     document.body.append(wrap);
   }
 
-  window.addEventListener('keydown', (e) => {
+  const onKey = (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.code === 'KeyV') api.toggleVision();
     if (e.code === 'KeyR') api.revealAll();
-  });
+  };
+  window.addEventListener('keydown', onKey);
 
   window.hex = api;
+
+  // And how to take all of it back off again. It matters now that a page can
+  // play a second level without being reloaded: everything above is per session -
+  // the overlay knows one roster, the slider one clock, `window.hex` one board -
+  // so a session that left its slider behind would stack another one under it
+  // every time somebody picked a level.
+  return () => {
+    game.remove(go);
+    wrap.remove();
+    window.removeEventListener('keydown', onKey);
+    if (window.hex === api) delete window.hex;
+  };
   return api;
 }

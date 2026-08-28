@@ -1,0 +1,146 @@
+/* The screen the game opens on. Its own stylesheet next to the card bar's,
+   because the page's own <style> block is the page's furniture - the legend, the
+   loading word - and this is a piece of the game that happens to be made of DOM.
+
+   It is cool where the hand is warm, and on purpose: a card in your hand is a
+   thing you found on the island and this is not on the island at all. The whole
+   of the rest of the interface follows the same split. */
+#menu {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+  overflow: auto;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(24, 42, 66, 0.72), rgba(6, 10, 18, 0.94));
+  color: #b9cfe0;
+  font-family: system-ui, sans-serif;
+  transition: opacity 260ms ease;
+}
+/* Away rather than gone: the fade is what stops the board arriving with a bang,
+   and a menu that is display:none has nothing to fade. */
+#menu.is-away {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.menu-sheet { max-width: 900px; }
+
+#menu header { text-align: center; padding-bottom: 26px; }
+#menu h1 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #e8f2f8;
+}
+#menu header p {
+  padding-top: 9px;
+  font-size: 12.5px;
+  color: #7f93a4;
+}
+
+.menu-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+}
+
+/* A button, not a div with a click on it: the keyboard reaches it, the disabled
+   state is the real one, and a locked board refuses without anything having to
+   remember to check. */
+.menu-card {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 5px;
+  width: 260px;
+  padding: 12px 13px 11px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(19, 27, 40, 0.9), rgba(11, 16, 26, 0.94));
+  border: 1px solid rgba(143, 216, 232, 0.16);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.menu-card:hover:not(:disabled) {
+  transform: translateY(-4px);
+  border-color: rgba(255, 210, 74, 0.55);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+/* The one interaction colour, the same as everything else the player can act on -
+   see MOOD.interact and the invariant in CLAUDE.md. */
+.menu-card:focus-visible {
+  outline: 1px solid rgba(255, 210, 74, 0.8);
+  outline-offset: 2px;
+}
+
+.menu-shot {
+  display: block;
+  border-radius: 7px;
+  background: rgba(6, 10, 18, 0.6);
+  padding: 6px 0;
+}
+.menu-shot svg { display: block; width: 100%; height: 108px; }
+
+.menu-title { font-size: 14px; color: #e8f2f8; letter-spacing: 0.01em; }
+.menu-blurb { font-size: 11.5px; line-height: 1.4; color: #7f93a4; }
+.menu-meta {
+  align-self: end;
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #55697c;
+  padding-top: 4px;
+}
+
+.menu-card.is-locked, .menu-card.is-broken {
+  cursor: default;
+  opacity: 0.45;
+  border-color: rgba(143, 216, 232, 0.08);
+}
+.menu-card.is-broken .menu-blurb { color: #d99184; }
+
+/* Nothing that describes playing belongs on screen while there is nothing to
+   play. The legend is a following sibling of the menu in the page, so this is
+   the whole of hiding it - no class to set and nothing for main.js to remember. */
+#menu:not(.is-away) ~ #controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Which board is on, and the way back to the list. It is one element doing both
+   because they are one thing to a player: the name of the place you are in is
+   also the door out of it. */
+#now {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 13px;
+  border-radius: 99px;
+  background: rgba(9, 16, 30, 0.55);
+  border: 1px solid rgba(143, 216, 232, 0.14);
+  color: #b9cfe0;
+  font: 12px/1 system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 200ms ease, border-color 160ms ease;
+  opacity: 0.55;
+}
+#now:hover { opacity: 1; border-color: rgba(255, 210, 74, 0.5); }
+#now[hidden] { display: none; }
+#now .back {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7f93a4;
+}

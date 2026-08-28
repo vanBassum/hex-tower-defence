@@ -48,8 +48,10 @@ thing being changed - reach for them then, not by default.
                             visibility_mask (what the unknown looks like)
     game/                   this game: what is on the island and what plays on it
       play.js               the game as a callable - every wire between components
-      levels.js             the levels that ship in levels/, and their index
-      main.js               the game as a *page*: renderer, hour, camera, one level
+      levels.js             the levels that ship in levels/, their index, and the
+                            catalogue the menu offers
+      main.js               the game as a *page*: renderer, hour, camera, and the
+                            menu that starts one board at a time inside them
       maps.js               the level: outline, elevation, props, pickups
       mood.js               every colour and the one wind, in one place
       props.js / units.js / pickups.js / cards.js     what things are
@@ -59,6 +61,7 @@ thing being changed - reach for them then, not by default.
                             garrison (troops the level leaves to be found),
                             action_loop (EXPERIMENT: one action at a time)
       ui/card_bar.js        the hand, in DOM
+      ui/menu.js            the screen the game opens on: which board
       debug.js              window.hex - developer knobs, not game UI
     editor/                 the level editor at /editor/ - same world, no game
       level.js              the level *as data*, and the only stored format
@@ -357,6 +360,19 @@ Break one of these and something three files away goes subtly wrong.
   than to the session, which is why Play is a change of what is on the board and
   not a journey. A second, simpler simulation living in the editor is the thing
   this arrangement exists to make unnecessary.
+- **The world outlives every board in it.** The renderer, the hour and the camera
+  are built once by `game/main.js` and handed to `startPlay`, which returns a
+  `teardown` - so picking a second level is a teardown and another call, never a
+  reload. The menu needed no new machinery for that: the editor's Play button had
+  already made the game startable twice, which is the whole reason that seam
+  exists. Anything a session puts on the *page* rather than in the scene has to
+  come back off with it, and `installDebug` returning a dispose is that rule being
+  paid: without it every level picked stacked another speed slider under the last.
+- **Progression will be one field.** `locked` on a catalogue entry in
+  `game/levels.js` is false on everything and already read by the menu - a locked
+  card draws itself and refuses the click. When there is a reason for a board to
+  be shut it is that field computed from whatever keeps score, and nothing else in
+  the game learns what a lock is.
 - **A system level is a file, and this browser does not own it.** The levels in
   `levels/` are exactly what the editor exports - one format, one parser
   (`parseLevel`), no second authoring path - and `game/levels.js` is the index
@@ -404,7 +420,8 @@ Break one of these and something three files away goes subtly wrong.
 | An enemy kind | `UNIT_TYPES` with `hostile` + a behaviour field; place it in `maps.js` `enemies` |
 | A leader figure or a standard | `leader` / `standard` on its type (see `king`) |
 | Level content | `game/maps.js` - `buildMap` validates and refuses bad placements |
-| A level that ships with the game | the exported JSON in `levels/`, plus a line in `SYSTEM_LEVELS` in `game/levels.js` |
+| A level that ships with the game | the exported JSON in `levels/`, plus a line in `SYSTEM_LEVELS` in `game/levels.js` - the menu picks it up |
+| Something the menu shows about a board | `catalogue()` in `game/levels.js`, then the card in `game/ui/menu.js` |
 | A reaction rule, or how far a group moves | `TACTICS` in `game/components/action_loop.js` |
 | A phase in resolving an action | `STATE` + the switch in `ActionLoop.update` |
 | A way of marking hexes | a subclass of `HexOverlay` overriding `_rebuild` - the picker finds any of them |

@@ -568,7 +568,8 @@ export function startPlay({
   // Developer knobs: V rings what the force is lighting up, R
   // reveals the board, and `window.hex` has the rest. Not game UI on purpose - how
   // far a scout sees is a number that has to be tried, not a feature.
-  if (debug) installDebug({
+  const disposeDebug = !debug ? null : installDebug({
+    add,
     game, grid: map.grid, ground: hexGround, rig, mask, control, visibility,
     pickups, deployment, enemies, loop, garrison,
     // How a unit gets built, handed over rather than rebuilt in the debug module -
@@ -660,6 +661,7 @@ export function startPlay({
   // the grid's occupancy, the geometry, and every listener the picker put on the
   // page - so there is nothing here that has to be remembered separately.
   function teardown() {
+    disposeDebug?.();
     game.onTick = null;
     for (const go of added) game.remove(go);
     added.length = 0;
