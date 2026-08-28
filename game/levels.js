@@ -21,11 +21,12 @@ import { parseLevel } from '../editor/level.js';
 // parser living in `game/` would be the one thing this project has gone out of
 // its way not to have. This module is where that import happens, so it happens
 // once.
+// In the order they are meant to be met. The first is the one that teaches the
+// loop without a word of it; the rest are one idea apiece.
 export const SYSTEM_LEVELS = [
-  {
-    id: 'skirmish',
-    file: 'skirmish.json',
-  },
+  { id: 'landing',  file: 'landing.json' },
+  { id: 'causeway', file: 'causeway.json' },
+  { id: 'skirmish', file: 'skirmish.json' },
 ];
 
 export const SYSTEM_LEVEL_BY_ID = Object.fromEntries(SYSTEM_LEVELS.map(l => [l.id, l]));
