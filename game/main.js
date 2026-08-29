@@ -99,6 +99,11 @@ over.onclick = () => {
 
 let session = null;
 
+// Two rAFs rather than one: a callback runs *before* the paint of its own frame,
+// so it takes a second one to know the first has been on screen.
+const painted = () => new Promise((r) =>
+  requestAnimationFrame(() => requestAnimationFrame(r)));
+
 // A handle on the page, and it exists before any board does. `startPlay` installs
 // the session's own `window.hex` - the roster, the fog, the loop - and takes it
 // away again on teardown, so without this the console and the check script would
@@ -119,6 +124,14 @@ async function play(entry) {
   // several now and every one of them costs that frame.
   loading.classList.remove('is-done');
   const map = await entry.load();
+  // And a frame with it actually on screen, before the slow one.
+  //
+  // The message was put up and taken down again inside a single tick - the class
+  // comes off here, startPlay returns, and the warm frame calls onReady - so the
+  // browser never painted anything with it up and the second of compiling read as
+  // the menu having hung. Two frames is the whole fix: the first one paints the
+  // message, the second proves it.
+  await painted();
   session = startPlay({
     game, map, rig,
     // What the run opens with. A level says - the same field the editor's Play

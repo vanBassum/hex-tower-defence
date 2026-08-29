@@ -66,10 +66,17 @@
       font-size: 13px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
-      transition: opacity 320ms ease;
       z-index: 10;
     }
-    #loading.is-done { opacity: 0; pointer-events: none; }
+    /* The fade is on the done state, so it only plays on the way out. Coming
+       back - a second board being built - it has to be there at once: the freeze
+       it covers starts on the next frame, and a message caught a third of the way
+       through fading in just sits there at a third. */
+    #loading.is-done {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 320ms ease;
+    }
     #loading span { animation: loading-pulse 1.6s ease-in-out infinite; }
 
     @keyframes loading-pulse {
