@@ -40,17 +40,18 @@ jobs:
       # and tools/, CLAUDE.md and readme.md are for people working on the game,
       # not people playing it.
       #
-      # Every directory the pages import from has to be here, and that is the one
-      # way this list bites: a new top-level folder is served or not served
-      # depending on a line in a YAML file nobody looks at while writing it, and
-      # the failure is a 404 on the live site only. `editor/` reaches back into
-      # `game/` and `engine/`, which is why it needs no more than its own name
-      # adding.
+      # It is a list of what to LEAVE OUT, and that is the whole point. It was a
+      # list of what to include, and levels/ was missing from it - so the live
+      # site showed three broken cards and nothing anywhere else was wrong: every
+      # path in the source is relative and every one of them resolved. A folder
+      # the game reads from is added by somebody thinking about the game, and
+      # they are not looking at this file while they do it. Excluding is the
+      # error that shows up as a few stray kilobytes on the site; including is
+      # the error that shows up as a 404 nobody sees until it is deployed.
       - name: Stage site
         run: |
           mkdir _site
-          cp index.html _site/
-          cp -r engine game assets editor _site/
+          rsync -a ./ _site/ --exclude '.git' --exclude '.github' --exclude '.claude' --exclude '_site' --exclude 'plan' --exclude 'docs' --exclude 'tools' --exclude 'CLAUDE.md' --exclude 'readme.md'
 
       - uses: actions/upload-pages-artifact@v3
         with:
