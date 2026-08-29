@@ -200,3 +200,22 @@
   text-transform: uppercase;
   color: #7f93a4;
 }
+
+/* The way out of the game and into the editor. Under the list rather than beside
+   the title, because it is not one of the things you came here to pick - it is a
+   door in the corner of the room, and it should read as one. */
+#menu footer { padding-top: 26px; text-align: center; }
+.menu-editor {
+  display: inline-block;
+  padding: 8px 18px;
+  border-radius: 99px;
+  background: rgba(9, 16, 30, 0.6);
+  border: 1px solid rgba(143, 216, 232, 0.18);
+  color: #7f93a4;
+  font: 10px/1 system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color 160ms ease, border-color 160ms ease;
+}
+.menu-editor:hover { color: #ffd24a; border-color: rgba(255, 210, 74, 0.5); }
