@@ -40,7 +40,7 @@ export class Menu {
           <p>Walk an island in the dark. Every soldier is one you found.</p>
         </header>
         <div class="menu-cards"></div>
-        <footer><a class="menu-editor" href="editor/">Level editor</a></footer>
+        <footer><a class="menu-editor" href="editor/index.html">Level editor</a></footer>
       </div>`;
     this._cards = root.querySelector('.menu-cards');
     this._cards.onclick = (e) => {
